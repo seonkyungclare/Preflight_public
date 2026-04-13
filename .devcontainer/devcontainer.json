@@ -1,0 +1,32 @@
+{
+  "name": "Preflight PRD Simulator",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+
+  // Codespace 시작 시 자동으로 의존성 설치 및 Claude Code 설치
+  "postCreateCommand": "npm install && npm install -g @anthropic-ai/claude-code",
+
+  // 개발 서버 자동 시작
+  "postStartCommand": "npm run dev",
+
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Preflight 앱",
+      "onAutoForward": "openBrowserOnce"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      }
+    }
+  }
+}
