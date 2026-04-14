@@ -67,23 +67,23 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
   const displayError = localError || error
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen bg-canvas flex flex-col items-center justify-center px-6">
       {/* 로고 */}
       <div className="mb-10 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-light to-accent flex items-center justify-center">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
             <path d="M9 12l2 2 4-4" />
             <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
           </svg>
         </div>
-        <span className="text-2xl font-bold text-white tracking-tight">Preflight</span>
-        <span className="text-xs text-slate-500 mt-1">by Musinsa</span>
+        <span className="text-2xl font-bold text-ink-primary tracking-tight">Preflight</span>
+        <span className="text-xs text-ink-muted mt-1">by Musinsa</span>
       </div>
 
-      <h1 className="text-3xl font-bold text-white text-center mb-2">
+      <h1 className="text-3xl font-bold text-ink-primary text-center mb-2">
         디자인 진행 전, 먼저 확인하세요
       </h1>
-      <p className="text-slate-400 text-center mb-10 text-sm">
+      <p className="text-ink-secondary text-center mb-10 text-sm">
         PDF 또는 MD 파일을 업로드하면 AI가 UI 구현 충분성을 자동으로 분석하고 목업을 생성합니다
       </p>
 
@@ -95,8 +95,8 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
         className={[
           'w-full max-w-xl border-2 border-dashed rounded-2xl p-12 flex flex-col items-center gap-4 cursor-pointer transition-all',
           dragging
-            ? 'border-violet-500 bg-violet-500/10'
-            : 'border-slate-700 bg-slate-900/50 hover:border-violet-600 hover:bg-slate-900',
+            ? 'border-brand-light bg-brand-light/10'
+            : 'border-surface-overlay bg-surface/50 hover:border-brand hover:bg-surface',
         ].join(' ')}
         onClick={() => !file && inputRef.current?.click()}
       >
@@ -110,47 +110,47 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
 
         {file ? (
           <>
-            <div className="w-14 h-14 rounded-xl bg-violet-500/20 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-xl bg-brand-light/20 flex items-center justify-center">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                 <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-white font-semibold">{file.name}</p>
-              <p className="text-slate-500 text-sm mt-1">{(file.size / 1024).toFixed(1)} KB</p>
+              <p className="text-ink-primary font-semibold">{file.name}</p>
+              <p className="text-ink-muted text-sm mt-1">{(file.size / 1024).toFixed(1)} KB</p>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); setFile(null) }}
-              className="text-xs text-slate-500 hover:text-slate-300 underline mt-1"
+              className="text-xs text-ink-muted hover:text-ink-subtle underline mt-1"
             >
               다른 파일 선택
             </button>
           </>
         ) : (
           <>
-            <div className="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-xl bg-surface-raised flex items-center justify-center">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-slate-300 font-medium">파일을 드래그하거나 클릭해서 업로드</p>
-              <p className="text-slate-600 text-sm mt-1">PDF, MD, TXT 지원 · 최대 10MB</p>
+              <p className="text-ink-subtle font-medium">파일을 드래그하거나 클릭해서 업로드</p>
+              <p className="text-ink-faint text-sm mt-1">PDF, MD, TXT 지원 · 최대 10MB</p>
             </div>
           </>
         )}
       </div>
 
       {displayError && (
-        <p className="mt-3 text-sm text-red-400 text-center">{displayError}</p>
+        <p className="mt-3 text-sm text-status-error text-center">{displayError}</p>
       )}
 
       {file && (
         <button
           onClick={handleSubmit}
           disabled={parsing}
-          className="mt-6 w-full max-w-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold py-4 rounded-xl transition-all text-base shadow-lg shadow-violet-500/25 flex items-center justify-center gap-2"
+          className="mt-6 w-full max-w-xl bg-gradient-to-r from-brand to-accent hover:from-brand-light hover:to-accent-light disabled:opacity-50 text-ink-primary font-semibold py-4 rounded-xl transition-all text-base shadow-lg shadow-brand/25 flex items-center justify-center gap-2"
         >
           {parsing ? (
             <>
@@ -163,7 +163,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
         </button>
       )}
 
-      <div className="mt-8 flex gap-6 text-xs text-slate-600">
+      <div className="mt-8 flex gap-6 text-xs text-ink-faint">
         <span>✓ 화면 인벤토리 검증</span>
         <span>✓ 엣지케이스 탐지</span>
         <span>✓ 목업 자동 생성</span>

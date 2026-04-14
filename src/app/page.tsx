@@ -64,10 +64,37 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null)
 
   const [state, setState] = useState<AppState>({
-    screen: 'upload',
-    fileName: '',
+    screen: 'result', // 초기 화면은 업로드 화면
+    fileName: 'sample-prd.md',
     prdText: '',
-    analysis: null,
+    analysis: {
+      sufficiency_score: 72,
+      is_sufficient: false,
+      validated: ['로그인 화면 정의됨', '메인 대시보드 레이아웃 명시', 'CTA 버튼 위치 지정'],
+      criteria: {
+        화면_인벤토리: { score: 8, notes: '주요 화면은 정의되어 있으나 빈 상태 화면 누락' },
+        데이터_상태: { score: 6, notes: '로딩 상태 일부 정의, 에러 상태 미흡' },
+        엣지케이스: { score: 5, notes: '극단값 처리 및 API 실패 롤백 정책 없음' },
+        인터랙션_로직: { score: 7, notes: '주요 버튼 목적지 명시, 일부 플로우 모호' },
+        CTA_계층: { score: 9, notes: 'Primary CTA 명확하게 정의됨' },
+      },
+      missing_for_designers: [
+        { screen: '로그인 화면', issue: '에러 상태 UI 미정의', suggestion: 'Skeleton 및 에러 메시지 컴포넌트 추가 필요' },
+        { screen: '대시보드', issue: '빈 상태(Empty State) 화면 없음', suggestion: '데이터 없을 때 표시할 Empty State 디자인 필요' },
+      ],
+      missing_for_developers: [
+        { module: '인증 API', issue: '토큰 만료 시 처리 로직 미정의', suggestion: '토큰 갱신 또는 로그아웃 분기 처리 명시 필요' },
+      ],
+      critical_questions: [
+        '[비즈니스] 비로그인 사용자의 접근 허용 범위는 어떻게 되나요? [A] 전체 차단 [B] 일부 기능만 허용',
+        '[개발] API 실패 시 이전 데이터를 유지할까요? [A] 캐시 유지 [B] 에러 화면으로 전환',
+        '[디자인] 모바일 대응이 필요한가요? [A] 필요 없음 [B] 반응형 필수',
+      ],
+      ux_recommendations: [
+        'NN 원칙 #1: 로딩 상태를 명시하여 시스템 상태 가시성을 높이세요.',
+        'Fogg Behavior Model: 온보딩 단계에서 마찰을 줄여 전환율을 높이세요.',
+      ],
+    },
     mockupCodeLowFi: null,
     mockupCodeHiFi: null,
     error: null,

@@ -6,9 +6,9 @@ interface ScoreGaugeProps {
 
 // 점수에 따른 색상 및 라벨 반환
 function getScoreMeta(score: number): { color: string; label: string } {
-  if (score >= 80) return { color: '#22c55e', label: '개발 준비 완료' }
-  if (score >= 60) return { color: '#f59e0b', label: '보완 필요' }
-  return { color: '#ef4444', label: '재작성 권장' }
+  if (score >= 80) return { color: '#22c55e', label: '준비 완료!' }
+  if (score >= 60) return { color: '#f59e0b', label: '조금 더 보완해 주세요' }
+  return { color: '#ef4444', label: '많이 보완해주세요' }
 }
 
 export default function ScoreGauge({ score }: ScoreGaugeProps) {
@@ -41,8 +41,8 @@ export default function ScoreGauge({ score }: ScoreGaugeProps) {
         </svg>
         {/* 중앙 점수 텍스트 */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold text-white">{score}</span>
-          <span className="text-xs text-slate-400">/ 100</span>
+          <span className="text-3xl font-bold text-ink-primary">{score}</span>
+          <span className="text-xs text-ink-secondary">/ 100</span>
         </div>
       </div>
       <span

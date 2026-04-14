@@ -37,7 +37,7 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
       {/* 전체 페이지를 뷰포트에 고정 */}
       <style>{`html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; }`}</style>
 
-      <div style={{ position: 'fixed', inset: 0, background: '#0a0e1a', color: 'white', fontFamily: 'sans-serif' }}>
+      <div style={{ position: 'fixed', inset: 0, background: '#0a0e1a', color: '#ffffff', fontFamily: 'sans-serif' }}>
 
         {/* ── 헤더 ── */}
         <div style={{
