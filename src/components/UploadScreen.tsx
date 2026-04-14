@@ -81,10 +81,10 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
       </div>
 
       <h1 className="text-3xl font-bold text-white text-center mb-2">
-        개발 전, PRD를 먼저 확인하세요
+        디자인 진행 전, 먼저 확인하세요
       </h1>
       <p className="text-slate-400 text-center mb-10 text-sm">
-        PDF 또는 MD 파일을 업로드하면 AI가 UI 구현 충분성을 자동으로 분석합니다
+        PDF 또는 MD 파일을 업로드하면 AI가 UI 구현 충분성을 자동으로 분석하고 목업을 생성합니다
       </p>
 
       {/* 드래그 앤 드롭 업로드 영역 */}
