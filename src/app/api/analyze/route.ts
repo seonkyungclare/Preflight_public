@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import Anthropic from '@anthropic-ai/sdk'
 
 // CLAUDE.md의 Preflight PRD Verification Protocol (v1.2)을 기반으로 한 분석 프롬프트
 const SYSTEM_PROMPT = `You are a senior product engineer and UX specialist reviewing a PRD.
@@ -76,31 +76,69 @@ Return this EXACT JSON structure:
 
 Respond in Korean for all string values.`
 
-// ... 이후 runClaude 및 POST 함수 코드는 기존과 동일하게 유지 ...
+function getAnthropicClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY(또는 anthropic_api_key) 환경변수가 설정되어 있지 않습니다')
+  }
+  return new Anthropic({ apiKey })
+}
 
-// claude CLI를 spawn으로 실행 (shell을 거치지 않아 인젝션 안전)
-function runClaude(prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('claude', ['-p', prompt])
+function getAnthropicModelCandidates(): string[] {
+  const configuredModel = process.env.ANTHROPIC_MODEL ?? process.env.anthropic_model
+  const candidates = [
+    configuredModel,
+    'claude-opus-4-6',
+    'claude-sonnet-4-6',
+  ].filter(Boolean) as string[]
+  const unique: string[] = []
+  for (const m of candidates) {
+    if (!unique.includes(m)) unique.push(m)
+  }
+  return unique
+}
 
-    let stdout = ''
-    let stderr = ''
+function extractText(content: Anthropic.Messages.Message['content']): string {
+  return content
+    .map(block => (block.type === 'text' ? block.text : ''))
+    .join('')
+    .trim()
+}
 
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+async function createMessageWithModelFallback(
+  anthropic: Anthropic,
+  params: Omit<Anthropic.Messages.MessageCreateParams, 'model' | 'stream'> & { stream?: false },
+): Promise<Anthropic.Messages.Message> {
+  const models = getAnthropicModelCandidates()
+  let lastError: unknown
 
-    child.on('close', (code: number | null) => {
-      if (code === 0) {
-        resolve(stdout.trim())
-      } else {
-        reject(new Error(`claude 프로세스 종료 코드 ${code}: ${stderr.trim()}`))
+  for (const model of models) {
+    try {
+      const result = (await anthropic.messages.create({
+        ...params,
+        model,
+        stream: false,
+      })) as Anthropic.Messages.Message
+      return result
+    } catch (err) {
+      lastError = err
+      const anyErr = err as { status?: number; error?: unknown; message?: string }
+      const message =
+        typeof anyErr?.message === 'string'
+          ? anyErr.message
+          : typeof (anyErr as any)?.error?.error?.message === 'string'
+            ? (anyErr as any).error.error.message
+            : ''
+
+      const isModelNotFound = anyErr?.status === 404 && message.includes('model:')
+      if (isModelNotFound) {
+        console.warn(`[analyze] 모델을 찾지 못해 다음 후보로 재시도합니다: ${model}`)
       }
-    })
+      if (!isModelNotFound) break
+    }
+  }
 
-    child.on('error', (err: Error) => {
-      reject(new Error(`claude CLI 실행 실패: ${err.message}`))
-    })
-  })
+  throw lastError
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -122,13 +160,23 @@ export async function POST(req: Request): Promise<Response> {
   const fullPrompt = `${SYSTEM_PROMPT}\n\n다음 PRD를 분석해줘:\n\n${prdText}`
 
   try {
-    const output = await runClaude(fullPrompt)
+    const anthropic = getAnthropicClient()
+    const result = await createMessageWithModelFallback(anthropic, {
+      max_tokens: 2500,
+      temperature: 0.2,
+      messages: [{ role: 'user', content: fullPrompt }],
+    })
+
+    const output = extractText(result.content)
     // 클라이언트의 parseAnalysis가 텍스트 응답을 기대하므로 plain text 반환
     return new Response(output, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })
   } catch (error) {
-    console.error('[analyze] claude CLI 오류:', error)
+    console.error('[analyze] Claude API 오류:', error)
+    if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {
+      return new Response('API 키가 필요합니다. 서버 환경변수 ANTHROPIC_API_KEY를 설정해주세요.', { status: 500 })
+    }
     return new Response('분석 중 오류가 발생했습니다', { status: 500 })
   }
 }
