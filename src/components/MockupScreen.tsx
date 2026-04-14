@@ -146,7 +146,7 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
                 react: '^18',
                 'react-dom': '^18',
                 // hi-fi는 antd 의존성 추가
-                ...(type === 'hifi' && { antd: '^5' }),
+                ...(type === 'hifi' && { antd: '^5', '@ant-design/icons': '^5' }),
               },
             }}
           >

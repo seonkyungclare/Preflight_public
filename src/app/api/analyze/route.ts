@@ -88,8 +88,8 @@ function getAnthropicModelCandidates(): string[] {
   const configuredModel = process.env.ANTHROPIC_MODEL ?? process.env.anthropic_model
   const candidates = [
     configuredModel,
-    'claude-opus-4-6',
     'claude-sonnet-4-6',
+    'claude-opus-4-6',
   ].filter(Boolean) as string[]
   const unique: string[] = []
   for (const m of candidates) {
@@ -162,7 +162,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const anthropic = getAnthropicClient()
     const result = await createMessageWithModelFallback(anthropic, {
-      max_tokens: 2500,
+      max_tokens: 16000,
       temperature: 0.2,
       messages: [{ role: 'user', content: fullPrompt }],
     })

@@ -108,7 +108,10 @@ export default function Home() {
       const analysis = parseAnalysis(rawText)
       setState(prev => ({ ...prev, screen: 'result', analysis }))
     } catch (e) {
-      setState(prev => ({ ...prev, screen: 'upload', error: (e as Error).message }))
+      let rawText = ''
+      console.error('[분석 오류] 에러:', e)
+      const errorMsg = '분석 중 오류가 발생했습니다'
+      setState(prev => ({ ...prev, screen: 'upload', error: errorMsg }))
     }
   }
 
@@ -168,7 +171,14 @@ export default function Home() {
   // sessionStorage에 목업 데이터 저장 후 새 탭 오픈
   function openMockupTab(code: string, analysis: AnalysisResult, type: MockupType) {
     sessionStorage.setItem('preflight_mockup', JSON.stringify({ code, analysis, type }))
-    window.open('/mockup', '_blank')
+    const newWindow = window.open('/mockup', '_blank')
+    if (!newWindow) {
+      // 팝업이 차단된 경우
+      setState(prev => ({ 
+        ...prev, 
+        error: '팝업이 차단되었습니다. 브라우저 팝업 차단을 해제해주세요.' 
+      }))
+    }
   }
 
   return (

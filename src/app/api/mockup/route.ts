@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import Anthropic from '@anthropic-ai/sdk'
 
 // Low-fi: 그레이스케일 와이어프레임
 const LOWFI_PROMPT = `You are a UX designer creating a low-fidelity wireframe prototype in React.
@@ -17,6 +17,10 @@ Rules:
 - Show layout structure and hierarchy clearly — the goal is to communicate layout, not visual design
 - Include key screens/states described in the PRD as separate sections or tabs
 - The component must be runnable in a sandboxed environment with inline styles only — NO Tailwind, NO external CSS
+- The generated code must be syntactically complete and valid.
+- All brackets, curly braces, and parentheses must be properly closed and balanced.
+- Do not truncate or omit any part of the code.
+- Ensure the output is a fully functional React component with no syntax errors.
 
 Return ONLY the component code, no markdown fences, no explanation.`
 
@@ -54,7 +58,6 @@ interface RequestBody {
   type: 'lowfi' | 'hifi'
 }
 
-// claude CLI를 spawn으로 실행 (shell을 거치지 않아 인젝션 안전)
 // 응답에서 실행 가능한 코드만 추출 — 설명 텍스트·마크다운 펜스 제거
 function extractCode(output: string): string | null {
   // 마크다운 펜스 안의 코드 우선 추출
@@ -69,28 +72,69 @@ function extractCode(output: string): string | null {
   return null
 }
 
-function runClaude(prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('claude', ['-p', prompt])
+function getAnthropicClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY(또는 anthropic_api_key) 환경변수가 설정되어 있지 않습니다')
+  }
+  return new Anthropic({ apiKey })
+}
 
-    let stdout = ''
-    let stderr = ''
+function getAnthropicModelCandidates(): string[] {
+  const configuredModel = process.env.ANTHROPIC_MODEL ?? process.env.anthropic_model
+  const candidates = [
+    configuredModel,
+    'claude-sonnet-4-6',
+    'claude-opus-4-6',
+  ].filter(Boolean) as string[]
+  const unique: string[] = []
+  for (const m of candidates) {
+    if (!unique.includes(m)) unique.push(m)
+  }
+  return unique
+}
 
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+function extractText(content: Anthropic.Messages.Message['content']): string {
+  return content
+    .map(block => (block.type === 'text' ? block.text : ''))
+    .join('')
+    .trim()
+}
 
-    child.on('close', (code: number | null) => {
-      if (code === 0) {
-        resolve(stdout.trim())
-      } else {
-        reject(new Error(`claude 프로세스 종료 코드 ${code}: ${stderr.trim()}`))
+async function createMessageWithModelFallback(
+  anthropic: Anthropic,
+  params: Omit<Anthropic.Messages.MessageCreateParams, 'model' | 'stream'> & { stream?: false },
+): Promise<Anthropic.Messages.Message> {
+  const models = getAnthropicModelCandidates()
+  let lastError: unknown
+
+  for (const model of models) {
+    try {
+      const result = (await anthropic.messages.create({
+        ...params,
+        model,
+        stream: false,
+      })) as Anthropic.Messages.Message
+      return result
+    } catch (err) {
+      lastError = err
+      const anyErr = err as { status?: number; error?: unknown; message?: string }
+      const message =
+        typeof anyErr?.message === 'string'
+          ? anyErr.message
+          : typeof (anyErr as any)?.error?.error?.message === 'string'
+            ? (anyErr as any).error.error.message
+            : ''
+
+      const isModelNotFound = anyErr?.status === 404 && message.includes('model:')
+      if (isModelNotFound) {
+        console.warn(`[mockup] 모델을 찾지 못해 다음 후보로 재시도합니다: ${model}`)
       }
-    })
+      if (!isModelNotFound) break
+    }
+  }
 
-    child.on('error', (err: Error) => {
-      reject(new Error(`claude CLI 실행 실패: ${err.message}`))
-    })
-  })
+  throw lastError
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -108,10 +152,17 @@ export async function POST(req: Request): Promise<Response> {
   const { prdText, analysisText, type = 'lowfi' } = body as RequestBody
   const systemPrompt = type === 'hifi' ? HIFI_PROMPT : LOWFI_PROMPT
 
-  const fullPrompt = `${systemPrompt}\n\nPRD:\n${prdText}\n\n분석 결과:\n${analysisText}\n\nPRD에서 가장 핵심적인 화면 하나를 React 컴포넌트로 구현해줘.`
+  const fullPrompt = `${systemPrompt}\n\nPRD:\n${prdText}\n\n분석 결과:\n${analysisText}\n\nPRD에서 가장 핵심적인 화면 하나만 React 컴포넌트로 구현해줘. 코드는 400줄 이내로 작성하고, 모든 괄호와 중괄호가 완전히 닫힌 문법적으로 완전한 코드를 작성해.`
 
   try {
-    const output = await runClaude(fullPrompt)
+    const anthropic = getAnthropicClient()
+    const result = await createMessageWithModelFallback(anthropic, {
+      max_tokens: 16000,
+      temperature: type === 'hifi' ? 0.4 : 0.2,
+      messages: [{ role: 'user', content: fullPrompt }],
+    })
+
+    const output = extractText(result.content)
 
     const code = extractCode(output)
     if (!code) {
@@ -121,7 +172,10 @@ export async function POST(req: Request): Promise<Response> {
 
     return Response.json({ code })
   } catch (error) {
-    console.error('[mockup] claude CLI 오류:', error)
+    console.error('[mockup] Claude API 오류:', error)
+    if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {
+      return Response.json({ error: 'API 키가 필요합니다. 서버 환경변수 ANTHROPIC_API_KEY를 설정해주세요.' }, { status: 500 })
+    }
     return Response.json({ error: '목업 생성 중 오류가 발생했습니다' }, { status: 500 })
   }
 }
