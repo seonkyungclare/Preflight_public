@@ -17,13 +17,6 @@ interface ResultScreenProps {
 
 type Tab = 'summary' | 'missing' | 'dev' | 'questions' | 'recommendations'
 
-// 점수 → Ready/Refine/Rewrite 라벨
-function scoreLabel(score: number): { label: string; color: string; bg: string } {
-  if (score >= 80) return { label: 'Ready', color: '#22c55e', bg: 'bg-green-500/10 border-green-500/30' }
-  if (score >= 60) return { label: 'Refine', color: '#f59e0b', bg: 'bg-amber-500/10 border-amber-500/30' }
-  return { label: 'Rewrite', color: '#ef4444', bg: 'bg-red-500/10 border-red-500/30' }
-}
-
 // PO 질문에서 [태그] 추출 및 컬러 매핑
 function parseTag(q: string): { tag: string | null; color: string; rest: string } {
   const match = q.match(/^\[([^\]]+)\](.*)/)
@@ -77,10 +70,10 @@ export default function ResultScreen({
     setMockupProgress(0)
     const interval = setInterval(() => {
       setMockupProgress(prev => {
-        if (prev >= 95) return prev
-        // 초반엔 빠르게, 후반엔 느리게 증가
-        const increment = prev < 60 ? 2 : 0.5
-        return Math.min(prev + increment, 95)
+        if (prev >= 94) return prev
+        // 초반 빠르게 → 중반 보통 → 후반 매우 느리게 (API 대기 시간 커버)
+        const increment = prev < 60 ? 2 : prev < 82 ? 0.4 : 0.08
+        return Math.min(prev + increment, 94)
       })
     }, 300)
     return () => clearInterval(interval)
@@ -139,14 +132,6 @@ export default function ResultScreen({
           <div className="col-span-1 bg-slate-900 rounded-2xl p-6 flex flex-col items-center justify-center border border-slate-800">
             <ScoreGauge score={result.sufficiency_score} />
             <p className="text-xs text-slate-500 mt-3 text-center">UI 구현 충분성 점수</p>
-            {(() => {
-              const { label, color, bg } = scoreLabel(result.sufficiency_score)
-              return (
-                <span className={`mt-2 text-xs font-bold px-3 py-1 rounded-full border ${bg}`} style={{ color }}>
-                  {label}
-                </span>
-              )
-            })()}
           </div>
 
           {/* 통계 카드 + CTA */}

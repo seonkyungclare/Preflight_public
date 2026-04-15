@@ -81,10 +81,10 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
       </div>
 
       <h1 className="text-3xl font-bold text-white text-center mb-2">
-        개발 전, PRD를 먼저 확인하세요
+        디자인 진행 전, 먼저 확인해 보세요
       </h1>
       <p className="text-slate-400 text-center mb-10 text-sm">
-        PDF 또는 MD 파일을 업로드하면 AI가 UI 구현 충분성을 자동으로 분석합니다
+        PDF나 MD 파일로 PRD를 올리면, AI가 UI를 구현하기에 내용이 충분한지 자동으로 확인해줍니다
       </p>
 
       {/* 드래그 앤 드롭 업로드 영역 */}
@@ -168,6 +168,13 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
         <span>✓ 엣지케이스 탐지</span>
         <span>✓ 목업 자동 생성</span>
       </div>
+
+      <p className="mt-12 text-xs text-slate-700">
+        문의: MSSnP Product Design/MSSnP Commerce Core Design{' '}
+        <a href="https://musinsa.slack.com/team/U08KNDY6HJ5" target="_blank" rel="noreferrer" className="hover:text-slate-500 underline">
+          김선경
+        </a>
+      </p>
     </div>
   )
 }

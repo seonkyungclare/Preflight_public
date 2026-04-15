@@ -1,56 +1,132 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 // Low-fi: 그레이스케일 와이어프레임
-const LOWFI_PROMPT = `You are a UX designer creating a low-fidelity wireframe prototype in React.
+const LOWFI_PROMPT = `You are a senior UI designer creating a low-fidelity wireframe as a React component.
 
-Rules:
-- Start with: import React, { useState, useEffect } from 'react';
-- Export a default function named App
-- NEVER use const { useState } = React or require() — always use ES module import
-- Wireframe style ONLY: grayscale palette (#f5f5f5 background, #e0e0e0 borders, #bdbdbd placeholders, #757575 labels, #212121 headings)
-- Represent images/media as gray rectangles with an X through them (drawn with two diagonal lines via SVG or div)
-- Use simple geometric shapes — no icons, no illustrations, no color accents
-- Typography: system font (sans-serif), no web fonts
-- Buttons: outlined rectangles with plain text labels, no shadows, no gradients
-- No animations, no transitions, no hover effects
-- Use placeholder text like "레이블", "버튼", "텍스트 영역" in Korean
-- Show layout structure and hierarchy clearly — the goal is to communicate layout, not visual design
-- Include key screens/states described in the PRD as separate sections or tabs
-- The component must be runnable in a sandboxed environment with inline styles only — NO Tailwind, NO external CSS
-- The generated code must be syntactically complete and valid.
-- All brackets, curly braces, and parentheses must be properly closed and balanced.
-- Do not truncate or omit any part of the code.
-- Ensure the output is a fully functional React component with no syntax errors.
+## Environment
+- import React, { useState, useEffect } from 'react'
+- Default export function named App
+- Inline styles only — no Tailwind, no external CSS, no external deps
+- Never use const { useState } = React or require()
+- All text in Korean
 
-Return ONLY the component code, no markdown fences, no explanation.`
+## Design Tokens
+colors: { bg:#f5f5f5, border:#e0e0e0, placeholder:#bdbdbd,
+          label:#757575, text:#212121 }
+media: X-crossed gray rect (SVG or div with two diagonals)
+button: outlined rect + text label
+style: no shadow, gradient, animation, color accent
+font: system sans-serif only
+
+## PRD Interpretation
+
+### Structure Decision
+- Extract screen list from PRD first
+- Choose layout by screen count/relationship:
+  · 1~2 screens → single view + state toggle
+  · 3~5 screens → tabs or nav
+  · hierarchical → sidebar + breadcrumb
+- Never force a fixed layout — let the PRD decide
+
+### Element Mapping
+  PRD element         →  antd implementation
+  ───────────────────────────────────────────
+  data list           →  <Table> with columns definition
+                         row click → open detail
+  detail view         →  fields ≤5: <Modal> centered
+                                    + <Descriptions bordered>
+                         fields >5: <Drawer> placement="right"
+                                    width={480} or wider
+                                    + <Descriptions bordered>
+  create/edit form    →  <Form layout="vertical">
+                         + validation rules + Korean error messages
+  delete action       →  <Modal.confirm> → remove via useState
+  search/filter       →  <Input.Search> or <Select> above list
+  button              →  primary action: <Button type="primary">
+                         secondary action: <Button>
+                         danger action: <Button danger>
+                         icon-only action: <Button icon={<XxxOutlined/>}>
+                         button group: <Space> wrap
+  repeated items      →  show 2~3 instances minimum
+  navigation          →  working route/tab with active state
+
+### State Coverage (only if PRD implies the state)
+  loading  →  gray pulsing blocks
+  empty    →  "데이터가 없습니다" centered text
+  error    →  red-bordered box with message
+  success  →  checkmark + confirmation text
+
+### Action Labeling
+- [verb + object] format: "주문 생성", "사용자 삭제"
+- Avoid vague labels like "확인", "제출"
+
+## Output Validation
+- Every screen/page described in the PRD must be present
+  as a section. No page may be omitted. (no page omission)
+- Within each screen, include enough elements to convey
+  the layout structure — not every field is required,
+  but the overall composition must be clear.
+- Do NOT add any screen, field, action, or component
+  not explicitly described in the PRD. (no invention)
+- PRD screen count = wireframe section count (1:1)
+- All brackets balanced, no code truncation
+- Return ONLY component code, no markdown fences, no explanation`
 
 // Hi-fi: Ant Design 디자인 시스템 적용 — 구조는 PRD 기반으로 자유롭게
 const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity UI prototype using Ant Design.
 
-## Structure
-- Read the PRD carefully and choose the most appropriate layout and screen structure (do NOT force a fixed 3-tab or Sider layout — pick what fits the PRD)
-- Use Ant Design components that match the PRD's domain (Table, Form, Card, Modal, Steps, etc.)
-- Include realistic Korean placeholder data matching the PRD domain
-
-## UX Requirements (apply wherever appropriate given the PRD)
-- If the screen has a list: row click → open detail <Modal> with <Descriptions bordered>
-- If there is a delete action: use <Modal.confirm> → remove from list via useState
-- If there is a form: use <Form layout="vertical"> with validation rules and Korean error messages
-- Loading state: show <Skeleton active> briefly on mount before content appears
-- Empty state: show <Empty description="데이터가 없습니다"> with a CTA button
-- Error state: show <Alert type="error"> when an error occurs
-
-## Code Rules
-- Start with: import React, { useState, useEffect } from 'react';
-- NEVER use const { useState } = React or require() — always use ES module import
-- Export a default function named App
-- Use only React + antd — no Tailwind, no external CSS imports
-- Import from 'antd' and '@ant-design/icons' as needed
+## Environment
+- import React, { useState, useEffect } from 'react'
+- Default export function named App
+- Use only React + antd + @ant-design/icons
+- No Tailwind, no external CSS imports
 - Wrap in <ConfigProvider> for consistent theming
-- All text/labels in Korean
-- The component must run in a sandboxed Sandpack environment
+- Never use const { useState } = React or require()
+- All text in Korean
+- Must run in sandboxed Sandpack environment
 
-Return ONLY the component code, no markdown fences, no explanation.`
+## PRD Interpretation
+
+### Structure Decision
+- Extract screen list from PRD first
+- Choose layout by screen count/relationship:
+  · 1~2 screens → single view + state transition
+  · 3~5 screens → <Tabs> or top nav
+  · hierarchical → <Layout.Sider> + <Breadcrumb>
+- Never force a fixed layout — let the PRD decide
+- Use realistic Korean placeholder data matching PRD domain
+
+### Element Mapping
+  PRD element         →  antd implementation
+  ───────────────────────────────────────────
+  data list           →  <Table> with columns definition
+                         row click → open detail
+  detail view         →  fields ≤5: <Modal> centered
+                                    + <Descriptions bordered>
+                         fields >5: <Drawer> placement="right"
+                                    width={480} or wider
+                                    + <Descriptions bordered>
+  create/edit form    →  <Form layout="vertical">
+                         + validation rules + Korean error messages
+  delete action       →  <Modal.confirm> → remove via useState
+  search/filter       →  <Input.Search> or <Select> above list
+  repeated items      →  show 2~3 instances minimum
+
+### State Coverage (only if PRD implies the state)
+  loading  →  <Skeleton active> briefly on mount
+  empty    →  <Empty description="데이터가 없습니다"> + CTA button
+  error    →  <Alert type="error" showIcon>
+  success  →  <Result status="success">
+
+### Action Labeling
+- [verb + object] format: "주문 생성", "사용자 삭제"
+- Avoid vague labels like "확인", "제출"
+
+## Output Validation
+- PRD screen count = implemented screen count (1:1)
+- PRD required fields = UI fields (no omission)
+- All brackets balanced, no code truncation
+- Return ONLY component code, no markdown fences, no explanation`
 
 interface RequestBody {
   prdText: string

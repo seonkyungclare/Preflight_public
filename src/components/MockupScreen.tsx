@@ -98,7 +98,7 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
           </button>
           {missingScreens.length > 0 && (
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1e293b' }}>
-              <p style={{ fontSize: 11, color: '#475569', marginBottom: 8, marginTop: 0 }}>누락 화면 (미구현)</p>
+              <p style={{ fontSize: 11, color: '#475569', marginBottom: 8, marginTop: 0 }}>명세 보완 필요</p>
               {missingScreens.map((screen, i) => (
                 <div key={i} style={{ fontSize: 12, color: '#d97706', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>⚠</span><span>{screen}</span>
@@ -150,7 +150,7 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
               },
             }}
           >
-            <SandpackLayout style={{ height: '1300px', borderRadius: 0, border: 'none', margin: 0 }}>
+            <SandpackLayout style={{ height: sandpackHeight, borderRadius: 0, border: 'none', margin: 0 }}>
               <SandpackCodeEditor
                 showLineNumbers
                 showInlineErrors

@@ -19,7 +19,7 @@ export default function AnalyzingScreen() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCompletedCount(prev => (prev < STEPS.length - 1 ? prev + 1 : prev))
-    }, 2800)
+    }, 4000)
     return () => clearInterval(interval)
   }, [])
 
@@ -33,6 +33,15 @@ export default function AnalyzingScreen() {
       })
     }, 30)
     return () => clearInterval(timer)
+  }, [completedCount])
+
+  // 마지막 스텝 이후 API 응답 대기 중 72% → 89%까지 천천히 증가
+  useEffect(() => {
+    if (completedCount < STEPS.length - 1) return
+    const creep = setInterval(() => {
+      setProgress(prev => (prev < 89 ? prev + 0.2 : prev))
+    }, 500)
+    return () => clearInterval(creep)
   }, [completedCount])
 
   return (

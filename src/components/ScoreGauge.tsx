@@ -7,8 +7,8 @@ interface ScoreGaugeProps {
 // 점수에 따른 색상 및 라벨 반환
 function getScoreMeta(score: number): { color: string; label: string } {
   if (score >= 80) return { color: '#22c55e', label: '개발 준비 완료' }
-  if (score >= 60) return { color: '#f59e0b', label: '보완 필요' }
-  return { color: '#ef4444', label: '재작성 권장' }
+  if (score >= 60) return { color: '#f59e0b', label: '조금 더 보완해주세요' }
+  return { color: '#ef4444', label: '많이 보완해주세요' }
 }
 
 export default function ScoreGauge({ score }: ScoreGaugeProps) {
