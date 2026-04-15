@@ -22,21 +22,29 @@ const TOGGLE_H = 41
 
 // Sandpack 로딩 중 스켈레톤 오버레이 — useSandpack은 SandpackProvider 내부에서만 사용 가능
 function SandpackContent({ showCode, height }: { showCode: boolean; height: string }) {
-  const { sandpack } = useSandpack()
+  const { listen } = useSandpack()
   const [ready, setReady] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 'initial' → 'running' 전환 시 짧은 딜레이 후 스켈레톤 제거
-  // React 앱은 status가 'running'에서 변하지 않으므로 running 진입 시점을 트리거로 사용
+  // 번들링·평가 사이클이 완전히 끝날 때 전송되는 'done' 메시지로 스켈레톤 제거
+  // status 기반보다 실제 렌더링 완료 시점에 훨씬 가까운 트리거
+  // hi-fi는 antd CSS-in-JS 주입 시간이 추가로 필요하므로 1000ms 버퍼
   useEffect(() => {
-    if (sandpack.status === 'running' || sandpack.status === 'idle') {
-      const t = setTimeout(() => setReady(true), 800)
-      return () => clearTimeout(t)
+    const unsubscribe = listen((msg) => {
+      if (msg.type === 'done') {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(() => setReady(true), 1000)
+      }
+    })
+    return () => {
+      unsubscribe()
+      if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [sandpack.status])
+  }, [listen])
 
-  // 최대 20초 후 강제 제거 (상태 전환이 없는 경우 대비)
+  // 최대 25초 후 강제 제거 (done 메시지가 오지 않는 경우 대비)
   useEffect(() => {
-    const t = setTimeout(() => setReady(true), 20000)
+    const t = setTimeout(() => setReady(true), 25000)
     return () => clearTimeout(t)
   }, [])
 
