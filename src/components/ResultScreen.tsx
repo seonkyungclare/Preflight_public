@@ -182,7 +182,7 @@ export default function ResultScreen({
                   </button>
                 )}
                 <button
-                  onClick={() => setShowMockupModal(true)}
+                  onClick={() => { setShowMockupModal(true); setIsRegenerate(false) }}
                   disabled={mockupGenerating !== null}
                   className="bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-violet-500/30 flex items-center gap-2"
                 >
@@ -190,6 +190,13 @@ export default function ResultScreen({
                     <>
                       <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       {Math.round(mockupProgress)}%
+                    </>
+                  ) : (mockupCodeLowFi || mockupCodeHiFi) ? (
+                    <>
+                      생성된 목업 보기
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M5 12h14M12 5l7 7-7 7" />
+                      </svg>
                     </>
                   ) : (
                     <>
@@ -207,7 +214,7 @@ export default function ResultScreen({
             {showMockupModal && (
               <div
                 className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-                onClick={() => setShowMockupModal(false)}
+                onClick={() => { setShowMockupModal(false); setIsRegenerate(false) }}
               >
                 <div
                   className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4"
@@ -234,7 +241,9 @@ export default function ResultScreen({
                         <p className="text-xs text-slate-400 mt-0.5">그레이스케일 와이어프레임</p>
                       </div>
                       {mockupCodeLowFi && (
-                        <span className="text-xs text-violet-400 font-medium">이미 생성됨 — 바로 열기 →</span>
+                        <span className="text-xs text-violet-400 font-medium">
+                          {isRegenerate ? '다시 만들기 →' : '이미 생성됨 — 바로 열기 →'}
+                        </span>
                       )}
                     </button>
 
@@ -255,13 +264,15 @@ export default function ResultScreen({
                         <p className="text-xs text-slate-400 mt-0.5">Ant Design 디자인 시스템</p>
                       </div>
                       {mockupCodeHiFi && (
-                        <span className="text-xs text-violet-400 font-medium">이미 생성됨 — 바로 열기 →</span>
+                        <span className="text-xs text-violet-400 font-medium">
+                          {isRegenerate ? '다시 만들기 →' : '이미 생성됨 — 바로 열기 →'}
+                        </span>
                       )}
                     </button>
                   </div>
 
                   <button
-                    onClick={() => setShowMockupModal(false)}
+                    onClick={() => { setShowMockupModal(false); setIsRegenerate(false) }}
                     className="mt-4 w-full text-sm text-slate-500 hover:text-slate-300 py-2 transition-colors"
                   >
                     취소

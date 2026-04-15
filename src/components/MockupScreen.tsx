@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   SandpackProvider,
   SandpackLayout,
   SandpackCodeEditor,
   SandpackPreview,
+  useSandpack,
 } from '@codesandbox/sandpack-react'
 import type { AnalysisResult, MockupType } from '@/app/page'
 
@@ -18,12 +19,79 @@ interface MockupScreenProps {
 
 const HEADER_H = 57
 const TOGGLE_H = 41
-const SIDEBAR_W = 224
 
-export default function MockupScreen({ code, analysis, type, onBack }: MockupScreenProps) {
+// Sandpack 로딩 중 스켈레톤 오버레이 — useSandpack은 SandpackProvider 내부에서만 사용 가능
+function SandpackContent({ showCode, height }: { showCode: boolean; height: string }) {
+  const { sandpack } = useSandpack()
+  const [ready, setReady] = useState(false)
+
+  // 'initial' → 'running' 전환 시 짧은 딜레이 후 스켈레톤 제거
+  // React 앱은 status가 'running'에서 변하지 않으므로 running 진입 시점을 트리거로 사용
+  useEffect(() => {
+    if (sandpack.status === 'running' || sandpack.status === 'idle') {
+      const t = setTimeout(() => setReady(true), 800)
+      return () => clearTimeout(t)
+    }
+  }, [sandpack.status])
+
+  // 최대 20초 후 강제 제거 (상태 전환이 없는 경우 대비)
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 20000)
+    return () => clearTimeout(t)
+  }, [])
+
+  const isLoading = !ready
+
+  return (
+    <div style={{ position: 'relative', height }}>
+      <SandpackLayout style={{ height, borderRadius: 0, border: 'none', margin: 0 }}>
+        <SandpackCodeEditor
+          showLineNumbers
+          showInlineErrors
+          style={{ height: '100%', display: showCode ? 'flex' : 'none' }}
+        />
+        <SandpackPreview
+          style={{ height: '100%', display: showCode ? 'none' : 'flex' }}
+          showNavigator={false}
+          showOpenInCodeSandbox={false}
+        />
+      </SandpackLayout>
+
+      {/* 로딩 중 스켈레톤 오버레이 */}
+      {isLoading && !showCode && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: '#f8fafc',
+          padding: '24px 20px',
+          display: 'flex', flexDirection: 'column', gap: 12,
+          zIndex: 10, pointerEvents: 'none',
+        }}>
+          {[
+            { w: '55%', h: 28 },
+            { w: '90%', h: 14 },
+            { w: '70%', h: 14 },
+            { w: '100%', h: 72 },
+            { w: '40%', h: 20 },
+            { w: '85%', h: 14 },
+            { w: '100%', h: 72 },
+            { w: '60%', h: 14 },
+            { w: '100%', h: 72 },
+          ].map((s, i) => (
+            <div key={i} style={{
+              width: s.w, height: s.h,
+              background: '#e2e8f0',
+              borderRadius: 6,
+              animation: `skeleton-pulse 1.5s ease-in-out ${i * 0.08}s infinite`,
+            }} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function MockupScreen({ code, type, onBack }: MockupScreenProps) {
   const [showCode, setShowCode] = useState(false)
-
-  const missingScreens = analysis.missing_for_designers.map((item) => item.screen)
 
   function handleCopyCode() {
     navigator.clipboard.writeText(code).catch(() => {})
@@ -35,7 +103,7 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
   return (
     <>
       {/* 전체 페이지를 뷰포트에 고정 */}
-      <style>{`html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; }`}</style>
+      <style>{`html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; } @keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
 
       <div style={{ position: 'fixed', inset: 0, background: '#0a0e1a', color: 'white', fontFamily: 'sans-serif' }}>
 
@@ -81,36 +149,9 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
           </div>
         </div>
 
-        {/* ── 사이드바 ── */}
-        <div style={{
-          position: 'absolute', top: HEADER_H, left: 0, bottom: 0, width: SIDEBAR_W,
-          borderRight: '1px solid #1e293b', padding: 16, overflowY: 'auto',
-        }}>
-          <p style={{ fontSize: 11, color: '#475569', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, marginTop: 0 }}>
-            화면 목록
-          </p>
-          <button style={{
-            width: '100%', textAlign: 'left', fontSize: 14, padding: '10px 12px',
-            borderRadius: 12, background: 'rgba(139,92,246,0.15)', color: '#c4b5fd',
-            border: '1px solid rgba(109,40,217,0.4)', cursor: 'pointer',
-          }}>
-            생성된 핵심 화면
-          </button>
-          {missingScreens.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1e293b' }}>
-              <p style={{ fontSize: 11, color: '#475569', marginBottom: 8, marginTop: 0 }}>명세 보완 필요</p>
-              {missingScreens.map((screen, i) => (
-                <div key={i} style={{ fontSize: 12, color: '#d97706', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>⚠</span><span>{screen}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* ── 토글바 ── */}
         <div style={{
-          position: 'absolute', top: HEADER_H, left: SIDEBAR_W, right: 0, height: TOGGLE_H,
+          position: 'absolute', top: HEADER_H, left: 0, right: 0, height: TOGGLE_H,
           borderBottom: '1px solid #1e293b',
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 16px',
         }}>
@@ -132,14 +173,16 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
         <div style={{
           position: 'absolute',
           top: HEADER_H + TOGGLE_H,
-          left: SIDEBAR_W,
+          left: 0,
           right: 0,
           bottom: 0,
           height: sandpackHeight,
         }}>
           <SandpackProvider
             template="react"
-            files={{ '/App.js': code }}
+            files={{
+              '/App.js': code,
+            }}
             theme="dark"
             customSetup={{
               dependencies: {
@@ -150,18 +193,7 @@ export default function MockupScreen({ code, analysis, type, onBack }: MockupScr
               },
             }}
           >
-            <SandpackLayout style={{ height: sandpackHeight, borderRadius: 0, border: 'none', margin: 0 }}>
-              <SandpackCodeEditor
-                showLineNumbers
-                showInlineErrors
-                style={{ height: '100%', display: showCode ? 'flex' : 'none' }}
-              />
-              <SandpackPreview
-                style={{ height: '100%', display: showCode ? 'none' : 'flex' }}
-                showNavigator={false}
-                showOpenInCodeSandbox={false}
-              />
-            </SandpackLayout>
+            <SandpackContent showCode={showCode} height={sandpackHeight} />
           </SandpackProvider>
         </div>
 

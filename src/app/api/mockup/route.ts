@@ -18,6 +18,28 @@ button: outlined rect + text label
 style: no shadow, gradient, animation, color accent
 font: system sans-serif only
 
+## Behavior
+- Left sidebar (LNB) with sitemap-style page list,
+  grouped by feature area.
+  Example:
+    주문 관리
+      ├ 목록 조회
+      ├ 상세 보기
+      ├ 주문 생성
+      └ 주문 수정
+    사용자 관리
+      ├ 목록 조회
+      └ ...
+- Clicking a page name in LNB shows that screen
+  in the main content area (useState for active page only)
+- Within each screen, NO interactivity —
+  buttons and inputs are visual only, no onClick/onChange
+- Data is static placeholder text, not managed by useState
+- Show all relevant states (loading/empty/error/success)
+  stacked vertically within each screen
+- Label elements by type: [텍스트 입력], [데이터 테이블],
+  [이미지 영역], [드롭다운], [체크박스
+
 ## PRD Interpretation
 
 ### Structure Decision
@@ -79,11 +101,40 @@ const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity U
 - import React, { useState, useEffect } from 'react'
 - Default export function named App
 - Use only React + antd + @ant-design/icons
-- No Tailwind, no external CSS imports
-- Wrap in <ConfigProvider> for consistent theming
+- No Tailwind, no external CSS imports, no @ant-design/cssinjs import
 - Never use const { useState } = React or require()
 - All text in Korean
 - Must run in sandboxed Sandpack environment
+
+## Theme
+- Wrap root in <ConfigProvider> for consistent theming (no custom theme props — use antd defaults)
+- Do NOT use theme.darkAlgorithm, theme.compactAlgorithm, or any other algorithm
+- Do NOT add any inline style overrides on Button or other components
+
+## Behavior
+- <Layout> with <Layout.Sider> as LNB using <Menu>
+  grouped by feature area with sitemap-style structure.
+  Example:
+    주문 관리
+      ├ 목록 조회
+      ├ 상세 보기
+      ├ 주문 생성
+      └ 주문 수정
+    사용자 관리
+      ├ 목록 조회
+      └ ...
+- Clicking a menu item in LNB shows that screen
+  in <Layout.Content> (useState for active page)
+- Full interactivity within each screen —
+  clicks trigger real state changes
+- CRUD operations work via useState:
+  add → item appears in list,
+  edit → item updates in place,
+  delete → item removed with confirmation
+- States transition naturally:
+  mount → Skeleton → data loaded → user interaction
+- Use domain-specific realistic Korean placeholder data
+  (names, dates, amounts, statuses matching PRD context)
 
 ## PRD Interpretation
 
@@ -146,6 +197,12 @@ function extractCode(output: string): string | null {
   if (startIdx !== -1) return lines.slice(startIdx).join('\n').trim()
 
   return null
+}
+
+// React import가 누락된 경우 자동 보완
+function ensureReactImport(code: string): string {
+  if (code.includes("from 'react'") || code.includes('from "react"')) return code
+  return "import React, { useState, useEffect } from 'react';\n" + code
 }
 
 function getAnthropicClient(): Anthropic {
@@ -240,11 +297,12 @@ export async function POST(req: Request): Promise<Response> {
 
     const output = extractText(result.content)
 
-    const code = extractCode(output)
-    if (!code) {
+    const rawCode = extractCode(output)
+    if (!rawCode) {
       console.error('[mockup] 코드 추출 실패. 원본 출력:', output.slice(0, 200))
       return Response.json({ error: '응답에서 코드를 찾지 못했습니다' }, { status: 500 })
     }
+    const code = ensureReactImport(rawCode)
 
     return Response.json({ code })
   } catch (error) {

@@ -61,7 +61,7 @@ export default function AnalyzingScreen() {
       <div className="w-full max-w-sm mb-8">
         <div className="flex justify-between items-center mb-2">
           <span className="text-xs text-slate-500">진행률</span>
-          <span className="text-sm font-semibold text-violet-400">{progress}%</span>
+          <span className="text-sm font-semibold text-violet-400">{Math.round(progress)}%</span>
         </div>
         <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
           <div

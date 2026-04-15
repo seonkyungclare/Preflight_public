@@ -64,7 +64,7 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null)
 
   const [state, setState] = useState<AppState>({
-    screen: 'upload',
+    screen: 'result',
     fileName: 'test-prd.pdf',
     prdText: '테스트 PRD',
     mockupCodeLowFi: null,
@@ -207,10 +207,9 @@ export default function Home() {
     sessionStorage.setItem('preflight_mockup', JSON.stringify({ code, analysis, type }))
     const newWindow = window.open('/mockup', '_blank')
     if (!newWindow) {
-      // 팝업이 차단된 경우
-      setState(prev => ({ 
-        ...prev, 
-        error: '팝업이 차단되었습니다. 브라우저 팝업 차단을 해제해주세요.' 
+      setState(prev => ({
+        ...prev,
+        error: '팝업이 차단되었습니다. 브라우저 팝업 차단을 해제해주세요.',
       }))
     }
   }
@@ -235,6 +234,7 @@ export default function Home() {
           onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null }))}
         />
       )}
+
     </>
   )
 }
