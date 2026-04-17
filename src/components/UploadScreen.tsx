@@ -72,7 +72,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
       </div>
 
       <h1 className="text-3xl font-bold text-center mb-4">
-        디자인 진행 전, 먼저 확인해 보세요
+        디자인 전, 목업으로 먼저 확인해 보세요
       </h1>
       <p className="text-muted-foreground text-center mb-10 text-sm">
         PDF나 MD 파일로 PRD를 올리면, AI가 UI를 구현하기에 내용이 충분한지 자동으로 확인해줍니다
@@ -100,7 +100,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
 
           {file ? (
             <>
-              <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-muted-foreground">
+              <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-primary">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                   <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
@@ -121,7 +121,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
             </>
           ) : (
             <>
-              <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-muted-foreground">
+              <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-primary">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
                   <path d="M12 12v9" />
@@ -169,10 +169,16 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
 
       <p className="mt-12 text-xs text-muted-foreground">
         문의: MSSnP Product Design/MSSnP Commerce Core Design{' '}
-        <a href="https://musinsa.slack.com/team/U08KNDY6HJ5" target="_blank" rel="noreferrer" className="hover:text-foreground underline">
+        <a href="https://musinsa.slack.com/team/U08KNDY6HJ5" target="_blank" rel="noreferrer" className="text-foreground/70 hover:text-foreground underline">
           김선경
         </a>
       </p>
+
+      {process.env.NEXT_PUBLIC_BUILD_TIME && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          배포일: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+        </p>
+      )}
     </div>
   )
 }
