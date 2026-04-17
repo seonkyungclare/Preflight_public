@@ -96,7 +96,7 @@ font: system sans-serif only
 
 // Hi-fi: Ant Design 디자인 시스템 적용 — 구조는 PRD 기반으로 자유롭게
 const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity UI prototype using Ant Design.
-
+ 
 ## Environment
 - import React, { useState, useEffect } from 'react'
 - Default export function named App
@@ -105,12 +105,12 @@ const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity U
 - Never use const { useState } = React or require()
 - All text in Korean
 - Must run in sandboxed Sandpack environment
-
+ 
 ## Theme
 - Wrap root in <ConfigProvider> for consistent theming (no custom theme props — use antd defaults)
 - Do NOT use theme.darkAlgorithm, theme.compactAlgorithm, or any other algorithm
 - Do NOT add any inline style overrides on Button or other components
-
+ 
 ## Behavior
 - <Layout> with <Layout.Sider> as LNB using <Menu>
   grouped by feature area with sitemap-style structure.
@@ -135,9 +135,9 @@ const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity U
   mount → Skeleton → data loaded → user interaction
 - Use domain-specific realistic Korean placeholder data
   (names, dates, amounts, statuses matching PRD context)
-
+ 
 ## PRD Interpretation
-
+ 
 ### Structure Decision
 - Extract screen list from PRD first
 - Choose layout by screen count/relationship:
@@ -146,7 +146,16 @@ const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity U
   · hierarchical → <Layout.Sider> + <Breadcrumb>
 - Never force a fixed layout — let the PRD decide
 - Use realistic Korean placeholder data matching PRD domain
-
+ 
+### User Story Interpretation
+- The PRD contains a user story table with a "상세 설명 (Detailed Description)" column
+- Every entry in that column MUST be fully reflected in the UI — no entry may be
+  skipped or partially implemented
+- Treat each detailed description as a binding functional requirement:
+  map it to a concrete UI element, interaction, or visible state
+- After implementation, verify each row: "Is this detailed description
+  represented somewhere in the UI?" If not → add it before returning output
+ 
 ### Element Mapping
   PRD element         →  antd implementation
   ───────────────────────────────────────────
@@ -162,20 +171,40 @@ const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity U
   delete action       →  <Modal.confirm> → remove via useState
   search/filter       →  <Input.Search> or <Select> above list
   repeated items      →  show 2~3 instances minimum
-
+ 
 ### State Coverage (only if PRD implies the state)
   loading  →  <Skeleton active> briefly on mount
   empty    →  <Empty description="데이터가 없습니다"> + CTA button
   error    →  <Alert type="error" showIcon>
   success  →  <Result status="success">
-
+ 
 ### Action Labeling
 - [verb + object] format: "주문 생성", "사용자 삭제"
 - Avoid vague labels like "확인", "제출"
-
+ 
+## Note Panel (bottom-right, fixed position)
+- Render a fixed panel at the bottom-right corner of the viewport at all times
+- Style: fixed position, z-index high enough to stay above content,
+  max-width 320px, semi-transparent background, subtle border
+- Title row: "📋 구현 누락 항목" (use <Typography.Title level={5}>) + close button (<Button size="small" type="text" icon={<CloseOutlined />}>) aligned to the right of the title using flexbox (display:'flex', justifyContent:'space-between', alignItems:'center')
+- Clicking the close button sets a useState flag (e.g. noteVisible) to false, hiding the entire panel
+- When the panel is hidden, render a small floating button at the bottom-right (e.g. <Button shape="circle" icon={<InfoCircleOutlined />}>) that toggles noteVisible back to true
+- Content rules:
+  · If ALL PRD requirements are implemented → show
+    <Empty description="누락된 항목 없음" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+  · If ANY requirement was omitted → render a list where each item contains:
+      - 누락 항목명 (bold)
+      - 누락 이유 (one concise sentence explaining why it was omitted,
+        e.g. technical constraint, ambiguity in PRD, out of scope)
+  · Use <Alert type="warning"> per omitted item, with the item name as
+    the message and the reason as the description
+- This panel is part of the rendered component output — not a comment or
+  separate file. It must always be present in the UI.
+ 
 ## Output Validation
 - PRD screen count = implemented screen count (1:1)
 - PRD required fields = UI fields (no omission)
+- Note panel always rendered (even if empty)
 - All brackets balanced, no code truncation
 - Return ONLY component code, no markdown fences, no explanation`
 
@@ -285,7 +314,7 @@ export async function POST(req: Request): Promise<Response> {
   const { prdText, analysisText, type = 'lowfi' } = body as RequestBody
   const systemPrompt = type === 'hifi' ? HIFI_PROMPT : LOWFI_PROMPT
 
-  const fullPrompt = `${systemPrompt}\n\nPRD:\n${prdText}\n\n분석 결과:\n${analysisText}\n\nPRD에서 가장 핵심적인 화면 하나만 React 컴포넌트로 구현해줘. 코드는 400줄 이내로 작성하고, 모든 괄호와 중괄호가 완전히 닫힌 문법적으로 완전한 코드를 작성해.`
+  const fullPrompt = `${systemPrompt}\n\nPRD:\n${prdText}\n\n분석 결과:\n${analysisText}\n\nPRD에 정의된 모든 화면을 React 컴포넌트로 구현해줘. 모든 괄호와 중괄호가 완전히 닫힌 문법적으로 완전한 코드를 작성해.`
 
   try {
     const anthropic = getAnthropicClient()

@@ -80,7 +80,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
         <span className="text-xs text-slate-500 mt-1">by Musinsa</span>
       </div>
 
-      <h1 className="text-3xl font-bold text-white text-center mb-2">
+      <h1 className="text-3xl font-bold text-white text-center mb-4">
         디자인 진행 전, 먼저 확인해 보세요
       </h1>
       <p className="text-slate-400 text-center mb-10 text-sm">
@@ -163,13 +163,13 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
         </button>
       )}
 
-      <div className="mt-8 flex gap-6 text-xs text-slate-600">
+      <div className="mt-8 flex gap-6 text-xs text-slate-400">
         <span>✓ 화면 인벤토리 검증</span>
         <span>✓ 엣지케이스 탐지</span>
         <span>✓ 목업 자동 생성</span>
       </div>
 
-      <p className="mt-12 text-xs text-slate-700">
+      <p className="mt-12 text-xs text-slate-500">
         문의: MSSnP Product Design/MSSnP Commerce Core Design{' '}
         <a href="https://musinsa.slack.com/team/U08KNDY6HJ5" target="_blank" rel="noreferrer" className="hover:text-slate-500 underline">
           김선경
