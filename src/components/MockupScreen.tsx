@@ -9,9 +9,10 @@ import {
   useSandpack,
 } from '@codesandbox/sandpack-react'
 import type { AnalysisResult, MockupType } from '@/app/page'
+import { Button } from '@/components/ui/button'
 
 interface MockupScreenProps {
-  code: string
+  files: Record<string, string>
   analysis: AnalysisResult
   type: MockupType
   onBack: () => void
@@ -20,15 +21,11 @@ interface MockupScreenProps {
 const HEADER_H = 57
 const TOGGLE_H = 41
 
-// Sandpack 로딩 중 스켈레톤 오버레이 — useSandpack은 SandpackProvider 내부에서만 사용 가능
 function SandpackContent({ showCode, height }: { showCode: boolean; height: string }) {
   const { listen } = useSandpack()
   const [ready, setReady] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 번들링·평가 사이클이 완전히 끝날 때 전송되는 'done' 메시지로 스켈레톤 제거
-  // status 기반보다 실제 렌더링 완료 시점에 훨씬 가까운 트리거
-  // hi-fi는 antd CSS-in-JS 주입 시간이 추가로 필요하므로 1000ms 버퍼
   useEffect(() => {
     const unsubscribe = listen((msg) => {
       if (msg.type === 'done') {
@@ -42,13 +39,10 @@ function SandpackContent({ showCode, height }: { showCode: boolean; height: stri
     }
   }, [listen])
 
-  // 최대 25초 후 강제 제거 (done 메시지가 오지 않는 경우 대비)
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 25000)
     return () => clearTimeout(t)
   }, [])
-
-  const isLoading = !ready
 
   return (
     <div style={{ position: 'relative', height }}>
@@ -65,8 +59,7 @@ function SandpackContent({ showCode, height }: { showCode: boolean; height: stri
         />
       </SandpackLayout>
 
-      {/* 로딩 중 스켈레톤 오버레이 */}
-      {isLoading && !showCode && (
+      {!ready && !showCode && (
         <div style={{
           position: 'absolute', inset: 0,
           background: '#f8fafc',
@@ -75,20 +68,12 @@ function SandpackContent({ showCode, height }: { showCode: boolean; height: stri
           zIndex: 10, pointerEvents: 'none',
         }}>
           {[
-            { w: '55%', h: 28 },
-            { w: '90%', h: 14 },
-            { w: '70%', h: 14 },
-            { w: '100%', h: 72 },
-            { w: '40%', h: 20 },
-            { w: '85%', h: 14 },
-            { w: '100%', h: 72 },
-            { w: '60%', h: 14 },
-            { w: '100%', h: 72 },
+            { w: '55%', h: 28 }, { w: '90%', h: 14 }, { w: '70%', h: 14 },
+            { w: '100%', h: 72 }, { w: '40%', h: 20 }, { w: '85%', h: 14 },
+            { w: '100%', h: 72 }, { w: '60%', h: 14 }, { w: '100%', h: 72 },
           ].map((s, i) => (
             <div key={i} style={{
-              width: s.w, height: s.h,
-              background: '#e2e8f0',
-              borderRadius: 6,
+              width: s.w, height: s.h, background: '#e2e8f0', borderRadius: 6,
               animation: `skeleton-pulse 1.5s ease-in-out ${i * 0.08}s infinite`,
             }} />
           ))}
@@ -98,105 +83,80 @@ function SandpackContent({ showCode, height }: { showCode: boolean; height: stri
   )
 }
 
-export default function MockupScreen({ code, type, onBack }: MockupScreenProps) {
+export default function MockupScreen({ files, type, onBack }: MockupScreenProps) {
   const [showCode, setShowCode] = useState(false)
 
   function handleCopyCode() {
-    navigator.clipboard.writeText(code).catch(() => {})
+    navigator.clipboard.writeText(files['/App.js'] ?? '').catch(() => {})
   }
 
-  // Sandpack 높이: 뷰포트에서 헤더 + 토글바를 뺀 값
   const sandpackHeight = `calc(100vh - ${HEADER_H + TOGGLE_H}px)`
 
   return (
     <>
-      {/* 전체 페이지를 뷰포트에 고정 */}
       <style>{`html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; } @keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
 
-      <div style={{ position: 'fixed', inset: 0, background: '#0a0e1a', color: 'white', fontFamily: 'sans-serif' }}>
+      <div className="fixed inset-0 bg-background text-foreground font-sans">
 
-        {/* ── 헤더 ── */}
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: HEADER_H,
-          borderBottom: '1px solid #1e293b',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 24px', flexShrink: 0,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                <path d="M9 12l2 2 4-4" />
-                <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
-              </svg>
-            </div>
-            <span style={{ fontWeight: 700, fontSize: 18 }}>Preflight</span>
-            <span style={{ color: '#475569' }}>·</span>
-            <span style={{ fontSize: 14, color: '#94a3b8' }}>목업 미리보기</span>
+        {/* 헤더 */}
+        <div
+          className="absolute left-0 right-0 top-0 border-b flex items-center justify-between px-6"
+          style={{ height: HEADER_H }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-lg">Preflight</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-sm text-muted-foreground">목업 미리보기</span>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handleCopyCode} style={{
-              fontSize: 14, color: '#94a3b8', border: '1px solid #334155',
-              background: 'transparent', padding: '8px 16px', borderRadius: 8,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleCopyCode}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-1.5">
                 <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
               코드 복사
-            </button>
-            <button onClick={onBack} style={{
-              fontSize: 14, color: '#a78bfa', border: '1px solid #4c1d95',
-              background: 'transparent', padding: '8px 16px', borderRadius: 8, cursor: 'pointer',
-            }}>
+            </Button>
+            <Button variant="outline" size="sm" onClick={onBack}>
               ✕ 닫기
-            </button>
+            </Button>
           </div>
         </div>
 
-        {/* ── 토글바 ── */}
-        <div style={{
-          position: 'absolute', top: HEADER_H, left: 0, right: 0, height: TOGGLE_H,
-          borderBottom: '1px solid #1e293b',
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 16px',
-        }}>
-          <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #334155' }}>
+        {/* 토글바 */}
+        <div
+          className="absolute left-0 right-0 border-b flex items-center justify-end px-4"
+          style={{ top: HEADER_H, height: TOGGLE_H }}
+        >
+          <div className="flex rounded-md overflow-hidden border">
             {[{ id: false, label: '미리보기' }, { id: true, label: '코드' }].map(({ id, label }) => (
-              <button key={String(id)} onClick={() => setShowCode(id)} style={{
-                padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-                background: showCode === id ? '#334155' : '#0f172a',
-                color: showCode === id ? 'white' : '#64748b',
-                border: 'none',
-              }}>
+              <button
+                key={String(id)}
+                onClick={() => setShowCode(id)}
+                className={[
+                  'px-3 py-1.5 text-xs cursor-pointer transition-colors',
+                  showCode === id
+                    ? 'bg-secondary text-foreground'
+                    : 'bg-background text-muted-foreground hover:text-foreground',
+                ].join(' ')}
+              >
                 {label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* ── Sandpack ── */}
-        <div style={{
-          position: 'absolute',
-          top: HEADER_H + TOGGLE_H,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: sandpackHeight,
-        }}>
+        {/* Sandpack */}
+        <div
+          className="absolute left-0 right-0 bottom-0"
+          style={{ top: HEADER_H + TOGGLE_H, height: sandpackHeight }}
+        >
           <SandpackProvider
             template="react"
-            files={{
-              '/App.js': code,
-            }}
+            files={files}
             theme="dark"
             customSetup={{
               dependencies: {
                 react: '^18',
                 'react-dom': '^18',
-                // hi-fi는 antd 의존성 추가
                 ...(type === 'hifi' && { antd: '^5', '@ant-design/icons': '^5' }),
               },
             }}

@@ -52,8 +52,8 @@ interface AppState {
   fileName: string
   prdText: string
   analysis: AnalysisResult | null
-  mockupCodeLowFi: string | null
-  mockupCodeHiFi: string | null
+  mockupFilesLowFi: Record<string, string> | null
+  mockupFilesHiFi: Record<string, string> | null
   error: string | null
   mockupGenerating: MockupType | null  // 생성 중인 타입, null이면 미생성 중
 }
@@ -67,8 +67,8 @@ export default function Home() {
     screen: 'upload',
     fileName: '',
     prdText: '',
-    mockupCodeLowFi: null,
-    mockupCodeHiFi: null,
+    mockupFilesLowFi: null,
+    mockupFilesHiFi: null,
     error: null,
     mockupGenerating: null,
     analysis: null,
@@ -82,8 +82,8 @@ export default function Home() {
       fileName,
       prdText,
       error: null,
-      mockupCodeLowFi: null,
-      mockupCodeHiFi: null,
+      mockupFilesLowFi: null,
+      mockupFilesHiFi: null,
     }))
 
     try {
@@ -119,7 +119,7 @@ export default function Home() {
   async function handleGenerateMockup(type: MockupType, regenerate = false) {
     if (!state.analysis) return
 
-    const cached = type === 'lowfi' ? state.mockupCodeLowFi : state.mockupCodeHiFi
+    const cached = type === 'lowfi' ? state.mockupFilesLowFi : state.mockupFilesHiFi
     if (cached && !regenerate) {
       openMockupTab(cached, state.analysis, type)
       return
@@ -143,14 +143,14 @@ export default function Home() {
 
       if (!res.ok) throw new Error('목업 생성 실패')
 
-      const data = await res.json() as { code: string }
+      const data = await res.json() as { files: Record<string, string> }
       setState(prev => ({
         ...prev,
         mockupGenerating: null,
-        mockupCodeLowFi: type === 'lowfi' ? data.code : prev.mockupCodeLowFi,
-        mockupCodeHiFi: type === 'hifi' ? data.code : prev.mockupCodeHiFi,
+        mockupFilesLowFi: type === 'lowfi' ? data.files : prev.mockupFilesLowFi,
+        mockupFilesHiFi: type === 'hifi' ? data.files : prev.mockupFilesHiFi,
       }))
-      openMockupTab(data.code, state.analysis, type)
+      openMockupTab(data.files, state.analysis, type)
     } catch (e) {
       // 취소한 경우 에러 표시 없이 조용히 종료
       if ((e as Error).name === 'AbortError') {
@@ -169,8 +169,8 @@ export default function Home() {
   }
 
   // sessionStorage에 목업 데이터 저장 후 새 탭 오픈
-  function openMockupTab(code: string, analysis: AnalysisResult, type: MockupType) {
-    sessionStorage.setItem('preflight_mockup', JSON.stringify({ code, analysis, type }))
+  function openMockupTab(files: Record<string, string>, analysis: AnalysisResult, type: MockupType) {
+    sessionStorage.setItem('preflight_mockup', JSON.stringify({ files, analysis, type }))
     const newWindow = window.open('/mockup', '_blank')
     if (!newWindow) {
       setState(prev => ({
@@ -192,8 +192,8 @@ export default function Home() {
         <ResultScreen
           fileName={state.fileName}
           result={state.analysis}
-          mockupCodeLowFi={state.mockupCodeLowFi}
-          mockupCodeHiFi={state.mockupCodeHiFi}
+          hasMockupLowFi={!!state.mockupFilesLowFi}
+          hasMockupHiFi={!!state.mockupFilesHiFi}
           onGenerateMockup={handleGenerateMockup}
           onCancelMockup={handleCancelMockup}
           mockupGenerating={state.mockupGenerating}

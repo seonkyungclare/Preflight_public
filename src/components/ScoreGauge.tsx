@@ -25,14 +25,14 @@ export default function ScoreGauge({ score }: ScoreGaugeProps) {
             cx="60" cy="60" r="54"
             fill="none"
             stroke="#1e293b"
-            strokeWidth="10"
+            strokeWidth="6"
           />
           {/* 진행 원 */}
           <circle
             cx="60" cy="60" r="54"
             fill="none"
             stroke={color}
-            strokeWidth="10"
+            strokeWidth="6"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             strokeLinecap="round"

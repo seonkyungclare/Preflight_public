@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Geist } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: 'PRD Simulator',
@@ -16,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={cn("font-sans", geist.variable)}>
-      <body className="bg-[#0a0e1a] text-white min-h-screen antialiased">
+    <html lang="ko" className={cn("dark font-sans", inter.variable)}>
+      <body className="min-h-screen antialiased">
         {children}
       </body>
     </html>

@@ -5,7 +5,7 @@ import MockupScreen from '@/components/MockupScreen'
 import type { AnalysisResult, MockupType } from '@/app/page'
 
 interface MockupData {
-  code: string
+  files: Record<string, string>
   analysis: AnalysisResult
   type: MockupType
 }
@@ -43,7 +43,7 @@ export default function MockupPage() {
 
   return (
     <MockupScreen
-      code={data.code}
+      files={data.files}
       analysis={data.analysis}
       type={data.type ?? 'lowfi'}
       onBack={() => window.close()}
