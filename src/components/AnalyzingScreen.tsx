@@ -44,7 +44,7 @@ export default function AnalyzingScreen() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6">
       <h2 className="text-xl font-bold mb-2">PRD 분석 중...</h2>
-      <p className="text-muted-foreground text-sm mb-6">잠시만 기다려주세요. 보통 15~30초 소요됩니다.</p>
+      <p className="text-muted-foreground text-sm mb-6">잠시만 기다려주세요. 보통 1분~3분가량 소요됩니다.</p>
 
       <div className="w-full max-w-sm mb-8">
         <div className="flex justify-between items-center mb-2">

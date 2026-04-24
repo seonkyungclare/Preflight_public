@@ -1,9 +1,5 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Inter } from "next/font/google";
-import { cn } from "@/lib/utils";
-
-const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: 'PRD Simulator',
@@ -16,7 +12,10 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={cn("dark font-sans", inter.variable)}>
+    <html lang="ko" className="dark font-sans">
+      <head>
+        <link href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css" rel="stylesheet" />
+      </head>
       <body className="min-h-screen antialiased">
         {children}
       </body>

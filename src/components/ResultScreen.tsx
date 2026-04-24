@@ -20,30 +20,140 @@ interface ResultScreenProps {
   onReupload: () => void
 }
 
-function parseTag(q: string): { tag: string | null; variant: 'default' | 'secondary' | 'outline'; rest: string } {
-  const match = q.match(/^\[([^\]]+)\](.*)/)
-  if (!match) return { tag: null, variant: 'default', rest: q }
-  const tag = match[1]
-  const variants: Record<string, 'default' | 'secondary' | 'outline'> = {
-    '디자인': 'default',
-    '개발': 'secondary',
-    '비즈니스': 'outline',
-  }
-  return { tag, variant: variants[tag] ?? 'secondary', rest: match[2].trim() }
+// ============================================================================
+// v1/v2 호환 헬퍼
+// ----------------------------------------------------------------------------
+// v1: critical_questions[i]는 문자열 — "[개발] ... [A] ... [B] ..."
+// v2: critical_questions[i]는 객체 — {tag, question, format, options, impact, blocks}
+// ============================================================================
+
+type TagVariant = 'default' | 'secondary' | 'outline'
+
+const TAG_VARIANTS: Record<string, TagVariant> = {
+  '디자인': 'default',
+  '개발': 'secondary',
+  '비즈니스': 'outline',
+  'UX정책': 'outline',
 }
 
+// 태그 문자열에서 대괄호 제거: "[개발]" -> "개발", "개발" -> "개발"
+function stripBrackets(tag: string): string {
+  const m = tag.match(/^\[([^\]]+)\]$/)
+  return m ? m[1] : tag
+}
+
+// v1 문자열 파싱 (기존 로직 유지)
+function parseTagFromString(q: string): { tag: string | null; variant: TagVariant; rest: string } {
+  const match = q.match(/^\[([^\]]+)\](.*)/)
+  if (!match) return { tag: null, variant: 'secondary', rest: q }
+  const tag = match[1]
+  return { tag, variant: TAG_VARIANTS[tag] ?? 'secondary', rest: match[2].trim() }
+}
+
+// v2 객체 대응 — 추후 렌더링에서 활용
+interface QuestionV2 {
+  tag: string
+  question: string
+  format?: 'binary' | 'multiple' | 'open'
+  options?: string[]
+  impact?: string
+  blocks?: string[]
+}
+
+// v1 문자열 / v2 객체 모두 받을 수 있게 판별
+function isQuestionV2(q: unknown): q is QuestionV2 {
+  return typeof q === 'object' && q !== null && 'question' in q
+}
+
+// ============================================================================
+// CRITERIA_LABELS: v1·v2 키를 모두 지원
+// ============================================================================
 const CRITERIA_LABELS: Record<string, string> = {
+  // v1
   화면_인벤토리: '화면 인벤토리',
   데이터_상태: '데이터 상태',
   엣지케이스: '엣지케이스',
   인터랙션_로직: '인터랙션 로직',
   CTA_계층: 'CTA 계층',
+  // v2
+  구조_플로우: '구조·플로우 완결성',
+  상태_피드백: '상태·피드백',
+  에러_예방_복구: '에러 예방·복구',
+  인터랙션_관례: '인터랙션·관례 일관성',
+  정보_위계: '정보 위계·의사결정 부하',
+  행동_설계: '행동 설계 (Fogg)',
 }
 
 function criterionColor(score: number) {
   if (score >= 8) return { text: 'text-green-600', hex: '#22c55e' }
   if (score >= 5) return { text: 'text-amber-500', hex: '#f59e0b' }
   return { text: 'text-red-500', hex: '#ef4444' }
+}
+
+// ============================================================================
+// criteria notes 정규화: v1 문자열 / v2 객체 모두 요약 텍스트로 변환
+// ============================================================================
+function extractNotesText(notes: unknown): string {
+  if (typeof notes === 'string') return notes
+  if (typeof notes === 'object' && notes !== null) {
+    const n = notes as {
+      evidence?: string
+      missing?: string[]
+      applied_principle?: string
+    }
+    const parts: string[] = []
+    if (n.evidence) parts.push(n.evidence)
+    if (n.missing && n.missing.length > 0) {
+      parts.push(`누락: ${n.missing.join(', ')}`)
+    }
+    if (n.applied_principle) parts.push(`적용 원칙: ${n.applied_principle}`)
+    return parts.join(' · ')
+  }
+  return ''
+}
+
+// v2 severity 뱃지 스타일
+function severityBadge(severity?: number): { variant: TagVariant; label: string } | null {
+  if (severity === undefined || severity === null) return null
+  const map: Record<number, { variant: TagVariant; label: string }> = {
+    1: { variant: 'outline', label: 'Cosmetic' },
+    2: { variant: 'outline', label: 'Minor' },
+    3: { variant: 'secondary', label: 'Major' },
+    4: { variant: 'default', label: 'Catastrophic' },
+  }
+  return map[severity] ?? null
+}
+
+// ============================================================================
+// ux_recommendations 정규화: v1 문자열 / v2 객체 모두 렌더링 가능한 형태로 변환
+// ============================================================================
+interface NormalizedRec {
+  text: string
+  principle?: string
+  perspective?: string
+  effort?: string
+  expected_impact?: string
+}
+
+function normalizeRec(rec: unknown): NormalizedRec {
+  if (typeof rec === 'string') return { text: rec }
+  if (typeof rec === 'object' && rec !== null) {
+    const r = rec as {
+      recommendation?: string
+      principle?: string
+      perspective?: string
+      effort?: string
+      expected_impact?: string
+    }
+    return {
+      text: r.recommendation ?? '',
+      principle: r.principle,
+      perspective: r.perspective,
+      effort: r.effort,
+      expected_impact: r.expected_impact,
+    }
+  }
+  return { text: String(rec) }
 }
 
 export default function ResultScreen({
@@ -78,8 +188,9 @@ export default function ResultScreen({
 
   const devItems: DevItem[] = result.missing_for_developers ?? []
 
+  // v2의 notes는 객체일 수 있음 — unknown으로 받고 렌더링 시 분기
   const criteriaEntries = Object.entries(result.criteria) as Array<
-    [string, { score: number; notes: string }]
+    [string, { score: number | null; notes?: unknown; evidence?: string; missing?: string[]; applied_principle?: string }]
   >
 
   return (
@@ -206,10 +317,21 @@ export default function ResultScreen({
             </div>
 
             <div>
-              <p className="text-sm text-muted-foreground mb-4">5가지 검증 기준별 상세</p>
+              <p className="text-sm text-muted-foreground mb-4">검증 기준별 상세</p>
               <div className="space-y-3">
                 {criteriaEntries.map(([key, val]) => {
+                  // v2에서 Fogg 차원은 조건부로 score가 null일 수 있음
+                  if (val.score === null || val.score === undefined) return null
+
                   const { text, hex } = criterionColor(val.score)
+                  const notesText = extractNotesText(val.notes ?? val)
+                  // v2 전용 필드 직접 활용 (있을 때만)
+                  const v2Notes = typeof val.notes === 'object' && val.notes !== null ? val.notes as {
+                    evidence?: string
+                    missing?: string[]
+                    applied_principle?: string
+                  } : null
+
                   return (
                     <Card key={key}>
                       <CardContent className="py-4 px-4 space-y-2">
@@ -220,7 +342,18 @@ export default function ResultScreen({
                         <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                           <div className="h-full rounded-full transition-all" style={{ width: `${val.score * 10}%`, backgroundColor: hex }} />
                         </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">{val.notes}</p>
+                        {/* v2: evidence/missing/applied_principle을 구조화해서 표시. v1: 기존 notes 문자열 */}
+                        {v2Notes ? (
+                          <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
+                            {v2Notes.evidence && <p><span className="font-medium">근거:</span> {v2Notes.evidence}</p>}
+                            {v2Notes.missing && v2Notes.missing.length > 0 && (
+                              <p><span className="font-medium">누락:</span> {v2Notes.missing.join(', ')}</p>
+                            )}
+                            {v2Notes.applied_principle && <p className="text-[10px] opacity-70">원칙: {v2Notes.applied_principle}</p>}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground leading-relaxed">{notesText}</p>
+                        )}
                       </CardContent>
                     </Card>
                   )
@@ -234,25 +367,43 @@ export default function ResultScreen({
             <p className="text-sm text-muted-foreground mb-4">
               디자이너가 작업을 시작하기 전에 확인이 필요한 항목들
             </p>
-            {result.missing_for_designers.map((item: MissingItem, i: number) => (
-              <Card key={i} className="border-amber-800/40">
-                <CardContent className="pt-5 px-5 pb-5">
-                  <div className="mb-3">
-                    <Badge variant="outline" className="text-amber-400 border-amber-400/30">{item.screen}</Badge>
-                  </div>
-                  <p className="text-sm mb-3">
-                    <span className="text-amber-400 font-medium">문제: </span>
-                    {item.issue}
-                  </p>
-                  <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
-                      <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
-                    </svg>
-                    <p className="text-xs text-muted-foreground">{item.suggestion}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {result.missing_for_designers.map((item: MissingItem, i: number) => {
+              // v2 optional fields
+              const v2Item = item as MissingItem & {
+                principle?: string
+                severity?: number
+                user_impact?: string
+              }
+              const sev = severityBadge(v2Item.severity)
+              return (
+                <Card key={i} className="border-amber-800/40">
+                  <CardContent className="pt-5 px-5 pb-5">
+                    <div className="mb-3 flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-amber-400 border-amber-400/30">{item.screen}</Badge>
+                      {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
+                      {v2Item.principle && (
+                        <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
+                      )}
+                    </div>
+                    <p className="text-sm mb-3">
+                      <span className="text-amber-400 font-medium">문제: </span>
+                      {item.issue}
+                    </p>
+                    {v2Item.user_impact && (
+                      <p className="text-xs text-muted-foreground mb-3">
+                        <span className="font-medium">영향: </span>{v2Item.user_impact}
+                      </p>
+                    )}
+                    <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
+                        <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
+                      </svg>
+                      <p className="text-xs text-muted-foreground">{item.suggestion}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </TabsContent>
 
           {/* 개발자 체크리스트 탭 */}
@@ -262,25 +413,38 @@ export default function ResultScreen({
             </p>
             {devItems.length === 0 ? (
               <p className="text-sm text-muted-foreground">항목이 없습니다.</p>
-            ) : devItems.map((item: DevItem, i: number) => (
-              <Card key={i} className="border-blue-800/40">
-                <CardContent className="pt-5 px-5 pb-5">
-                  <div className="mb-3">
-                    <Badge variant="secondary" className="text-blue-400">{item.module}</Badge>
-                  </div>
-                  <p className="text-sm mb-3">
-                    <span className="text-blue-400 font-medium">문제: </span>
-                    {item.issue}
-                  </p>
-                  <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
-                      <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
-                    </svg>
-                    <p className="text-xs text-muted-foreground">{item.suggestion}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            ) : devItems.map((item: DevItem, i: number) => {
+              const v2Item = item as DevItem & {
+                risk?: string
+                severity?: number
+              }
+              const sev = severityBadge(v2Item.severity)
+              return (
+                <Card key={i} className="border-blue-800/40">
+                  <CardContent className="pt-5 px-5 pb-5">
+                    <div className="mb-3 flex items-center gap-2 flex-wrap">
+                      <Badge variant="secondary" className="text-blue-400">{item.module}</Badge>
+                      {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
+                    </div>
+                    <p className="text-sm mb-3">
+                      <span className="text-blue-400 font-medium">문제: </span>
+                      {item.issue}
+                    </p>
+                    {v2Item.risk && (
+                      <p className="text-xs text-muted-foreground mb-3">
+                        <span className="font-medium">리스크: </span>{v2Item.risk}
+                      </p>
+                    )}
+                    <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
+                        <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
+                      </svg>
+                      <p className="text-xs text-muted-foreground">{item.suggestion}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </TabsContent>
 
           {/* PO 확인 필요 탭 */}
@@ -289,7 +453,53 @@ export default function ResultScreen({
               개발 착수 전 PO가 답변해야 할 핵심 질문들
             </p>
             {result.critical_questions.map((q, i) => {
-              const { tag, variant, rest } = parseTag(q)
+              // v1: string, v2: object
+              if (isQuestionV2(q)) {
+                const tagText = stripBrackets(q.tag)
+                const variant = TAG_VARIANTS[tagText] ?? 'secondary'
+                return (
+                  <Card key={i} className="border-destructive/20">
+                    <CardContent className="flex items-start gap-4 py-4 px-5">
+                      <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
+                      <div className="flex flex-col gap-2 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant={variant} className="w-fit">{tagText}</Badge>
+                          {q.format && (
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                              {q.format}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-sm">{q.question}</span>
+                        {q.options && q.options.length > 0 && (
+                          <div className="flex flex-col gap-1 mt-1">
+                            {q.options.map((opt, idx) => (
+                              <div key={idx} className="text-xs bg-muted rounded-md px-3 py-1.5 border border-border">
+                                <span className="font-mono text-muted-foreground mr-2">
+                                  {String.fromCharCode(65 + idx)}.
+                                </span>
+                                {opt}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {q.impact && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            <span className="font-medium">영향: </span>{q.impact}
+                          </p>
+                        )}
+                        {q.blocks && q.blocks.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-medium">차단 중: </span>{q.blocks.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              }
+              // v1 fallback — 문자열 기반
+              const { tag, variant, rest } = parseTagFromString(q as string)
               return (
                 <Card key={i} className="border-destructive/20">
                   <CardContent className="flex items-start gap-4 py-4 px-5">
@@ -309,14 +519,32 @@ export default function ResultScreen({
             <p className="text-sm text-muted-foreground mb-4">
               사용성 및 비즈니스 성과를 높이기 위한 UX 제안
             </p>
-            {result.ux_recommendations.map((rec, i) => (
-              <Card key={i}>
-                <CardContent className="flex items-start gap-4 py-4 px-5">
-                  <span className="flex-shrink-0 mt-0.5">💡</span>
-                  <span className="text-sm">{rec}</span>
-                </CardContent>
-              </Card>
-            ))}
+            {result.ux_recommendations.map((rec, i) => {
+              const n = normalizeRec(rec)
+              const hasV2Meta = n.principle || n.perspective || n.effort || n.expected_impact
+              return (
+                <Card key={i}>
+                  <CardContent className="flex items-start gap-4 py-4 px-5">
+                    <span className="flex-shrink-0 mt-0.5">💡</span>
+                    <div className="flex flex-col gap-2 flex-1">
+                      <span className="text-sm">{n.text}</span>
+                      {hasV2Meta && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {n.principle && <Badge variant="outline" className="text-[10px]">{n.principle}</Badge>}
+                          {n.perspective && <Badge variant="secondary" className="text-[10px]">{n.perspective}</Badge>}
+                          {n.effort && <span className="text-[10px] text-muted-foreground">효과 난이도: {n.effort}</span>}
+                        </div>
+                      )}
+                      {n.expected_impact && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">기대효과: </span>{n.expected_impact}
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </TabsContent>
         </Tabs>
       </div>
