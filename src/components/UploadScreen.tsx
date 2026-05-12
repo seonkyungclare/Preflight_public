@@ -4,6 +4,8 @@ import { useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { releaseNotes } from '@/config/release-notes'
 
 interface UploadScreenProps {
   onAnalyze: (text: string, fileName: string) => void
@@ -16,6 +18,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
   const [file, setFile] = useState<File | null>(null)
   const [parsing, setParsing] = useState(false)
   const [localError, setLocalError] = useState('')
+  const [showBuildInfo, setShowBuildInfo] = useState(false)
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -175,10 +178,41 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
       </p>
 
       {process.env.NEXT_PUBLIC_BUILD_TIME && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          배포일: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
-        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <p className="text-xs text-muted-foreground">
+            배포일: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+          <button
+            onClick={() => setShowBuildInfo(true)}
+            className="text-xs text-primary hover:underline underline-offset-2 transition-colors"
+          >
+            업데이트 되었어요
+          </button>
+        </div>
       )}
+
+      <Dialog open={showBuildInfo} onOpenChange={setShowBuildInfo}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm">업데이트 내역</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1 max-h-80 overflow-y-auto">
+            {releaseNotes.map((entry, i) => (
+              <div key={i}>
+                <p className="text-xs text-muted-foreground mb-1.5">{entry.date}</p>
+                <ul className="space-y-1">
+                  {entry.changes.map((change, j) => (
+                    <li key={j} className="text-sm text-foreground/80 flex gap-2">
+                      <span className="text-primary shrink-0">·</span>
+                      <span>{change}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
