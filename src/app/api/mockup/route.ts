@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 // ============================================================================
+// ============================================================================
 // SHARED: PRD Fidelity Principle
 // ============================================================================
 const PRD_FIDELITY_PRINCIPLE = `
@@ -30,7 +31,10 @@ Before rendering any element, ask in order:
     NO  → go to Q3
   Q3: "Is this a Standard Navigation Flow listed below?"
     YES → include it (no badge needed — these are structural, not inventions)
-    NO  → omit it, and log it in the Note Panel with reason "PRD에 명시되지 않음"
+    NO  → omit it. Note Panel 기록 여부:
+          · "있으면 더 좋겠다"고 판단되는 항목 → "누락 가능 항목"에 기록
+          · 단순히 PRD에 없을 뿐 굳이 필요하지 않은 항목 → 기록하지 않음
+          (Note Panel을 무의미하게 채우지 말 것)
   Q4: "Does the PRD imply this but not state it?"
     → Treat as NO. Implication is not specification.
     → Log in Note Panel: "PRD에 암시되나 명시되지 않음 — 확인 필요"
@@ -105,7 +109,9 @@ mockup_directives: {
 - Render each forced_state as a SEPARATE screen reachable from navigation.
 - Label each forced-state screen with a visible badge at the top:
   "[분석 결과 기반 추가 — PRD 미정의]"
-- Log each forced_state in Note Panel under "누락 가능 항목".
+- Log each forced_state in Note Panel under "⚠️ 주의 영역 (분석 결과)" section.
+  · attention_areas와 같은 섹션에 기록 (분석 기반 추가라는 출처가 같음)
+  · 형식: "[forced_state 추가] {화면명} — {상태명}: PRD에 미정의된 상태"
  
 **3. critical_screens**
 - Reorder the navigation so these screens appear FIRST.
@@ -132,17 +138,24 @@ const NOTE_PANEL_SPEC = `
  
 ### Sections (render in this order)
  
-0. **⚠️ 주의 영역 (분석 결과)** — ONLY if mockup_directives.attention_areas is non-empty
-   Format: "[차원명] (점수 X/10) — [focus 내용]"
+0. **⚠️ 주의 영역 (분석 결과)** — ONLY if mockup_directives.attention_areas OR forced_states is non-empty
+   분석 결과로부터 비롯된 모든 항목이 이곳에 모임:
+   · attention_areas: "[차원명] (점수 X/10) — [focus 내용]"
+   · forced_states: "[forced_state 추가] {화면명} — {상태명}: PRD에 미정의된 상태"
    This section MUST appear above all others when present.
  
 1. **누락 가능 항목 (Possibly Missing)**
+   PRD에 명시되지 않았지만 유사 제품에서 일반적으로 있을 만한 항목.
+   분석 결과(forced_states)는 여기에 기록하지 않음 — 그것은 위의 "주의 영역"으로.
    One line: "[항목명] — [왜 확인이 필요한지, 한 문장]"
+   예: "삭제 확인 다이얼로그 — 삭제 액션은 있으나 확인 절차가 PRD에 없음"
  
 2. **모호한 항목 (Ambiguous)**
+   PRD에 언급되었으나 구현하기에 정보가 부족한 항목.
    One line: "[항목명] — [무엇이 불명확한지]"
  
 3. **미구현 항목 (Omitted by this tool)**
+   PRD에 명시되었으나 기술적으로 구현하지 못한 항목.
    One line: "[항목명] — [미구현 이유]"
  
 ### If all sections are empty
@@ -228,6 +241,20 @@ ${ANALYSIS_DRIVEN_ATTENTION}
 ## Layout
 - <Layout> with <Layout.Sider> as LNB using <Menu>
  
+### Layout 결정 (PRD 화면 수에 따라 LNB 적용 여부)
+LNB(<Layout.Sider>)는 화면이 충분히 많을 때만 의미가 있습니다.
+화면 수에 따라 다른 레이아웃을 선택하세요:
+ 
+- **PRD 실제 메뉴(영역 2 후보) + forced_states 합계가 3개 미만**:
+  · Sider 없음. 단일 화면 또는 <Tabs>로 처리
+  · 영역 1/2/3 강제 구조 적용 안 함
+  · 사용자 flow 다이어그램은 별도 <Tabs> 항목 또는 페이지 상단 토글로 제공
+  · 엣지 케이스는 페이지 내 <Tabs> 또는 토글 버튼으로 전환
+ 
+- **합계가 3개 이상**:
+  · <Layout.Sider> + <Menu> 사용
+  · 아래 "LNB 메뉴 구조 (3개 영역)" 적용
+ 
 ### LNB 메뉴 구조 (3개 영역, 위에서 아래 순서)
  
 **영역 1: 사용자 flow 보기 (LNB 최상단, 단일 항목)**
@@ -242,17 +269,90 @@ ${ANALYSIS_DRIVEN_ATTENTION}
   · 노드 스타일: 직사각형 box + 화면명, antd 기본 색상 사용
   · 시작 화면(목록/홈)은 시각적으로 강조 (굵은 테두리 or 좌측 정렬 우선)
  
-**영역 2: 실제 구현 메뉴 그룹**
-- 그룹 라벨: PRD의 최상위 메뉴명을 따름 (예: "성장솔루션")
-- 하위 메뉴 항목 순서: PRD를 분석해 가장 자연스러운 사용자 여정 순서로 AI가 결정
-  · 일반 원칙: 진입점(목록/대시보드) → 생성 → 상세 → 수정 → 부가 기능
-  · 단, PRD에 명시적 순서가 있으면 그것을 따름
-  · 메뉴명은 PRD 원문 그대로 (임의 변경 금지)
+**영역 2: 메뉴 (실제 서비스 메뉴)**
+- 그룹 라벨: "메뉴"
+- 노출 대상: 독립된 화면/페이지로 존재하는 진입점만
 - 이 그룹은 "실제 서비스 메뉴처럼 보이는 형태"여야 함
 - critical_screens가 있으면 이 그룹 내부에서 최상단으로 이동
  
-**영역 3: 페이지별 상태/케이스 그룹**
-- 그룹 라벨: "📋 상태 및 케이스 검증"
+### 메뉴 vs 액션 구분 원칙 (CRITICAL — LNB 품질을 좌우)
+ 
+PRD에 등장하는 모든 명칭을 LNB에 평면적으로 나열하지 마세요.
+LNB는 "사용자가 어디서 무엇을 할 수 있는가"의 지도이지, PRD 목차가 아닙니다.
+ 
+각 PRD 항목에 대해 "메뉴인가, 액션인가"를 판별하세요:
+ 
+**메뉴 (LNB 항목으로 노출)**
+- 독립된 화면/페이지 단위
+- 사용자가 직접 이동하는 진입점
+- 그 안에서 여러 작업을 수행할 수 있음
+- 명사 위주 명칭 (영역명, 카테고리명, 자료 유형명)
+- PRD의 메뉴 트리 / 사이트맵 / 정보구조에 등장
+- 예: "Products Asset", "Marketing Asset", "에셋 라이브러리", "승인 요청 조회"
+ 
+**액션 (페이지 내 버튼/탭/모달로 흡수)**
+- 특정 페이지 안에서 수행하는 작업
+- 결과적으로 어떤 메뉴 페이지에 속함
+- 동사 위주 명칭 ("~하기", "~업로드", "~수정", "~삭제")
+- PRD에서 "Step N" 또는 시나리오 단계(S-001, S-002 등)로 등장
+- 예: "단건 업로드", "대량 업로드", "에셋 수정", "승인 요청", "반려"
+- LNB에 별도 항목으로 만들지 않음
+- 해당 메뉴 페이지 안의 버튼/탭/모달로 구현
+ 
+### 액션 → 메뉴 매핑 절차
+ 
+Step 1. PRD에서 모든 시나리오(S-001, S-002…)와 Step을 추출
+Step 2. 각 시나리오의 "어느 메뉴 페이지에서 수행되는 작업인지" 판별
+  · 예: "S-001 단건 업로드" → Products Asset / Marketing Asset 등 각 에셋 메뉴 페이지의 액션
+  · 예: "S-005 에셋 수정" → 에셋 라이브러리/상세 페이지의 액션
+  · 예: "S-005 승인/반려" → 승인 요청 조회 메뉴의 액션
+Step 3. 매핑된 액션을 해당 메뉴 페이지 안에 구현
+  · 페이지 상단 우측 primary 버튼 (예: "+ 단건 업로드", "+ 대량 업로드")
+  · 또는 페이지 내 탭 (예: "단건 / 대량" 탭)
+  · 또는 행 액션 버튼 (예: "수정", "삭제")
+Step 4. LNB에는 메뉴만 노출. 액션은 LNB에서 제외.
+ 
+### 메뉴 순서 결정
+- PRD에 명시적 순서가 있으면 그것을 따름
+- 없으면 사용자 여정 순서: 자주 사용하는 진입점 → 부가/관리 메뉴
+- 메뉴명은 PRD 원문 그대로 (임의 변경 금지)
+ 
+### 메뉴 그룹화 (2단 구조)
+ 
+"메뉴" 라벨은 영역 2 전체를 묶는 **영역 구분자**입니다 (Menu.ItemGroup 또는 섹션 헤더 형태).
+그 아래에 실제 메뉴 항목들이 들어갑니다.
+ 
+PRD가 의미별 분류를 제공하는 경우, 2단 구조를 사용:
+\`\`\`
+[메뉴 영역 라벨]
+├ 에셋 (SubMenu)
+│  ├ Products Asset
+│  └ Marketing Asset
+└ 가이드 (SubMenu)
+   ├ BX Design Guide
+   └ VM Design Guide
+\`\`\`
+ 
+PRD가 분류를 제공하지 않거나 항목이 적은 경우, 1단 구조:
+\`\`\`
+[메뉴 영역 라벨]
+├ Products Asset
+├ Marketing Asset
+└ BX Design Guide
+\`\`\`
+ 
+### 구조 결정 기준
+- PRD에 "에셋", "가이드" 같은 명시적 분류가 있으면 → 2단 (SubMenu 사용)
+- PRD가 평면적 나열이거나 항목이 5개 미만이면 → 1단
+- AI가 임의로 분류를 만들지 말 것. PRD의 분류만 따름.
+ 
+### "메뉴" 영역 라벨 표시 방법
+- antd <Menu>의 <Menu.ItemGroup title="메뉴"> 사용
+- 또는 Sider 내 별도 섹션 헤더 div로 표시
+- 라벨 텍스트는 "메뉴" 고정 (변경 금지)
+ 
+**영역 3: 엣지 케이스 (상태/케이스 변형)**
+- 그룹 라벨: "엣지 케이스"
 - 노출 대상: 다음 두 가지 모두 포함
   · PRD에 명시된 상태 (예: PRD에 "에러 시 토스트 표시"가 있으면 → "캠페인 생성 — 에러")
   · forced_states로 추가된 상태 (분석 결과 기반)
@@ -261,13 +361,15 @@ ${ANALYSIS_DRIVEN_ATTENTION}
 - 각 항목 클릭 시 해당 상태의 화면을 렌더
 - forced_states로 추가된 항목은 메뉴명 우측에 작은 뱃지 "분석" 표시
   · PRD 명시 상태는 뱃지 없음 (구분을 위해)
-- 이 그룹은 영역 2의 "실제 구현"과 시각적으로 분리되어야 함
-  · 그룹 라벨에 이모지(📋) 추가로 영역 2와 구분
+- 이 그룹은 영역 2의 "메뉴"와 시각적으로 분리되어야 함
   · 메뉴 아이콘 사용 가능 (상태 종류별로 다른 아이콘)
  
 ### LNB 전체 규칙
 - 영역 1 → 영역 2 → 영역 3 순서 고정
-- 영역 간 시각적 구분: <Menu.Divider> 또는 그룹 라벨로 분리
+- 영역 라벨 표기: "메뉴" / "엣지 케이스" 텍스트 고정 (변경 금지)
+  · <Menu.ItemGroup title="메뉴"> 또는 별도 섹션 헤더로 구현
+  · 영역 2 안에서 PRD 분류에 따라 SubMenu로 추가 그룹화 가능 (2단 구조)
+- 영역 간 시각적 구분: <Menu.Divider> 또는 영역 라벨로 분리
 - PRD에 없는 메뉴 항목을 영역 2에 추가하는 것은 금지 (영역 3의 forced_states만 예외)
 - 메뉴명에 PRD에 없는 부제/설명 추가 금지
  
@@ -328,9 +430,10 @@ These are permitted structural connectors. Implement all that apply:
 - Reorder per critical_screens
  
 ### Step 4 — Choose Layout
-- 1~2 screens: single view, no Sider
-- 3~5 screens: <Tabs> or top nav
-- hierarchical: <Layout.Sider> + <Menu>
+화면 수 = 영역 2 후보(PRD 실제 화면) + forced_states 합계
+- 합계 < 3: 단일 view 또는 <Tabs>. Sider 없음. LNB 3영역 구조 미적용
+- 합계 ≥ 3: <Layout.Sider> + <Menu> + LNB 3영역 구조 적용
+(자세한 규칙은 위 "Layout 결정" 섹션 참고)
  
 ### Step 5 — Element Mapping (antd)
   data list      → <Table> PRD-listed columns only, pagination=false unless PRD states
@@ -360,18 +463,104 @@ ${NOTE_PANEL_SPEC}
  
 ## Output Validation
  
-### Forward check
-- Every PRD screen implemented ✓
-- Every PRD-listed field/column/action present ✓
-- Every Standard Navigation Flow connected and working ✓
-- Every forced_state rendered with analyst badge ✓
-- List views have 3–5 rows of realistic placeholder data ✓
-- All PRD-defined columns populated with plausible values ✓
+### ⚠️ MANDATORY: Final Completeness Audit (run LAST, before output)
+**이 단계는 선택이 아닙니다. 출력 직전에 반드시 수행해야 합니다.**
  
-### LNB structure check (NEW)
+코드를 다 짠 뒤, PRD를 처음부터 다시 한 번 정독하고 아래 절차를 그대로 수행하세요.
+형식적 ✓ 체크로 끝내지 말고, 항목 하나하나를 실제로 확인하세요.
+ 
+**Step A — PRD 재추출 (다시 한 번)**
+PRD를 다시 읽고 다음을 모두 빠짐없이 나열하세요 (코드 짜기 전에 이미 했더라도 다시 합니다):
+1. PRD에 등장하는 모든 화면명
+2. 각 화면에 명시된 모든 필드 / 컬럼
+3. 각 화면에 명시된 모든 버튼 / 액션
+4. 각 화면에 명시된 모든 상태 (empty / loading / error / success / 그 외 비즈니스 상태)
+5. 각 화면에 명시된 모든 인터랙션 / 전환
+6. 각 화면에 명시된 모든 입력 제약 (글자수, 최소/최대값, 필수 여부)
+7. 유저스토리의 "상세 설명" 컬럼에 적힌 모든 시나리오 항목
+ 
+**Step B — 1:1 매칭**
+Step A에서 추출한 각 항목을, 코드 출력에서 직접 찾아보세요.
+ 
+각 항목에 대해:
+- 코드에 있다 → ✅ (구체적으로 어느 컴포넌트인지 머릿속에 떠올릴 수 있어야 함)
+- 코드에 없다 → ❌
+  → 빠진 이유 판단:
+     · 기술적 미구현 → Note Panel "미구현 항목"에 기록
+     · 실수로 누락 → 지금 즉시 코드에 추가
+     · 다른 화면에 통합됨 → 정말 그런지 다시 확인
+ 
+**Step C — 빈도 높은 누락 패턴 자가 점검**
+다음 항목은 AI가 자주 빠뜨리는 패턴입니다. 코드에 정말 들어갔는지 명시적으로 확인:
+ 
+- [ ] PRD에 나오는 모든 입력 제약을 <Form rules>에 반영했는가?
+  · 글자수 제한 (예: "최소 5자~최대 200자") → rules.min/max
+  · 금액 범위 (예: "최소 ₩10,000 / 최대 ₩100,000,000") → rules
+  · 필수 여부 → rules.required
+- [ ] PRD에 나오는 모든 선택지를 <Select>/<Radio> options에 반영했는가?
+  · 예: "일별/주별 선택 가능" → options 2개 모두
+  · 예: 상태값 7종 → 모두 placeholder data에 등장
+- [ ] PRD에 나오는 모든 조건부 분기를 구현했는가?
+  · 예: "자동충전 미설정 시 안내 모달" → 토글 ON 클릭 시 분기 처리
+  · 예: "종료일 미설정 시 광고 지속 운영" → 종료일 빈 값 허용
+- [ ] 유저스토리의 모든 "상세 설명" 항목이 화면에 반영되었는가?
+  · 상세 설명 표의 각 행 = 구현 필수 요건. 한 줄도 빠뜨리지 말 것.
+- [ ] PRD에 정의된 모든 컬럼이 테이블에 있는가?
+  · 컬럼이 길게 나열된 경우(예: 18개 컬럼) 특히 자주 누락됨
+  · PRD 컬럼 수와 코드 컬럼 수가 정확히 일치하는지 확인
+- [ ] PRD에 명시된 모든 상태가 영역 3 ("엣지 케이스" 그룹)에 있는가?
+  · forced_states뿐 아니라 PRD 명시 상태도 모두 영역 3에 등장
+- [ ] 캠페인 상태 / 이력 유형 같은 enum 정의가 모두 코드에 반영되었는가?
+  · 예: 캠페인 상태 7종 → placeholder data에 다양하게 분포
+  · 예: 이력 유형 9종 → 이력 모달에 모두 표시 가능
+ 
+**Step D — 누락 시 행동**
+누락이 발견되면 다음 우선순위로 처리:
+ 
+1순위: **즉시 코드 수정**
+- 사소한 누락 (필드, 컬럼, 옵션) → 코드에 추가하고 다시 Audit
+- 큰 누락 (화면, 주요 인터랙션) → 코드에 추가하고 다시 Audit
+- "시간이 부족해서", "복잡해서" 같은 이유로 건너뛰지 말 것
+ 
+2순위: **그래도 구현 불가능한 경우에만** → Note Panel "미구현 항목"에 다음 형식으로 기록:
+- 항목명: 정확한 PRD 항목명
+- 사유: 왜 구현하지 않았는지 (예: "antd Sandpack 환경에서 차트 라이브러리 미지원")
+- 영향: 이 누락이 검증에 어떤 영향을 주는지
+ 
+### 출력 규칙
+- 출력은 반드시 수행한다. 누락이 있어도 코드는 출력한다.
+- 단, Note Panel에 모든 누락이 명시적으로 드러나야 한다.
+- Note Panel에 기록 없이 누락된 항목이 있는 상태로 출력하는 것은 실패다.
+- **AI가 "완벽하지 않아서 출력하지 않겠다"고 판단하는 것은 금지**. 불완전해도 출력하되, 무엇이 불완전한지 사용자가 알 수 있어야 한다.
+ 
+---
+ 
+### Forward check (PRD 항목별 매칭)
+Audit Step A의 각 카테고리에 대해 한 번 더 확인:
+- 모든 PRD 화면 = 영역 2/3 + LNB 메뉴에 존재 ✓
+- 모든 PRD 필드/컬럼 = 렌더링됨 ✓
+- 모든 PRD 버튼/액션 = 렌더링되고 동작함 ✓
+- 모든 PRD 상태 = 영역 3에 별도 화면으로 존재 ✓
+- 모든 PRD 인터랙션 = Standard Navigation Flow 또는 명시적 구현으로 연결 ✓
+- 모든 입력 제약 = Form rules에 반영 ✓
+- 모든 유저스토리 상세 설명 = 화면에 반영 ✓
+- 모든 forced_state = 분석 뱃지와 함께 영역 3에 존재 ✓
+- 리스트 뷰 = 3~5행의 현실적 placeholder data ✓
+ 
+### LNB structure check
 - 영역 1 "📊 사용자 flow 보기"가 LNB 최상단에 있는가 ✓
-- 영역 2 (실제 구현)의 메뉴 순서가 자연스러운 사용자 여정을 따르는가 ✓
-- 영역 3 (상태/케이스)에 PRD 명시 상태 + forced_states 모두 포함되는가 ✓
+- 영역 2 그룹 라벨이 정확히 "메뉴"인가 ✓
+- 영역 2에 PRD 명시 실제 화면만 포함되었는가 (상태 변형 제외) ✓
+- 영역 2의 메뉴 순서가 자연스러운 사용자 여정을 따르는가 ✓
+- 영역 2에 "액션"이 메뉴로 잘못 노출되지 않았는가 ✓
+  · 다음 항목은 LNB가 아니라 페이지 내 버튼/탭/모달로 흡수되어야 함:
+    "단건 업로드", "대량 업로드", "에셋 수정", "승인 요청", "반려",
+    그 외 시나리오 단계(S-NNN) 또는 Step N으로 등장하는 동작
+  · LNB에 동사형 명칭("~업로드", "~수정", "~등록")이 있으면 액션 가능성 매우 높음
+- 액션이 적절한 메뉴 페이지에 흡수되었는가 ✓
+  · 시나리오 추출 → 어느 메뉴의 액션인지 매핑 → 해당 페이지에 버튼/탭으로 구현
+- 영역 3 그룹 라벨이 정확히 "엣지 케이스"인가 ✓
+- 영역 3에 PRD 명시 상태 + forced_states 모두 포함되는가 ✓
 - 영역 간 시각적 구분(Divider 또는 그룹 라벨)이 적용되었는가 ✓
 - 사용자 flow 다이어그램의 모든 노드가 영역 2/3에 실제로 존재하는가 ✓
 - 다이어그램 노드 클릭이 해당 LNB 메뉴와 동기화되는가 ✓
@@ -393,8 +582,9 @@ For every visible element: "Is this in the PRD, in mockup_directives, OR a Stand
 - Analyst badge on non-forced-state screens              → remove
  
 ### Final checks
+- Final Completeness Audit 완료 ✓ (누락 발견 시 1순위 수정, 2순위 Note Panel 기록)
 - PRD screens + forced_state count == implemented screen count ✓
-- Note Panel always rendered ✓
+- Note Panel always rendered ✓ (모든 누락이 여기에 명시되었는가)
 - All brackets balanced, no code truncation ✓
 - Return ONLY component code. No markdown fences. No explanation.
 `

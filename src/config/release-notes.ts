@@ -5,6 +5,14 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-06-17',
+    changes: [
+      'Confluence 페이지 URL로 바로 분석 가능 — Atlassian 계정 연결 후 페이지 링크만 붙여넣으면 됩니다',
+      '여러 파일 동시 업로드 지원 — PRD·디자인 스펙 등 최대 3개 문서를 한 번에 분석',
+      '사용자 플로우 다이어그램 가독성 개선 — 노드/라벨 겹침 방지, 캔버스 자동 확장',
+    ],
+  },
+  {
     date: '2026-05-12',
     changes: [
       '사용자 플로우 보기 — 목록 클릭 → 상세, 버튼 클릭 → 폼 등 화면 간 이동이 실제로 연결됩니다',
