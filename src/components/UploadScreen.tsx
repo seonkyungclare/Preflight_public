@@ -173,10 +173,10 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
       </p>
 
       <div className="w-full max-w-xl">
-        <Tabs defaultValue="file">
+        <Tabs defaultValue="confluence">
           <TabsList className="mb-4 w-full">
-            <TabsTrigger value="file" className="flex-1">파일 업로드</TabsTrigger>
             <TabsTrigger value="confluence" className="flex-1">Confluence URL</TabsTrigger>
+            <TabsTrigger value="file" className="flex-1">파일 업로드</TabsTrigger>
           </TabsList>
 
           {/* 파일 업로드 탭 */}
