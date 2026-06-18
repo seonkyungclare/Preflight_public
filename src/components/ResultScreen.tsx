@@ -8,12 +8,15 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { formatHistoryDate } from '@/lib/analysis-history'
 
 interface ResultScreenProps {
   fileName: string
   result: AnalysisResult
   hasMockupLowFi: boolean
   hasMockupHiFi: boolean
+  mockupLowFiAt: number | null
+  mockupHiFiAt: number | null
   onGenerateMockup: (type: MockupType, regenerate?: boolean) => void
   onCancelMockup: () => void
   mockupGenerating: MockupType | null
@@ -161,6 +164,8 @@ export default function ResultScreen({
   result,
   hasMockupLowFi,
   hasMockupHiFi,
+  mockupLowFiAt,
+  mockupHiFiAt,
   onGenerateMockup,
   onCancelMockup,
   mockupGenerating,
@@ -194,106 +199,142 @@ export default function ResultScreen({
   >
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen [&_button]:rounded-md">
       {/* 헤더 */}
-      <div className="border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-lg">Preflight</span>
-        </div>
-        <Button variant="outline" size="sm" onClick={onReupload}>
-          ↩ 새 PRD 업로드
-        </Button>
+      <div className="border-b px-6 py-4 flex items-center gap-3">
+        <button
+          onClick={onReupload}
+          className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="뒤로가기"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5" />
+            <path d="M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <span className="font-bold text-lg">Preflight</span>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        {/* 파일 정보 */}
-        <div className="flex items-center gap-2 mb-6">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-            <path d="M14 2v6h6" />
-          </svg>
-          <span className="text-sm text-muted-foreground">{fileName}</span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-sm text-muted-foreground">방금 분석됨</span>
-        </div>
+      <div className="overflow-x-auto">
+        <div className="max-w-[700px] mx-auto px-6 py-8 min-w-[500px]">
+          {/* 파일 정보 */}
+          <div className="flex items-center gap-2 mb-6">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <path d="M14 2v6h6" />
+            </svg>
+            <span className="text-sm text-muted-foreground">{fileName}</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-sm text-muted-foreground">방금 분석됨</span>
+          </div>
 
-        {/* 점수 + 통계 카드 */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <Card className="col-span-1 flex flex-col items-center justify-center">
-            <CardContent className="flex flex-col items-center pt-6">
+        {/* 점수 + 목업 생성 카드 */}
+        <div className="grid grid-cols-3 gap-4 mb-8 [&>div]:max-h-[200px]">
+          <Card className="flex flex-col items-center justify-center">
+            <CardContent className="flex items-center justify-center p-4">
               <ScoreGauge score={result.sufficiency_score} />
-              <p className="text-xs text-muted-foreground mt-3 text-center">UI 구현 충분성 점수</p>
             </CardContent>
           </Card>
 
-          <div className="col-span-3 grid grid-cols-3 gap-4">
-            {[
-              { label: '검증 완료 항목', value: result.validated.length, icon: '✓' },
-              { label: '디자이너 확인 필요', value: result.missing_for_designers.length, icon: '⚠' },
-              { label: 'PO 확인 필요', value: result.critical_questions.length, icon: '?' },
-            ].map((stat, i) => (
-              <Card key={i}>
-                <CardContent className="pt-5 flex flex-col gap-2">
-                  <span className="text-2xl">{stat.icon}</span>
-                  <span className="text-3xl font-bold">{stat.value}</span>
-                  <span className="text-xs text-muted-foreground">{stat.label}</span>
-                </CardContent>
-              </Card>
-            ))}
-
-            {/* 목업 생성 CTA */}
-            <Card className="col-span-3 border-primary/20">
-              <CardContent className="pt-5 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold">이 기준 목업 미리보기 자동 생성</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    분석된 화면 목록으로 React 컴포넌트를 자동 생성합니다
-                  </p>
+          {/* Lo-Fi 카드 */}
+          <Card className={hasMockupLowFi ? '' : 'bg-muted/30'}>
+            <CardContent className="p-4 space-y-2.5 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">Lo-Fi 목업</span>
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-border bg-muted text-muted-foreground">
+                    와이어프레임
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {mockupGenerating !== null && (
-                    <Button variant="outline" size="sm" onClick={onCancelMockup}>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {hasMockupLowFi && mockupLowFiAt
+                    ? `${formatHistoryDate(mockupLowFiAt)} 생성`
+                    : '아직 생성되지 않았습니다'}
+                </p>
+              </div>
+              <div className="flex gap-1.5">
+                {mockupGenerating === 'lowfi' ? (
+                  <>
+                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" disabled>
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                      {Math.round(mockupProgress)}%
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onCancelMockup}>
                       취소
                     </Button>
-                  )}
-                  {(hasMockupLowFi || hasMockupHiFi) && mockupGenerating === null && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { setIsRegenerate(true); setShowMockupModal(true) }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-1">
-                        <path d="M1 4v6h6" />
-                        <path d="M3.51 15a9 9 0 1 0 .49-3.8" />
-                      </svg>
+                  </>
+                ) : hasMockupLowFi ? (
+                  <>
+                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
+                      보기
+                    </Button>
+                    <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('lowfi', true)} disabled={mockupGenerating !== null}>
                       재생성
                     </Button>
-                  )}
-                  <Button
-                    onClick={() => { setShowMockupModal(true); setIsRegenerate(false) }}
-                    disabled={mockupGenerating !== null}
-                  >
-                    {mockupGenerating !== null ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        {Math.round(mockupProgress)}%
-                      </span>
-                    ) : (hasMockupLowFi || hasMockupHiFi) ? '생성된 목업 보기 →' : '목업 생성 →'}
+                  </>
+                ) : (
+                  <Button variant="default" size="sm" className="w-full h-8 text-xs" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
+                    생성하기
                   </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Hi-Fi 카드 */}
+          <Card className={hasMockupHiFi ? '' : 'bg-muted/30'}>
+            <CardContent className="p-4 space-y-2.5 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">Hi-Fi 목업</span>
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 bg-primary/10 text-primary">
+                    인터랙티브
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {hasMockupHiFi && mockupHiFiAt
+                    ? `${formatHistoryDate(mockupHiFiAt)} 생성`
+                    : '아직 생성되지 않았습니다'}
+                </p>
+              </div>
+              <div className="flex gap-1.5">
+                {mockupGenerating === 'hifi' ? (
+                  <>
+                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" disabled>
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                      {Math.round(mockupProgress)}%
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onCancelMockup}>
+                      취소
+                    </Button>
+                  </>
+                ) : hasMockupHiFi ? (
+                  <>
+                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
+                      보기
+                    </Button>
+                    <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('hifi', true)} disabled={mockupGenerating !== null}>
+                      재생성
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="default" size="sm" className="w-full h-8 text-xs" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
+                    생성하기
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* 탭 */}
-        <Tabs defaultValue="summary">
+        <Tabs defaultValue="recommendations">
           <TabsList className="mb-6 w-full h-auto flex-wrap gap-1">
+            <TabsTrigger value="recommendations" className="flex-1 min-w-fit">UX 제안</TabsTrigger>
             <TabsTrigger value="summary" className="flex-1 min-w-fit">요약</TabsTrigger>
             <TabsTrigger value="missing" className="flex-1 min-w-fit">디자이너 체크리스트 ({result.missing_for_designers.length})</TabsTrigger>
             <TabsTrigger value="dev" className="flex-1 min-w-fit">개발자 체크리스트 ({devItems.length})</TabsTrigger>
             <TabsTrigger value="questions" className="flex-1 min-w-fit">PO 확인 필요 ({result.critical_questions.length})</TabsTrigger>
-            <TabsTrigger value="recommendations" className="flex-1 min-w-fit">UX 제안</TabsTrigger>
           </TabsList>
 
           {/* 요약 탭 */}
@@ -547,6 +588,7 @@ export default function ResultScreen({
             })}
           </TabsContent>
         </Tabs>
+        </div>
       </div>
 
       {/* 목업 타입 선택 모달 */}

@@ -1,10 +1,21 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
 
 const COOKIE_NAME = 'atlassian_session'
+const REFRESH_COOKIE_NAME = 'atlassian_refresh'
 const STATE_COOKIE_NAME = 'atlassian_oauth_state'
-const SCOPES = ['read:page:confluence', 'read:space:confluence']
+const SCOPES = ['read:page:confluence', 'read:space:confluence', 'offline_access']
+
+export const ATLASSIAN_SESSION_MAX_AGE = 60 * 60 * 24 * 7 // 7일
 
 export interface SessionData {
+  accessToken: string
+  refreshToken?: string
+  cloudId?: string
+  cloudUrl?: string
+  expiresAt: number
+}
+
+interface SessionCore {
   accessToken: string
   cloudId?: string
   cloudUrl?: string
@@ -61,7 +72,7 @@ export function buildAuthorizeUrl(state: string, redirectUri: string): string {
 export async function exchangeCodeForToken(
   code: string,
   redirectUri: string
-): Promise<{ access_token: string; expires_in: number }> {
+): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> {
   const clientId = process.env.ATLASSIAN_CLIENT_ID
   const clientSecret = process.env.ATLASSIAN_CLIENT_SECRET
   if (!clientId || !clientSecret) {
@@ -84,7 +95,38 @@ export async function exchangeCodeForToken(
     const text = await res.text()
     throw new Error(`토큰 교환 실패 (${res.status}): ${text.slice(0, 200)}`)
   }
-  return res.json() as Promise<{ access_token: string; expires_in: number }>
+  return res.json() as Promise<{ access_token: string; refresh_token?: string; expires_in: number }>
+}
+
+export async function refreshAccessToken(refreshToken: string): Promise<{
+  access_token: string
+  refresh_token?: string
+  expires_in: number
+} | null> {
+  const clientId = process.env.ATLASSIAN_CLIENT_ID
+  const clientSecret = process.env.ATLASSIAN_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+
+  try {
+    const res = await fetch('https://auth.atlassian.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+      }),
+    })
+    if (!res.ok) return null
+    return res.json() as Promise<{
+      access_token: string
+      refresh_token?: string
+      expires_in: number
+    }>
+  } catch {
+    return null
+  }
 }
 
 export async function getAccessibleResource(accessToken: string): Promise<{
@@ -100,23 +142,40 @@ export async function getAccessibleResource(accessToken: string): Promise<{
   return arr[0] ?? null
 }
 
-export function encodeSession(session: SessionData): string {
-  return encrypt(JSON.stringify(session))
+export function encodeSessionCore(session: SessionData): string {
+  const core: SessionCore = {
+    accessToken: session.accessToken,
+    cloudId: session.cloudId,
+    cloudUrl: session.cloudUrl,
+    expiresAt: session.expiresAt,
+  }
+  return encrypt(JSON.stringify(core))
 }
 
-export function decodeSession(token: string): SessionData | null {
-  const plain = decrypt(token)
-  if (!plain) return null
+export function encodeRefreshToken(refreshToken: string): string {
+  return encrypt(refreshToken)
+}
+
+export function decodeSession(coreToken: string | undefined, refreshCookieToken: string | undefined): SessionData | null {
+  if (!coreToken) return null
+  const corePlain = decrypt(coreToken)
+  if (!corePlain) return null
   try {
-    const data = JSON.parse(plain) as SessionData
-    if (data.expiresAt < Date.now()) return null
-    return data
+    const core = JSON.parse(corePlain) as SessionCore
+    const refreshToken = refreshCookieToken ? decrypt(refreshCookieToken) ?? undefined : undefined
+    return { ...core, refreshToken }
   } catch {
     return null
   }
 }
 
+export function isAccessTokenValid(session: SessionData): boolean {
+  // 60초 여유를 두고 만료 판정
+  return session.expiresAt > Date.now() + 60_000
+}
+
 export const ATLASSIAN_COOKIE = COOKIE_NAME
+export const ATLASSIAN_REFRESH_COOKIE = REFRESH_COOKIE_NAME
 export const ATLASSIAN_STATE_COOKIE = STATE_COOKIE_NAME
 
 export function buildCallbackUri(req: Request): string {

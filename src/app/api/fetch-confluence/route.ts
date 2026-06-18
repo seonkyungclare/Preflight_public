@@ -1,6 +1,16 @@
 import { cookies } from 'next/headers'
 import TurndownService from 'turndown'
-import { ATLASSIAN_COOKIE, decodeSession } from '@/lib/atlassian-auth'
+import {
+  ATLASSIAN_COOKIE,
+  ATLASSIAN_REFRESH_COOKIE,
+  ATLASSIAN_SESSION_MAX_AGE,
+  decodeSession,
+  encodeSessionCore,
+  encodeRefreshToken,
+  isAccessTokenValid,
+  refreshAccessToken,
+  type SessionData,
+} from '@/lib/atlassian-auth'
 
 interface PageResponse {
   id: string
@@ -11,6 +21,38 @@ interface PageResponse {
 function extractPageId(url: string): string | null {
   const m = url.match(/\/pages\/(\d+)/)
   return m ? m[1] : null
+}
+
+function setSessionCookie(session: SessionData) {
+  const cookieOpts = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: ATLASSIAN_SESSION_MAX_AGE,
+    path: '/',
+  }
+  cookies().set(ATLASSIAN_COOKIE, encodeSessionCore(session), cookieOpts)
+  if (session.refreshToken) {
+    cookies().set(ATLASSIAN_REFRESH_COOKIE, encodeRefreshToken(session.refreshToken), cookieOpts)
+  }
+}
+
+async function ensureValidAccessToken(session: SessionData): Promise<SessionData | null> {
+  if (isAccessTokenValid(session)) return session
+  if (!session.refreshToken) return null
+
+  const refreshed = await refreshAccessToken(session.refreshToken)
+  if (!refreshed) return null
+
+  const newSession: SessionData = {
+    accessToken: refreshed.access_token,
+    refreshToken: refreshed.refresh_token ?? session.refreshToken,
+    cloudId: session.cloudId,
+    cloudUrl: session.cloudUrl,
+    expiresAt: Date.now() + refreshed.expires_in * 1000,
+  }
+  setSessionCookie(newSession)
+  return newSession
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -34,11 +76,20 @@ export async function POST(req: Request): Promise<Response> {
     )
   }
 
-  const token = cookies().get(ATLASSIAN_COOKIE)?.value
-  const session = token ? decodeSession(token) : null
-  if (!session || !session.cloudId) {
+  const sessionToken = cookies().get(ATLASSIAN_COOKIE)?.value
+  const refreshToken = cookies().get(ATLASSIAN_REFRESH_COOKIE)?.value
+  const initialSession = decodeSession(sessionToken, refreshToken)
+  if (!initialSession || !initialSession.cloudId) {
     return Response.json(
       { error: 'Atlassian 연결이 필요합니다. "Atlassian 연결" 버튼을 먼저 클릭해주세요.' },
+      { status: 401 }
+    )
+  }
+
+  const session = await ensureValidAccessToken(initialSession)
+  if (!session) {
+    return Response.json(
+      { error: 'Atlassian 세션이 만료되었습니다. 다시 연결해주세요.' },
       { status: 401 }
     )
   }

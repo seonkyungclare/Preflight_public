@@ -5,6 +5,16 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-06-18',
+    changes: [
+      'Hi-Fi 프로토타입 품질 개선 — 이상적인 사용자 플로우 연결과 UX 퀄리티 (시각적 위계·즉각 피드백·일관성)에 집중',
+      'Confluence 연결 1주일 자동 유지 — 매번 다시 로그인 안 해도 됨 (refresh token 적용)',
+      '결과 화면 정리 — 목업 카드를 점수 옆 한 줄에 배치, UX 제안을 첫 번째 탭으로',
+      '이전 분석 히스토리 기능 추가 — 분석·목업 결과가 브라우저에 최대 10개까지 저장',
+      'Hi-Fi 생성 속도 개선 — 프롬프트 캐싱과 출력 압축 규칙으로 응답 시간 단축',
+    ],
+  },
+  {
     date: '2026-06-17',
     changes: [
       'Confluence 페이지 URL로 바로 분석 가능 — Atlassian 계정 연결 후 페이지 링크만 붙여넣으면 됩니다',

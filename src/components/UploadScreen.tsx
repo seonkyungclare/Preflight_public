@@ -7,15 +7,23 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { releaseNotes } from '@/config/release-notes'
+import {
+  listEntries,
+  deleteEntry,
+  clearAll,
+  formatHistoryDate,
+  type HistoryEntry,
+} from '@/lib/analysis-history'
 
 interface UploadScreenProps {
   onAnalyze: (text: string, fileName: string) => void
   error: string | null
+  onRestoreHistory?: (entry: HistoryEntry) => void
 }
 
 const MAX_FILES = 3
 
-export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
+export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: UploadScreenProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [files, setFiles] = useState<File[]>([])
@@ -25,6 +33,37 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
   const [confluenceUrl, setConfluenceUrl] = useState('')
   const [atlassianConnected, setAtlassianConnected] = useState<boolean | null>(null)
   const [atlassianCloudUrl, setAtlassianCloudUrl] = useState<string | undefined>(undefined)
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+
+  async function refreshHistory() {
+    try {
+      const entries = await listEntries()
+      setHistory(entries)
+    } catch (e) {
+      console.error('[history] 조회 실패:', e)
+    }
+  }
+
+  useEffect(() => {
+    refreshHistory()
+  }, [])
+
+  async function handleDeleteEntry(id: string) {
+    await deleteEntry(id)
+    refreshHistory()
+  }
+
+  async function handleClearAll() {
+    if (!confirm('저장된 모든 분석 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return
+    await clearAll()
+    refreshHistory()
+  }
+
+  function handleRestore(entry: HistoryEntry) {
+    setShowHistory(false)
+    onRestoreHistory?.(entry)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -157,7 +196,20 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
   const canAddMore = files.length < MAX_FILES
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12">
+    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12 relative [&_button]:rounded-md">
+      {/* 우측 상단 — 이전 분석 */}
+      <button
+        onClick={() => { refreshHistory(); setShowHistory(true) }}
+        className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-md hover:bg-accent transition-colors"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 12a9 9 0 1 0 9-9 9.74 9.74 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M12 7v5l4 2" />
+        </svg>
+        이전 분석{history.length > 0 ? ` (${history.length})` : ''}
+      </button>
+
       {/* 로고 */}
       <div className="mb-10 flex items-center gap-2">
         <span className="text-2xl font-bold tracking-tight">Preflight</span>
@@ -363,7 +415,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
       {process.env.NEXT_PUBLIC_BUILD_TIME && (
         <div className="mt-2 flex items-center gap-2">
           <p className="text-xs text-muted-foreground">
-            배포일: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+            배포일: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Seoul' })}
           </p>
           <button
             onClick={() => setShowBuildInfo(true)}
@@ -379,7 +431,7 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
           <DialogHeader>
             <DialogTitle className="text-sm">업데이트 내역</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-1 max-h-80 overflow-y-auto">
+          <div className="space-y-4 pt-1 max-h-80 overflow-y-auto scrollbar-hide">
             {releaseNotes.map((entry, i) => (
               <div key={i}>
                 <p className="text-xs text-muted-foreground mb-1.5">{entry.date}</p>
@@ -393,6 +445,70 @@ export default function UploadScreen({ onAnalyze, error }: UploadScreenProps) {
                 </ul>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 이전 분석 다이얼로그 */}
+      <Dialog open={showHistory} onOpenChange={setShowHistory}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">이전 분석 ({history.length})</DialogTitle>
+          </DialogHeader>
+          <div className="pt-1">
+            {history.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                저장된 분석이 없습니다
+              </p>
+            ) : (
+              <>
+                <ul className="space-y-2 max-h-96 overflow-y-auto scrollbar-hide">
+                  {history.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex items-start gap-2 px-3 py-2.5 border border-border rounded-lg hover:bg-accent transition-colors group"
+                    >
+                      <button
+                        onClick={() => handleRestore(entry)}
+                        className="flex-1 text-left min-w-0 block"
+                      >
+                        <p className="text-sm font-medium break-words">{entry.fileName || '제목 없음'}</p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {entry.mockupFilesLowFi && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-border bg-muted text-muted-foreground shrink-0">
+                              Lo-Fi
+                            </span>
+                          )}
+                          {entry.mockupFilesHiFi && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 bg-primary/10 text-primary shrink-0">
+                              Hi-Fi
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {formatHistoryDate(entry.createdAt)}
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteEntry(entry.id) }}
+                        className="text-muted-foreground hover:text-destructive text-sm shrink-0 px-2 opacity-60 group-hover:opacity-100"
+                        aria-label="삭제"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-4 pt-3 border-t border-border flex justify-end">
+                  <button
+                    onClick={handleClearAll}
+                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    전체 삭제
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

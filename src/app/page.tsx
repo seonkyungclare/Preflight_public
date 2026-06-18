@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import UploadScreen from '@/components/UploadScreen'
 import AnalyzingScreen from '@/components/AnalyzingScreen'
 import ResultScreen from '@/components/ResultScreen'
+import { saveEntry, generateId, type HistoryEntry } from '@/lib/analysis-history'
 
 // ─── 공유 타입 정의 (v1/v2 호환) ──────────────────────────────────────────────
 //
@@ -134,8 +135,12 @@ interface AppState {
   analysis: AnalysisResult | null
   mockupFilesLowFi: Record<string, string> | null
   mockupFilesHiFi: Record<string, string> | null
+  mockupLowFiAt: number | null
+  mockupHiFiAt: number | null
   error: string | null
   mockupGenerating: MockupType | null  // 생성 중인 타입, null이면 미생성 중
+  historyId: string | null  // 현재 분석 세션의 history 엔트리 ID
+  historyCreatedAt: number | null
 }
 
 // ─── 메인 페이지 (스크린 상태 머신) ────────────────────────────────────────────
@@ -149,9 +154,13 @@ export default function Home() {
     prdText: '',
     mockupFilesLowFi: null,
     mockupFilesHiFi: null,
+    mockupLowFiAt: null,
+    mockupHiFiAt: null,
     error: null,
     mockupGenerating: null,
     analysis: null,
+    historyId: null,
+    historyCreatedAt: null,
   })
 
   // PRD 파일 업로드 후 Claude 분석 스트리밍 시작
@@ -164,6 +173,8 @@ export default function Home() {
       error: null,
       mockupFilesLowFi: null,
       mockupFilesHiFi: null,
+      mockupLowFiAt: null,
+      mockupHiFiAt: null,
     }))
 
     try {
@@ -186,7 +197,21 @@ export default function Home() {
       }
 
       const analysis = parseAnalysis(rawText)
-      setState(prev => ({ ...prev, screen: 'result', analysis }))
+      const historyId = generateId()
+      const historyCreatedAt = Date.now()
+      setState(prev => ({ ...prev, screen: 'result', analysis, historyId, historyCreatedAt }))
+
+      saveEntry({
+        id: historyId,
+        createdAt: historyCreatedAt,
+        fileName,
+        prdText,
+        analysis,
+        mockupFilesLowFi: null,
+        mockupFilesHiFi: null,
+        mockupLowFiAt: null,
+        mockupHiFiAt: null,
+      }).catch(err => console.error('[history] 저장 실패:', err))
     } catch (e) {
       console.error('[분석 오류] 에러:', e)
       const errorMsg = '분석 중 오류가 발생했습니다'
@@ -224,13 +249,35 @@ export default function Home() {
       if (!res.ok) throw new Error('목업 생성 실패')
 
       const data = await res.json() as { files: Record<string, string> }
+      console.log('[mockup] 생성 완료, 새 탭 오픈 시도', { type, fileKeys: Object.keys(data.files) })
+      const now = Date.now()
+      const nextLowFi = type === 'lowfi' ? data.files : state.mockupFilesLowFi
+      const nextHiFi = type === 'hifi' ? data.files : state.mockupFilesHiFi
+      const nextLowFiAt = type === 'lowfi' ? now : state.mockupLowFiAt
+      const nextHiFiAt = type === 'hifi' ? now : state.mockupHiFiAt
       setState(prev => ({
         ...prev,
         mockupGenerating: null,
-        mockupFilesLowFi: type === 'lowfi' ? data.files : prev.mockupFilesLowFi,
-        mockupFilesHiFi: type === 'hifi' ? data.files : prev.mockupFilesHiFi,
+        mockupFilesLowFi: nextLowFi,
+        mockupFilesHiFi: nextHiFi,
+        mockupLowFiAt: nextLowFiAt,
+        mockupHiFiAt: nextHiFiAt,
       }))
       openMockupTab(data.files, state.analysis, type)
+
+      if (state.historyId) {
+        saveEntry({
+          id: state.historyId,
+          createdAt: state.historyCreatedAt ?? now,
+          fileName: state.fileName,
+          prdText: state.prdText,
+          analysis: state.analysis,
+          mockupFilesLowFi: nextLowFi,
+          mockupFilesHiFi: nextHiFi,
+          mockupLowFiAt: nextLowFiAt,
+          mockupHiFiAt: nextHiFiAt,
+        }).catch(err => console.error('[history] 목업 저장 실패:', err))
+      }
     } catch (e) {
       // 취소한 경우 에러 표시 없이 조용히 종료
       if ((e as Error).name === 'AbortError') {
@@ -248,10 +295,30 @@ export default function Home() {
     abortRef.current?.abort()
   }
 
+  // history 엔트리로부터 결과 화면 복원
+  function handleRestoreHistory(entry: HistoryEntry) {
+    setState({
+      screen: 'result',
+      fileName: entry.fileName,
+      prdText: entry.prdText,
+      analysis: entry.analysis as AnalysisResult,
+      mockupFilesLowFi: entry.mockupFilesLowFi,
+      mockupFilesHiFi: entry.mockupFilesHiFi,
+      mockupLowFiAt: entry.mockupLowFiAt,
+      mockupHiFiAt: entry.mockupHiFiAt,
+      error: null,
+      mockupGenerating: null,
+      historyId: entry.id,
+      historyCreatedAt: entry.createdAt,
+    })
+  }
+
   // sessionStorage에 목업 데이터 저장 후 새 탭 오픈
   function openMockupTab(files: Record<string, string>, analysis: AnalysisResult, type: MockupType) {
+    console.log('[openMockupTab] 호출됨', { type, hasFiles: !!files, hasAnalysis: !!analysis })
     sessionStorage.setItem('preflight_mockup', JSON.stringify({ files, analysis, type }))
     const newWindow = window.open('/mockup', '_blank')
+    console.log('[openMockupTab] window.open 결과', { opened: !!newWindow })
     if (!newWindow) {
       setState(prev => ({
         ...prev,
@@ -263,7 +330,11 @@ export default function Home() {
   return (
     <>
       {state.screen === 'upload' && (
-        <UploadScreen onAnalyze={handleAnalyze} error={state.error} />
+        <UploadScreen
+          onAnalyze={handleAnalyze}
+          error={state.error}
+          onRestoreHistory={handleRestoreHistory}
+        />
       )}
 
       {state.screen === 'analyzing' && <AnalyzingScreen />}
@@ -274,6 +345,8 @@ export default function Home() {
           result={state.analysis}
           hasMockupLowFi={!!state.mockupFilesLowFi}
           hasMockupHiFi={!!state.mockupFilesHiFi}
+          mockupLowFiAt={state.mockupLowFiAt}
+          mockupHiFiAt={state.mockupHiFiAt}
           onGenerateMockup={handleGenerateMockup}
           onCancelMockup={handleCancelMockup}
           mockupGenerating={state.mockupGenerating}

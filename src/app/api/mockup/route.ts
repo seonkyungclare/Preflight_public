@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { parse as babelParse } from '@babel/parser'
 
 // ============================================================================
 // ============================================================================
@@ -216,11 +217,14 @@ ${NOTE_PANEL_SPEC}
 // ============================================================================
 // HIFI: Ant Design 프로토타입 — 상세 요구사항 검증용
 // ============================================================================
-const HIFI_PROMPT = `You are a senior React developer creating a high-fidelity UI prototype using Ant Design.
- 
+const HIFI_PROMPT = `You are a senior product designer + React developer crafting a high-fidelity Ant Design prototype.
+
+## Hi-Fi의 목적 (Lo-Fi와 가장 큰 차별점)
+- Lo-Fi가 "구조 검증"이라면 Hi-Fi는 **이상적이고 논리적인 사용자 플로우 + UX 퀄리티 검증**
+- 엣지 케이스(빈 상태/로딩/에러)는 Hi-Fi에서 다루지 않음 (Lo-Fi 또는 분석 결과 노트에서 다룸)
+- 출력은 "디자인 시안 + 동작하는 인터랙션"의 완성도에 집중
+
 ${PRD_FIDELITY_PRINCIPLE}
- 
-${ANALYSIS_DRIVEN_ATTENTION}
  
 ## Environment
 - import React, { useState, useEffect } from 'react'
@@ -242,20 +246,10 @@ ${ANALYSIS_DRIVEN_ATTENTION}
 - <Layout> with <Layout.Sider> as LNB using <Menu>
  
 ### Layout 결정 (PRD 화면 수에 따라 LNB 적용 여부)
-LNB(<Layout.Sider>)는 화면이 충분히 많을 때만 의미가 있습니다.
-화면 수에 따라 다른 레이아웃을 선택하세요:
- 
-- **PRD 실제 메뉴(영역 2 후보) + forced_states 합계가 3개 미만**:
-  · Sider 없음. 단일 화면 또는 <Tabs>로 처리
-  · 영역 1/2/3 강제 구조 적용 안 함
-  · 사용자 flow 다이어그램은 별도 <Tabs> 항목 또는 페이지 상단 토글로 제공
-  · 엣지 케이스는 페이지 내 <Tabs> 또는 토글 버튼으로 전환
- 
-- **합계가 3개 이상**:
-  · <Layout.Sider> + <Menu> 사용
-  · 아래 "LNB 메뉴 구조 (3개 영역)" 적용
- 
-### LNB 메뉴 구조 (3개 영역, 위에서 아래 순서)
+- **PRD 실제 메뉴 화면 수 < 3**: Sider 없음. 단일 화면 또는 <Tabs>로 처리. 사용자 flow는 페이지 상단 토글로 제공
+- **PRD 실제 메뉴 화면 수 ≥ 3**: <Layout.Sider> + <Menu> 사용. 아래 "LNB 메뉴 구조" 적용
+
+### LNB 메뉴 구조 (2개 영역, 위에서 아래 순서)
  
 **영역 1: 사용자 flow 보기 (LNB 최상단, 단일 항목)**
 - 메뉴명: "📊 사용자 flow 보기"
@@ -351,27 +345,54 @@ PRD가 분류를 제공하지 않거나 항목이 적은 경우, 1단 구조:
 - 또는 Sider 내 별도 섹션 헤더 div로 표시
 - 라벨 텍스트는 "메뉴" 고정 (변경 금지)
  
-**영역 3: 엣지 케이스 (상태/케이스 변형)**
-- 그룹 라벨: "엣지 케이스"
-- 노출 대상: 다음 두 가지 모두 포함
-  · PRD에 명시된 상태 (예: PRD에 "에러 시 토스트 표시"가 있으면 → "캠페인 생성 — 에러")
-  · forced_states로 추가된 상태 (분석 결과 기반)
-- 메뉴 항목명 형식: "{화면명} — {상태명}"
-  · 예: "상품광고 목록 — 빈 상태", "캠페인 생성 — 에러", "캠페인 상세 — 로딩"
-- 각 항목 클릭 시 해당 상태의 화면을 렌더
-- forced_states로 추가된 항목은 메뉴명 우측에 작은 뱃지 "분석" 표시
-  · PRD 명시 상태는 뱃지 없음 (구분을 위해)
-- 이 그룹은 영역 2의 "메뉴"와 시각적으로 분리되어야 함
-  · 메뉴 아이콘 사용 가능 (상태 종류별로 다른 아이콘)
- 
 ### LNB 전체 규칙
-- 영역 1 → 영역 2 → 영역 3 순서 고정
-- 영역 라벨 표기: "메뉴" / "엣지 케이스" 텍스트 고정 (변경 금지)
+- 영역 1 → 영역 2 순서 고정
+- 영역 라벨 표기: "메뉴" 텍스트 고정 (변경 금지)
   · <Menu.ItemGroup title="메뉴"> 또는 별도 섹션 헤더로 구현
   · 영역 2 안에서 PRD 분류에 따라 SubMenu로 추가 그룹화 가능 (2단 구조)
 - 영역 간 시각적 구분: <Menu.Divider> 또는 영역 라벨로 분리
-- PRD에 없는 메뉴 항목을 영역 2에 추가하는 것은 금지 (영역 3의 forced_states만 예외)
+- PRD에 없는 메뉴 항목 추가 금지
 - 메뉴명에 PRD에 없는 부제/설명 추가 금지
+
+## Hi-Fi UX 퀄리티 가이드 (핵심 차별점)
+
+Hi-Fi는 단순한 화면 나열이 아니라 **사용자가 자연스럽게 따라가는 흐름**이어야 합니다.
+
+### 1. 이상적 플로우 연결 (가장 중요)
+- 모든 클릭 가능한 요소는 다음 단계로 **반드시 이어져야 함** — 데드엔드 금지
+- 시나리오의 첫 단계부터 마지막까지 끊김 없이 클릭으로 도달 가능해야 함
+- 한 화면에서 다음 화면으로 가는 경로가 1개 이상 명확히 존재
+- 사용자가 "어디에서 왔는지" 알 수 있도록 breadcrumb · 제목 · "이전" 버튼 중 최소 1개 제공
+- Modal/Drawer 안의 액션도 외부 화면과 자연스럽게 연결 (제출 → 목록 갱신 + 닫기)
+
+### 2. 시각적 위계 (Fitts' Law + Information Hierarchy)
+- Primary CTA는 화면당 1개. 가장 두드러진 색·위치 (보통 우측 상단 또는 콘텐츠 하단 중앙)
+- Secondary 액션은 outline 또는 ghost 버튼
+- Destructive 액션은 danger 색상 + 확인 다이얼로그 필수
+- 같은 종류 액션은 화면 전체에서 같은 위치·스타일 유지
+
+### 3. 인지 부담 최소화 (Hick's Law + Progressive Disclosure)
+- 옵션이 5개 이상이면 그룹화 또는 Select
+- 고급 옵션은 접기/펴기로 숨김
+- 한 화면에 한 가지 주요 작업
+- 폼은 논리적 섹션으로 나누고 섹션당 5~8필드 이내
+
+### 4. 즉각적 피드백
+- 모든 인터랙션은 0.1초 이내 시각 반응 (hover, active, focus)
+- 비동기 작업은 \`<message>\` / \`<Spin>\` / 버튼 loading prop으로 진행 상태 표시
+- 성공 시 \`<message type="success">\` + 화면 상태 변경
+- 실패 시 \`<message type="error">\` + 입력값 유지 (다시 시도 가능)
+
+### 5. 일관성 (Jakob's Law)
+- antd 기본 패턴 준수 — 사용자가 다른 antd 앱에서 본 경험이 즉시 통하도록
+- 같은 데이터는 같은 형식으로 표시 (예: 날짜 포맷, 금액 포맷, 상태 라벨)
+- 같은 인터랙션은 같은 위치 (예: "수정" 버튼이 모든 상세 화면에서 같은 자리)
+
+### 6. 빈/로딩/에러 상태는 hi-fi 출력 대상이 아님
+- Empty/Loading/Error state는 화면 분기로 만들지 않음
+- 데이터는 항상 적절한 placeholder로 채워서 정상 흐름만 보여줌
+- 단, PRD가 명시적으로 "에러 시 어떤 UX" 같은 인터랙션을 정의했다면 그것은 흐름의 일부로 포함
+- 누락이 의심되는 상태는 Note Panel "누락 가능 항목"에 기록
  
 ## Placeholder Data Rules (UPDATED — address sparse output)
 Placeholder data must feel like real product data, not test data.
@@ -426,13 +447,13 @@ These are permitted structural connectors. Implement all that apply:
 - These flows will be implemented regardless of PRD explicitness
  
 ### Step 3 — Merge Analysis Directives
-- Append forced_state screens from mockup_directives
-- Reorder per critical_screens
- 
+- mockup_directives.critical_screens 순서를 LNB에 반영
+- mockup_directives.attention_areas는 Note Panel "⚠️ 주의 영역"에 표시
+- forced_states는 Hi-Fi에서 무시 (UX 퀄리티에 집중)
+
 ### Step 4 — Choose Layout
-화면 수 = 영역 2 후보(PRD 실제 화면) + forced_states 합계
-- 합계 < 3: 단일 view 또는 <Tabs>. Sider 없음. LNB 3영역 구조 미적용
-- 합계 ≥ 3: <Layout.Sider> + <Menu> + LNB 3영역 구조 적용
+- 화면 수 < 3: 단일 view 또는 <Tabs>. Sider 없음
+- 화면 수 ≥ 3: <Layout.Sider> + <Menu>
 (자세한 규칙은 위 "Layout 결정" 섹션 참고)
  
 ### Step 5 — Element Mapping (antd)
@@ -443,12 +464,11 @@ These are permitted structural connectors. Implement all that apply:
   search/filter  → <Input.Search> or <Select> ONLY if PRD names it
   button         → <Button type="primary/default/danger"> + PRD's exact label
  
-### Step 6 — State Rendering
-Only if PRD explicitly describes OR mockup_directives.forced_states lists it.
-  loading → <Skeleton active>
-  empty   → <Empty description="데이터가 없습니다">
-  error   → <Alert type="error" showIcon>
-  success → <Result status="success">
+### Step 6 — State Rendering (제한적)
+- Hi-Fi는 정상 흐름에 집중. empty/loading/error 별도 화면 분기 없음
+- 단, PRD가 명시적으로 "에러 시 어떤 UX" 같은 인터랙션을 정의한 경우만 그 흐름 안에 통합
+  · 예: PRD에 "결제 실패 시 재시도 안내 모달" 명시 → 재시도 모달 인터랙션 구현
+- success feedback은 <message type="success"> 정도로 가볍게 처리
  
 ${NOTE_PANEL_SPEC}
  
@@ -508,8 +528,6 @@ Step A에서 추출한 각 항목을, 코드 출력에서 직접 찾아보세요
 - [ ] PRD에 정의된 모든 컬럼이 테이블에 있는가?
   · 컬럼이 길게 나열된 경우(예: 18개 컬럼) 특히 자주 누락됨
   · PRD 컬럼 수와 코드 컬럼 수가 정확히 일치하는지 확인
-- [ ] PRD에 명시된 모든 상태가 영역 3 ("엣지 케이스" 그룹)에 있는가?
-  · forced_states뿐 아니라 PRD 명시 상태도 모두 영역 3에 등장
 - [ ] 캠페인 상태 / 이력 유형 같은 enum 정의가 모두 코드에 반영되었는가?
   · 예: 캠페인 상태 7종 → placeholder data에 다양하게 분포
   · 예: 이력 유형 9종 → 이력 모달에 모두 표시 가능
@@ -537,15 +555,15 @@ Step A에서 추출한 각 항목을, 코드 출력에서 직접 찾아보세요
  
 ### Forward check (PRD 항목별 매칭)
 Audit Step A의 각 카테고리에 대해 한 번 더 확인:
-- 모든 PRD 화면 = 영역 2/3 + LNB 메뉴에 존재 ✓
+- 모든 PRD 화면 = LNB 메뉴 영역 2에 존재 ✓
 - 모든 PRD 필드/컬럼 = 렌더링됨 ✓
-- 모든 PRD 버튼/액션 = 렌더링되고 동작함 ✓
-- 모든 PRD 상태 = 영역 3에 별도 화면으로 존재 ✓
+- 모든 PRD 버튼/액션 = 렌더링되고 동작함 (데드엔드 없음) ✓
 - 모든 PRD 인터랙션 = Standard Navigation Flow 또는 명시적 구현으로 연결 ✓
 - 모든 입력 제약 = Form rules에 반영 ✓
 - 모든 유저스토리 상세 설명 = 화면에 반영 ✓
-- 모든 forced_state = 분석 뱃지와 함께 영역 3에 존재 ✓
 - 리스트 뷰 = 3~5행의 현실적 placeholder data ✓
+- Primary CTA가 화면당 1개로 명확히 강조됨 ✓
+- 모든 클릭 가능 요소가 다음 단계로 연결됨 (데드엔드 검증) ✓
  
 ### LNB structure check
 - 영역 1 "📊 사용자 flow 보기"가 LNB 최상단에 있는가 ✓
@@ -559,10 +577,8 @@ Audit Step A의 각 카테고리에 대해 한 번 더 확인:
   · LNB에 동사형 명칭("~업로드", "~수정", "~등록")이 있으면 액션 가능성 매우 높음
 - 액션이 적절한 메뉴 페이지에 흡수되었는가 ✓
   · 시나리오 추출 → 어느 메뉴의 액션인지 매핑 → 해당 페이지에 버튼/탭으로 구현
-- 영역 3 그룹 라벨이 정확히 "엣지 케이스"인가 ✓
-- 영역 3에 PRD 명시 상태 + forced_states 모두 포함되는가 ✓
 - 영역 간 시각적 구분(Divider 또는 그룹 라벨)이 적용되었는가 ✓
-- 사용자 flow 다이어그램의 모든 노드가 영역 2/3에 실제로 존재하는가 ✓
+- 사용자 flow 다이어그램의 모든 노드가 영역 2에 실제로 존재하는가 ✓
 - 다이어그램 노드 클릭이 해당 LNB 메뉴와 동기화되는가 ✓
  
 ### Reverse check (No Invention)
@@ -579,13 +595,26 @@ For every visible element: "Is this in the PRD, in mockup_directives, OR a Stand
 - Row selection checkboxes not in PRD                    → remove
 - Mock counts ("총 152건") not in PRD                    → remove
 - Icons in buttons when PRD doesn't name them            → remove
-- Analyst badge on non-forced-state screens              → remove
- 
+
 ### Final checks
 - Final Completeness Audit 완료 ✓ (누락 발견 시 1순위 수정, 2순위 Note Panel 기록)
-- PRD screens + forced_state count == implemented screen count ✓
-- Note Panel always rendered ✓ (모든 누락이 여기에 명시되었는가)
+- PRD screens count == implemented screen count ✓
+- Note Panel always rendered ✓
 - All brackets balanced, no code truncation ✓
+- **No duplicate declarations** ✓ — 같은 스코프에서 동일 식별자 중복 선언 금지
+
+### 출력 토큰 압축 규칙 (응답 속도 단축 — 매우 중요)
+다음 규칙을 엄격히 지켜 출력 토큰 수를 최소화하세요. 같은 결과를 더 짧은 코드로 표현합니다:
+- 모든 주석(\`// ...\`, \`/* ... */\`) **금지**
+- 콘솔 로그(\`console.log\`) 금지
+- 중복 빈 줄 금지 (연속 빈 줄 1개로 충분)
+- 같은 데이터를 여러 곳에서 쓰면 상수로 한 번만 정의
+- 반복되는 JSX 패턴은 \`map()\`으로 압축
+- 변수명은 짧지만 명확하게
+- antd 컴포넌트 import는 한 줄로 묶기 (\`import { A, B, C } from 'antd'\`)
+- 인라인 style 대신 변수로 한 번만 정의해서 재사용
+- 출력 결과의 줄 수가 1000줄을 넘지 않도록 우선순위 조정
+
 - Return ONLY component code. No markdown fences. No explanation.
 `
 
@@ -639,6 +668,70 @@ function ensureReactImport(code: string): string {
   return "import React, { useState, useEffect } from 'react';\n" + code
 }
 
+interface JsxSyntaxError {
+  message: string
+  line?: number
+  column?: number
+}
+
+// Babel parser로 JSX 코드의 구문 검증 — 에러 있으면 정보 반환, 정상이면 null
+function validateJsx(code: string): JsxSyntaxError | null {
+  try {
+    babelParse(code, {
+      sourceType: 'module',
+      plugins: ['jsx'],
+      errorRecovery: false,
+    })
+    return null
+  } catch (err) {
+    const e = err as Error & { loc?: { line: number; column: number } }
+    return {
+      message: e.message,
+      line: e.loc?.line,
+      column: e.loc?.column,
+    }
+  }
+}
+
+// 구문 에러 발견 시 같은 모델에게 수정 요청 (Self-repair)
+async function repairCode(
+  anthropic: Anthropic,
+  brokenCode: string,
+  error: JsxSyntaxError,
+  type: 'lowfi' | 'hifi',
+): Promise<string | null> {
+  const locStr = error.line
+    ? `위치: ${error.line}번째 줄${error.column !== undefined ? `, ${error.column}열` : ''}`
+    : ''
+
+  const repairPrompt = `다음 React 코드에 구문 에러가 있습니다. 에러를 수정해서 전체 코드를 다시 반환해주세요.
+
+에러 메시지: ${error.message}
+${locStr}
+
+원본 코드:
+\`\`\`jsx
+${brokenCode}
+\`\`\`
+
+요구사항:
+- 위 에러를 수정해서 **전체 코드** 반환 (일부만 반환 금지)
+- 같은 식별자(\`const\`, \`function\`, \`let\`)가 같은 스코프에서 중복 선언되어 있으면 한쪽을 제거하거나 이름 변경
+- 미완료된 괄호/중괄호/문자열이 있으면 닫기
+- 에러가 발생한 부분 외에는 가능한 한 그대로 유지
+- 응답은 **오직 코드만** — 설명·마크다운 펜스 금지`
+
+  const result = await createMessageWithModelFallback(anthropic, {
+    max_tokens: type === 'hifi' ? 64000 : 32000,
+    temperature: 0.2,
+    messages: [{ role: 'user', content: repairPrompt }],
+  })
+
+  if (result.stop_reason === 'max_tokens') return null
+  const output = extractText(result.content)
+  return extractCode(output)
+}
+
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
   if (!apiKey) {
@@ -681,7 +774,7 @@ async function createMessageWithModelFallback(
         ...params,
         model,
         stream: false,
-        betas: ['output-128k-2025-02-19'],
+        betas: ['output-128k-2025-02-19', 'prompt-caching-2024-07-31'],
       })
       return result as unknown as Anthropic.Messages.Message
     } catch (err) {
@@ -746,12 +839,15 @@ export async function POST(req: Request): Promise<Response> {
 
     const systemPrompt = type === 'hifi' ? HIFI_PROMPT : LOWFI_PROMPT
     const userPrompt = buildUserPrompt(prdText, analysisText)
-    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`
 
     const result = await createMessageWithModelFallback(anthropic, {
-      max_tokens: 32000,
+      max_tokens: type === 'hifi' ? 64000 : 32000,
       temperature: type === 'hifi' ? 0.4 : 0.2,
-      messages: [{ role: 'user', content: fullPrompt }],
+      // 시스템 프롬프트를 별도로 보내고 cache_control 부여 → 같은 시스템 프롬프트 5분 내 재호출 시 입력 토큰 처리 비용·시간 대폭 절감
+      system: [
+        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+      ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
+      messages: [{ role: 'user', content: userPrompt }],
     })
 
     console.log(`[mockup v2] type=${type} stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
@@ -761,7 +857,7 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     const output = extractText(result.content)
-    const rawCode = extractCode(output)
+    let rawCode = extractCode(output)
     if (!rawCode) {
       return Response.json({ error: '응답에서 코드를 찾지 못했습니다' }, { status: 500 })
     }
@@ -769,8 +865,35 @@ export async function POST(req: Request): Promise<Response> {
       console.error('[mockup] 코드 불완전. stop_reason:', result.stop_reason)
       return Response.json({ error: '목업 코드가 중간에 잘렸습니다.' }, { status: 500 })
     }
-    const code = ensureReactImport(rawCode)
-    return Response.json({ files: { '/App.js': code } })
+
+    // 구문 검증 (B) + Self-repair (C)
+    let codeWithImport = ensureReactImport(rawCode)
+    let syntaxError = validateJsx(codeWithImport)
+    if (syntaxError) {
+      console.warn(`[mockup] 구문 에러 감지. self-repair 시도: ${syntaxError.message}`)
+      const repaired = await repairCode(anthropic, codeWithImport, syntaxError, type)
+      if (repaired && isCodeComplete(repaired)) {
+        rawCode = repaired
+        codeWithImport = ensureReactImport(rawCode)
+        syntaxError = validateJsx(codeWithImport)
+        if (syntaxError) {
+          console.error(`[mockup] self-repair 후에도 에러 남음: ${syntaxError.message}`)
+        } else {
+          console.log('[mockup] self-repair 성공')
+        }
+      } else {
+        console.error('[mockup] self-repair 응답이 비어있거나 불완전')
+      }
+    }
+
+    if (syntaxError) {
+      return Response.json({
+        error: '생성된 코드에 구문 오류가 있습니다. 다시 시도해주세요.',
+        detail: syntaxError.message,
+      }, { status: 500 })
+    }
+
+    return Response.json({ files: { '/App.js': codeWithImport } })
   } catch (error) {
     console.error('[mockup] Claude API 오류:', error)
     if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {

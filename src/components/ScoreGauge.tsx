@@ -18,7 +18,7 @@ export default function ScoreGauge({ score }: ScoreGaugeProps) {
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-36 h-36">
+      <div className="relative w-28 h-28">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
           {/* 배경 원 */}
           <circle
@@ -41,12 +41,12 @@ export default function ScoreGauge({ score }: ScoreGaugeProps) {
         </svg>
         {/* 중앙 점수 텍스트 */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold text-white">{score}</span>
-          <span className="text-xs text-slate-400">/ 100</span>
+          <span className="text-2xl font-bold text-white leading-none">{score}</span>
+          <span className="text-[10px] text-slate-400 mt-0.5">/ 100</span>
         </div>
       </div>
       <span
-        className="mt-3 text-sm font-semibold px-3 py-1 rounded-full"
+        className="mt-2 text-xs font-semibold px-2.5 py-0.5 rounded-full"
         style={{ backgroundColor: color + '22', color }}
       >
         {label}
