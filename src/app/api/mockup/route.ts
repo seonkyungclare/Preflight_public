@@ -13,6 +13,7 @@ interface ScreenSpec {
   fields: string[]
   actions: string[]
   navigates_to: string[]
+  parent_id?: string  // set for 2nd-level screens; omitted for top-level menu screens
 }
 
 interface NoteItem {
@@ -54,7 +55,8 @@ Output schema:
       "columns": ["컬럼명1"],
       "fields": ["필드명1"],
       "actions": ["버튼명1"],
-      "navigates_to": ["target_screen_id"]
+      "navigates_to": ["target_screen_id"],
+      "parent_id": "parent_screen_id_or_omit_if_top_level"
     }
   ],
   "menu_screen_ids": ["id"],
@@ -68,15 +70,40 @@ Output schema:
 }
 
 Rules:
-- menu_screen_ids: only TOP-LEVEL navigation destinations (not modals, not sub-actions like "업로드/수정/삭제")
+- menu_screen_ids: TOP-LEVEL navigation only (main menu items, max 1-depth)
 - columns: ALL PRD-defined table columns (list type) — do not omit any
 - fields: ALL PRD-defined form/detail fields — do not omit any
 - actions: ALL PRD-defined buttons/actions for this screen
-- navigates_to: screen ids reachable from this screen via PRD flows or Standard Navigation
-- Sub-actions (업로드, 수정, 삭제 etc.) → parent screen's actions list, NOT separate screens
-- Modals/drawers → parent screen's actions list, NOT separate screens
+- navigates_to: screen ids reachable from this screen — derive from PRD AND Standard Navigation Flows below
 - forced_states, critical_screen_ids, attention_areas: derive from analysis.mockup_directives
-- note_items: PRD gaps, ambiguities, missing specs, and attention areas from analysis`
+- note_items: PRD gaps, ambiguities, missing specs, and attention areas from analysis
+
+## Screen hierarchy (2-level max)
+Decide per screen whether it's 1st-level (top menu) or 2nd-level (sub-page):
+
+2nd-level screen (add to screens array with parent_id set, do NOT add to menu_screen_ids):
+- 상세 페이지: viewing a single item's full detail (e.g., 캠페인 상세, 광고 상세)
+- 생성/등록 폼: full-page creation form with many fields (e.g., 캠페인 생성, 소재 등록)
+- 수정 폼: full-page edit form (e.g., 캠페인 수정)
+- 서브 섹션: sub-feature under a parent (e.g., 소재 관리 under 캠페인 관리)
+- Rule: set parent_id to the 1st-level screen id
+
+NOT a separate screen (keep as action in parent, no separate screen entry):
+- 삭제 확인 팝업, 인라인 수정, 필터 드롭다운, 컬럼 설정 모달 (<=5 fields in a modal)
+- Rule: put in parent screen actions list only
+
+## Standard Navigation Flows (ALWAYS derive these even if PRD doesn't state them explicitly)
+These are universal UI conventions — populate navigates_to and flows based on these rules:
+- list screen → detail screen of the same domain (trigger: "행 클릭")
+- any screen with "생성/추가/등록" action → form screen or back to same screen (trigger: "생성 버튼")
+- form screen → parent list screen after submit (trigger: "저장/확인")
+- detail screen → parent list screen (trigger: "목록으로")
+- any screen → any screen explicitly linked in PRD (trigger: PRD's exact wording)
+
+## flows population rules
+- Include ALL navigations: PRD-explicit + Standard Navigation Flows derived above
+- Every menu screen should appear in at least one flow (as from or to)
+- trigger: short Korean label describing what user does (예: "행 클릭", "저장 버튼", "취소", "생성 버튼")`
 
 const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
 
@@ -261,6 +288,65 @@ async function extractSpec(
 }
 
 // ============================================================================
+// STEP 1-B: FLOW EXTRACTION (dedicated small call)
+// ============================================================================
+
+const FLOW_EXTRACTION_SYSTEM = `You are a UX analyst. Given a list of screens and a PRD, generate ALL navigation flows between screens.
+Return a JSON array only. No markdown, no explanation.
+
+Output format:
+[{ "from": "screen_id", "to": "screen_id", "trigger": "한국어 트리거" }]
+
+Rules:
+- Include BOTH PRD-explicit flows AND Standard Navigation Flows below
+- trigger: short Korean action label (예: "행 클릭", "생성 버튼", "저장", "취소", "목록으로", "상세보기")
+- Only include flows where BOTH from and to are in the given screen id list
+- A list screen should have at least one outgoing flow (to detail or form)
+- Every screen should appear in at least one flow (as from or to)
+
+Standard Navigation Flows (always apply):
+- list → detail/form via "행 클릭" or "상세보기"
+- any screen with 생성/추가/등록 action → form screen or back to same screen via "생성 버튼"
+- form → parent list via "저장" or "확인"
+- detail → parent list via "목록으로" or "이전"
+- any cross-screen button in PRD → add that flow`
+
+async function extractFlows(
+  anthropic: Anthropic,
+  spec: MockupSpec,
+  prdText: string,
+): Promise<Array<{ from: string; to: string; trigger: string }>> {
+  const screenList = spec.screens
+    .map(s => `- ${s.id} ("${s.name}", type: ${s.type}, actions: [${s.actions.join(', ')}])`)
+    .join('\n')
+
+  const result = await callClaudeCached(anthropic, {
+    max_tokens: 2000,
+    temperature: 0.1,
+    system: [
+      { type: 'text', text: FLOW_EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
+    ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
+    messages: [{
+      role: 'user',
+      content: `Screens:\n${screenList}\n\nPRD (for flow context):\n${prdText.slice(0, 3000)}\n\nGenerate all flows as a JSON array.`,
+    }],
+  })
+
+  const text = extractText(result.content)
+  const start = text.indexOf('[')
+  const end = text.lastIndexOf(']')
+  if (start === -1 || end === -1) return []
+
+  try {
+    const flows = JSON.parse(text.slice(start, end + 1)) as Array<{ from: string; to: string; trigger: string }>
+    const validIds = new Set(spec.screens.map(s => s.id))
+    return flows.filter(f => validIds.has(f.from) && validIds.has(f.to) && f.from !== f.to)
+  } catch {
+    return []
+  }
+}
+
+// ============================================================================
 // STEP 2: SCREEN GENERATION (per-screen, runs in parallel)
 // ============================================================================
 
@@ -372,57 +458,109 @@ ${brokenCode}`,
 // STEP 3: ASSEMBLY HELPERS (programmatic — no LLM)
 // ============================================================================
 
-function generateFlowDiagramHifi(spec: MockupSpec): string {
-  const menuScreens = spec.screens.filter(s => spec.menu_screen_ids.includes(s.id))
-  const cols = 3
-  const nodeW = 160, nodeH = 54, gapX = 60, gapY = 80, startX = 60, startY = 60
-  const nodes = menuScreens.map((s, i) => ({
-    id: s.id,
-    name: s.name,
-    x: startX + (i % cols) * (nodeW + gapX),
-    y: startY + Math.floor(i / cols) * (nodeH + gapY),
+function generateFlowDiagramHifi(spec: MockupSpec, codeFlows: Array<{ from: string; to: string; trigger: string }> = []): string {
+  const nodeW1 = 180, nodeH1 = 60
+  const nodeW2 = 160, nodeH2 = 52
+
+  // 노드: 1depth(menu) + 2depth(parent_id 있는 screens)
+  type DiagramNode = { id: string; name: string; depth: number }
+  const nodes: DiagramNode[] = [
+    ...spec.screens.filter(s => spec.menu_screen_ids.includes(s.id)).map(s => ({ id: s.id, name: s.name, depth: 1 })),
+    ...spec.screens.filter(s => !!s.parent_id && spec.menu_screen_ids.includes(s.parent_id!)).map(s => ({ id: s.id, name: s.name, depth: 2 })),
+  ]
+  const diagramNodeIds = new Set(nodes.map(n => n.id))
+
+  // 엣지: spec.flows + navigates_to + codeFlows 병합. 뒤로가기 성격 엣지 제외.
+  type Edge = { from: string; to: string }
+  const BACK_KEYWORDS = ['목록으로', '취소', '닫기', '뒤로', '돌아가']
+  const edgeMap = new Map<string, Edge>()
+  const addEdge = (f: { from: string; to: string; trigger: string }) => {
+    if (f.from === f.to) return
+    if (!diagramNodeIds.has(f.from) || !diagramNodeIds.has(f.to)) return
+    if (BACK_KEYWORDS.some(k => f.trigger.includes(k))) return
+    edgeMap.set(`${f.from}__${f.to}`, { from: f.from, to: f.to })
+  }
+  for (const f of spec.flows) addEdge(f)
+  for (const s of spec.screens) {
+    for (const targetId of (s.navigates_to ?? [])) {
+      addEdge({ from: s.id, to: targetId, trigger: '이동' })
+    }
+  }
+  for (const f of codeFlows) addEdge(f)
+  const edges = Array.from(edgeMap.values())
+
+  // 서버에서 계산 없이 노드 스타일 정의만 넘김. 위치는 클라이언트에서 dagre가 결정.
+  const rfNodeDefs = nodes.map(n => ({
+    id: n.id,
+    data: { label: n.name },
+    sourcePosition: 'right',
+    targetPosition: 'left',
+    style: n.depth === 1 ? {
+      background: '#fff', border: '2px solid #1677ff', borderRadius: 8,
+      color: '#1677ff', fontWeight: 600, fontSize: 13,
+      width: nodeW1, height: nodeH1,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      textAlign: 'center', padding: '0 12px', cursor: 'pointer',
+    } : {
+      background: '#f0f5ff', border: '1.5px dashed #4096ff', borderRadius: 6,
+      color: '#4096ff', fontWeight: 500, fontSize: 12,
+      width: nodeW2, height: nodeH2,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      textAlign: 'center', padding: '0 10px', cursor: 'pointer',
+    },
   }))
-  const edges = spec.flows.filter(
-    f => spec.menu_screen_ids.includes(f.from) && spec.menu_screen_ids.includes(f.to),
-  )
-  const svgW = nodes.length > 0 ? Math.max(...nodes.map(n => n.x + nodeW + 60)) : 600
-  const svgH = nodes.length > 0 ? Math.max(...nodes.map(n => n.y + nodeH + 60)) : 400
+
+  const rfEdgeDefs = edges.map((e, i) => ({
+    id: `e_${i}`, source: e.from, target: e.to,
+    type: 'smoothstep',
+    markerEnd: { type: 'arrowclosed', color: '#1677ff', width: 16, height: 16 },
+    style: { stroke: '#1677ff', strokeWidth: 1.5, opacity: 0.65 },
+  }))
 
   return `function FlowDiagram({ navigate }) {
-  const nodes = ${JSON.stringify(nodes)}
-  const edges = ${JSON.stringify(edges)}
-  const W = ${nodeW}, H = ${nodeH}
+  const rawNodes = ${JSON.stringify(rfNodeDefs)}
+  const rawEdges = ${JSON.stringify(rfEdgeDefs)}
+  const [flowKey, setFlowKey] = React.useState(0)
+
+  // dagre로 레이아웃 계산 (LR 방향)
+  const layoutedNodes = React.useMemo(() => {
+    try {
+      const g = new dagre.graphlib.Graph()
+      g.setDefaultEdgeLabel(() => ({}))
+      g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120, marginx: 40, marginy: 40 })
+      rawNodes.forEach(n => g.setNode(n.id, { width: n.style.width, height: n.style.height }))
+      rawEdges.forEach(e => g.setEdge(e.source, e.target))
+      dagre.layout(g)
+      return rawNodes.map(n => {
+        const pos = g.node(n.id)
+        return { ...n, position: { x: pos.x - n.style.width / 2, y: pos.y - n.style.height / 2 } }
+      })
+    } catch {
+      return rawNodes.map((n, i) => ({ ...n, position: { x: (i % 3) * 280 + 40, y: Math.floor(i / 3) * 140 + 40 } }))
+    }
+  }, [flowKey])
+
   return (
     <div style={{ padding: 24 }}>
-      <Typography.Title level={4}>사용자 Flow 다이어그램</Typography.Title>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>사용자 Flow 다이어그램</Typography.Title>
+        <Button size="small" onClick={() => setFlowKey(k => k + 1)}>↺ 새로고침</Button>
+      </div>
       <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>노드를 클릭하면 해당 화면으로 이동합니다.</Typography.Text>
-      <div style={{ overflow: 'auto' }}>
-        <svg width={${svgW}} height={${svgH}} style={{ background: '#fafafa', border: '1px solid #e0e0e0', borderRadius: 8 }}>
-          <defs>
-            <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#1677ff" />
-            </marker>
-          </defs>
-          {edges.map((e, i) => {
-            const from = nodes.find(n => n.id === e.from)
-            const to = nodes.find(n => n.id === e.to)
-            if (!from || !to) return null
-            const x1 = from.x + W / 2, y1 = from.y + H
-            const x2 = to.x + W / 2, y2 = to.y
-            return (
-              <g key={i}>
-                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#1677ff" strokeWidth={1.5} markerEnd="url(#arr)" />
-                <text x={(x1 + x2) / 2 + 6} y={(y1 + y2) / 2} fontSize={11} fill="#666">{e.trigger}</text>
-              </g>
-            )
-          })}
-          {nodes.map(n => (
-            <g key={n.id} style={{ cursor: 'pointer' }} onClick={() => navigate(n.id)}>
-              <rect x={n.x} y={n.y} width={W} height={H} rx={6} fill="#fff" stroke="#1677ff" strokeWidth={2} />
-              <text x={n.x + W / 2} y={n.y + H / 2 + 5} textAnchor="middle" fontSize={13} fill="#1677ff" fontWeight={500}>{n.name}</text>
-            </g>
-          ))}
-        </svg>
+      <div style={{ height: 520, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', background: '#fafafa' }}>
+        <ReactFlow
+          key={flowKey}
+          nodes={layoutedNodes}
+          edges={rawEdges}
+          onNodeClick={(_, node) => navigate(node.id)}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
+          proOptions={{ hideAttribution: true }}
+          nodesDraggable={true}
+        >
+          <Controls />
+          <Background color="#e8e8e8" gap={20} size={1} />
+        </ReactFlow>
       </div>
     </div>
   )
@@ -625,9 +763,25 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
 
   const firstScreen = spec.critical_screen_ids[0] ?? spec.menu_screen_ids[0] ?? spec.screens[0]?.id ?? 'flow'
 
-  const menuItems = menuScreens
-    .map(s => `  { key: '${s.id}', label: '${s.name.replace(/'/g, "\\'")}' }`)
-    .join(',\n')
+  // 2depth: parent_id가 있는 screens를 부모별로 그룹화
+  const subsByParent = new Map<string, ScreenSpec[]>()
+  for (const screen of spec.screens) {
+    if (!screen.parent_id) continue
+    if (!subsByParent.has(screen.parent_id)) subsByParent.set(screen.parent_id, [])
+    subsByParent.get(screen.parent_id)!.push(screen)
+  }
+
+  const menuItems = menuScreens.map(s => {
+    const subs = subsByParent.get(s.id) ?? []
+    const label = s.name.replace(/'/g, "\\'")
+    if (subs.length === 0) {
+      return `  { key: '${s.id}', label: '${label}' }`
+    }
+    const children = subs
+      .map(sub => `    { key: '${sub.id}', label: '${sub.name.replace(/'/g, "\\'")}' }`)
+      .join(',\n')
+    return `  { key: '${s.id}', label: '${label}', children: [\n${children}\n  ] }`
+  }).join(',\n')
 
   const screenFunctions = spec.screens
     .filter(s => screenCodes.has(s.id))
@@ -639,11 +793,34 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
     .map(s => `            {page === '${s.id}' && <Screen_${s.id} navigate={setPage} />}`)
     .join('\n')
 
+  // 실제 생성된 prototype 코드에서 navigate('id') 호출을 파싱해 flow 추출 (1/2depth 모두)
+  const codeFlows: Array<{ from: string; to: string; trigger: string }> = []
+  for (const screen of spec.screens) {
+    if (!spec.menu_screen_ids.includes(screen.id) && !screen.parent_id) continue
+    const code = screenCodes.get(screen.id)
+    if (!code) continue
+    const re = /navigate\(['"]([^'"]+)['"]\)/g
+    const seen = new Set<string>()
+    let m: RegExpExecArray | null
+    while ((m = re.exec(code)) !== null) {
+      const targetId = m[1]
+      if (targetId === screen.id || seen.has(targetId)) continue
+      seen.add(targetId)
+      // 해당 navigate 호출 앞 100자에서 한글 버튼 레이블 추출 시도
+      const ctx = code.slice(Math.max(0, m.index - 120), m.index)
+      const labelMatch = ctx.match(/['"]([가-힣][가-힣\w\s]{1,10})['"]\s*[^{]*$/)
+      codeFlows.push({ from: screen.id, to: targetId, trigger: labelMatch ? labelMatch[1] : '이동' })
+    }
+  }
+
   return `import React, { useState, useEffect } from 'react'
+import ReactFlow, { Controls, Background } from 'reactflow'
+import 'reactflow/dist/style.css'
+import * as dagre from 'dagre'
 import { Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined, DownloadOutlined } from '@ant-design/icons'
 
-${generateFlowDiagramHifi(spec)}
+${generateFlowDiagramHifi(spec, codeFlows)}
 
 ${screenFunctions}
 
@@ -720,20 +897,37 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ error: 'PRD에서 화면을 추출하지 못했습니다.' }, { status: 500 })
     }
 
-    // Step 2: Generate all screens in parallel
-    console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens in parallel`)
+    // Step 2: 화면 생성 + flows 추출 병렬 실행
+    console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens + flows in parallel`)
     const systemPrompt = type === 'hifi' ? HIFI_SYSTEM : LOFI_SYSTEM
 
-    const results = await Promise.all(
-      spec.screens.map(async screen => {
-        try {
-          return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt)
-        } catch (e) {
-          console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
-          return null
-        }
-      })
-    )
+    const [results, extractedFlows] = await Promise.all([
+      Promise.all(
+        spec.screens.map(async screen => {
+          try {
+            return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt)
+          } catch (e) {
+            console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
+            return null
+          }
+        })
+      ),
+      extractFlows(anthropic, spec, prdText).catch(e => {
+        console.warn('[mockup v3] Flow extraction failed:', e)
+        return [] as Array<{ from: string; to: string; trigger: string }>
+      }),
+    ])
+
+    // spec.flows를 extractedFlows로 보강 (중복 제거)
+    const existingKeys = new Set(spec.flows.map(f => `${f.from}__${f.to}`))
+    for (const f of extractedFlows) {
+      const key = `${f.from}__${f.to}`
+      if (!existingKeys.has(key)) {
+        spec.flows.push(f)
+        existingKeys.add(key)
+      }
+    }
+    console.log(`[mockup v3] Flows: ${spec.flows.length} total`)
 
     const screenCodes = new Map<string, string>()
     spec.screens.forEach((screen, i) => {

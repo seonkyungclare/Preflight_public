@@ -157,7 +157,7 @@ export default function MockupScreen({ files, type, onBack }: MockupScreenProps)
               dependencies: {
                 react: '^18',
                 'react-dom': '^18',
-                ...(type === 'hifi' && { antd: '^5', '@ant-design/icons': '^5' }),
+                ...(type === 'hifi' && { antd: '^5', '@ant-design/icons': '^5', reactflow: '^11', dagre: '^0.8.5' }),
               },
             }}
           >

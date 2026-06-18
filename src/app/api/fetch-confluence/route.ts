@@ -23,6 +23,27 @@ function extractPageId(url: string): string | null {
   return m ? m[1] : null
 }
 
+async function resolveToPageId(url: string, accessToken: string): Promise<string | null> {
+  // 이미 /pages/<id> 형태면 바로 추출
+  const direct = extractPageId(url)
+  if (direct) return direct
+
+  // /wiki/x/ 단축 링크 → 리다이렉트 따라가서 실제 URL 획득
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'text/html' },
+      redirect: 'follow',
+    })
+    const finalUrl = res.url
+    if (finalUrl && finalUrl !== url) {
+      return extractPageId(finalUrl)
+    }
+  } catch {
+    // 무시
+  }
+  return null
+}
+
 function setSessionCookie(session: SessionData) {
   const cookieOpts = {
     httpOnly: true,
@@ -68,14 +89,6 @@ export async function POST(req: Request): Promise<Response> {
 
   const { url } = body as { url: string }
 
-  const pageId = extractPageId(url)
-  if (!pageId) {
-    return Response.json(
-      { error: '페이지 ID를 찾지 못했습니다. URL에 /pages/<숫자>/ 형태가 포함되어야 합니다.' },
-      { status: 400 }
-    )
-  }
-
   const sessionToken = cookies().get(ATLASSIAN_COOKIE)?.value
   const refreshToken = cookies().get(ATLASSIAN_REFRESH_COOKIE)?.value
   const initialSession = decodeSession(sessionToken, refreshToken)
@@ -91,6 +104,14 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       { error: 'Atlassian 세션이 만료되었습니다. 다시 연결해주세요.' },
       { status: 401 }
+    )
+  }
+
+  const pageId = await resolveToPageId(url, session.accessToken)
+  if (!pageId) {
+    return Response.json(
+      { error: 'Confluence 페이지 URL을 인식하지 못했습니다. 브라우저 주소창의 URL을 직접 복사해 붙여넣으세요.' },
+      { status: 400 }
     )
   }
 
