@@ -159,6 +159,12 @@ Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
 - No imports. No export. No other functions or code outside the one function.
 
+Code style (COMPACT — token budget is limited):
+- No comments, no JSDoc, no blank lines between JSX elements
+- Mock data arrays: maximum 3 items
+- Do not repeat similar JSX blocks — use .map() instead
+- Keep variable names short but readable (e.g. open not isModalVisible)
+
 Pre-imported (DO NOT re-import):
 - React, useState (from 'react')
 - antd: Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider
