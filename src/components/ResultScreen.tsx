@@ -187,9 +187,9 @@ export default function ResultScreen({
     setMockupProgress(0)
     const interval = setInterval(() => {
       setMockupProgress(prev => {
-        if (prev >= 94) return prev
-        const increment = prev < 60 ? 2 : prev < 82 ? 0.4 : 0.08
-        return Math.min(prev + increment, 94)
+        if (prev >= 98) return prev
+        const increment = prev < 60 ? 2 : prev < 82 ? 0.4 : prev < 92 ? 0.15 : 0.03
+        return Math.min(prev + increment, 98)
       })
     }, 300)
     return () => clearInterval(interval)
@@ -290,7 +290,7 @@ export default function ResultScreen({
                   <>
                     <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
                       <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
-                      {Math.round(mockupProgress)}%
+                      {mockupProgress >= 92 ? `마무리 중... ${Math.round(mockupProgress)}%` : `${Math.round(mockupProgress)}%`}
                     </Button>
                     <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={onCancelMockup}>
                       취소
@@ -335,7 +335,7 @@ export default function ResultScreen({
                   <>
                     <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
                       <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
-                      {Math.round(mockupProgress)}%
+                      {mockupProgress >= 92 ? `마무리 중... ${Math.round(mockupProgress)}%` : `${Math.round(mockupProgress)}%`}
                     </Button>
                     <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={onCancelMockup}>
                       취소
