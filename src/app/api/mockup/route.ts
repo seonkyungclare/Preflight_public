@@ -14,6 +14,7 @@ interface ScreenSpec {
   actions: string[]
   navigates_to: string[]
   parent_id?: string  // set for 2nd-level screens; omitted for top-level menu screens
+  ux_hints?: string[] // UX/UI-specific behaviors derived from user requirements (e.g. conditional fields, validation states, component types)
 }
 
 interface NoteItem {
@@ -56,7 +57,8 @@ Output schema:
       "fields": ["필드명1"],
       "actions": ["버튼명1"],
       "navigates_to": ["target_screen_id"],
-      "parent_id": "parent_screen_id_or_omit_if_top_level"
+      "parent_id": "parent_screen_id_or_omit_if_top_level",
+      "ux_hints": ["UX 패턴 설명1"]
     }
   ],
   "menu_screen_ids": ["id"],
@@ -103,7 +105,64 @@ These are universal UI conventions — populate navigates_to and flows based on 
 ## flows population rules
 - Include ALL navigations: PRD-explicit + Standard Navigation Flows derived above
 - Every menu screen should appear in at least one flow (as from or to)
-- trigger: short Korean label describing what user does (예: "행 클릭", "저장 버튼", "취소", "생성 버튼")`
+- trigger: short Korean label describing what user does (예: "행 클릭", "저장 버튼", "취소", "생성 버튼")
+
+## User Requirements Section
+If the input contains a section starting with "=== 사용자 요구사항:", treat it as supplementary UX/UI requirements that OVERRIDE or EXTEND the PRD.
+- Merge any additional fields, columns, actions, or flows mentioned there into the relevant screens
+- If a requirement contradicts the PRD, prefer the requirement (it is more specific and up-to-date)
+- If a screen is mentioned only in requirements (not in PRD), add it as a new screen entry with appropriate type and parent_id
+- Reflect tone, terminology, and domain-specific wording from the requirements section into screen names and labels
+- Extract UX-specific behaviors into each screen's ux_hints array using the rules below
+
+### ux_hints extraction rules
+ux_hints captures UI patterns and behaviors that go beyond simple field/action lists.
+These rules apply to ANY requirements document, regardless of domain or writing style.
+Read each requirement semantically — do not rely on exact Korean keywords. Infer intent.
+
+For each screen, scan the requirements and extract hints using these categories:
+
+**dropzone** — any mention of bulk upload, drag-and-drop, file import, batch registration via file
+→ "dropzone: [설명] 파일 업로드 드롭존"
+
+**timepicker** — any mention of time precision (hour/minute), scheduled time input, HH:MM, reservation time
+→ "timepicker: [설명] 시간 입력 UI (HH:MM)"
+
+**calendar** — any mention of timeline view, slot calendar, gantt-style grid, date × resource matrix
+→ "calendar: [설명] 날짜×리소스 그리드 캘린더"
+
+**timeline** — any mention of audit log, change history, edit log, who changed what when
+→ "timeline: [설명] 변경 이력 타임라인 (수정자·일시·항목)"
+
+**filter_chip** — any mention of status filter chips, tag-based filtering, quick filter toggles
+→ "filter_chip: [설명] 상태 필터 칩"
+
+**preview** — any mention of preview, thumbnail, simulated rendering, visual confirmation before publish
+→ "preview: [설명] 미리보기 영역"
+
+**stats** — any mention of KPI, metrics, performance indicators, comparison with past period
+→ "stats: [설명] 지표 카드 (현재값 + 비교값)"
+
+**conditional** — any mention of fields that appear/hide based on another field's value, type-based field switching
+→ "conditional: [조건 필드] 값에 따라 [표시 필드] 노출/숨김"
+
+**validation** — any mention of real-time validation, inline error, format check, auto-trim, dead link detection
+→ "validation: [필드명] — [검증 내용 및 오류 표시 방식]"
+
+**permission** — any mention of role-based access, account-type restrictions, feature gating by user type
+→ "permission: [조건] 에 따라 [항목] 비활성화 또는 안내 메시지 표시"
+
+**guard** — any mention of confirmation popup before destructive/impactful action, warning before edit/delete
+→ "guard: [액션] 전 경고 팝업 — [경고 내용 요약]"
+
+**notification** — any mention of alerts, subscriptions, event-based notifications, status change alarms
+→ "notification: [이벤트] 발생 시 알림 구독 UI"
+
+**copy_flow** — any mention of clone, duplicate then edit, one-click copy workflow
+→ "copy_flow: [대상] 복제 후 수정 플로우"
+
+General rule: if a requirement clearly describes a UI behavior not covered above, write a free-form hint in Korean that captures the intent concisely (e.g. "자동완성: [필드명] 입력 시 추천 목록 노출").
+Only add hints that are actionable at the screen level — skip system-level or backend-only requirements.`
 
 const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
 
@@ -124,7 +183,23 @@ Rules:
 - All actions from spec: rendered as outlined rectangles with text labels
 - Navigation actions (when target is in navigates_to): call navigate('targetId') onClick
 - Actions without clear navigation target: render as visual-only (no onClick)
-- Do NOT add elements not in the screen spec`
+- Do NOT add elements not in the screen spec
+
+## ux_hints rendering rules (wireframe level)
+When the screen spec includes ux_hints, reflect the intent structurally using grayscale shapes:
+- "dropzone:" → dashed rectangle with centered label "📂 파일 드롭 영역"
+- "timepicker:" → input box with label "날짜 / 시간 (HH:MM)"
+- "calendar:" → grid table skeleton (rows = 리소스, columns = 날짜, cells = colored bars)
+- "timeline:" → 3-column table at bottom of screen: 수정자 | 수정일시 | 변경항목
+- "filter_chip:" → row of small outlined rectangle chips with status text
+- "preview:" → bordered rectangle labeled "미리보기" with placeholder thumbnail grid
+- "stats:" → row of metric cards (label on top, large number below, small comparison below that)
+- "conditional:" → field group with bracket label "[조건에 따라 노출]"
+- "validation:" → input with red-dashed border + small error text placeholder below
+- "permission:" → lighter-bordered rectangle with gray label + "🔒" prefix
+- "guard:" → button with "⚠" prefix and small note "확인 팝업 발생"
+- "copy_flow:" → action button labeled "복제 후 수정" with arrow indicator
+- "notification:" → toggle row labeled "알림 구독" with on/off placeholder`
 
 const HIFI_SYSTEM = `You generate high-fidelity Ant Design React component functions for interactive prototypes.
 
@@ -151,6 +226,23 @@ Rules:
 - Primary action button: type="primary", top-right of content area
 - Exact PRD field/column names — do not rename
 - Do NOT add columns/fields not in spec
+
+## ux_hints rendering rules
+When the screen spec includes ux_hints, implement each hint with the appropriate Ant Design component:
+
+- "dropzone:" → <Upload.Dragger> with drag-and-drop area; accept=".xlsx,.csv" or as described
+- "timepicker:" → <DatePicker showTime format="YYYY-MM-DD HH:mm"> for time-precision input
+- "calendar:" → resource × date grid table with colored <Tag> or div bars; use useState for selected date range
+- "timeline:" → <Timeline> or <Table> with columns [수정자, 수정일시, 변경항목] placed at bottom of screen; use realistic mock history rows
+- "filter_chip:" → <Space> with <Tag> chips toggling via useState (checked: color="blue", unchecked: default)
+- "preview:" → Card grid of small thumbnail placeholders with segment labels (e.g. 여성 20대, 남성 30대)
+- "stats:" → <Row> of <Col><Statistic> cards; include a comparison value with <Badge> or colored text
+- "conditional:" → useState for condition selector (e.g. <Radio.Group>); use conditional rendering {value === 'A' && <Form.Item>} to show/hide field groups
+- "validation:" → <Input> with onChange validation; show <Alert type="error" message="..."> below on invalid; use useState for error state
+- "permission:" → disabled <Button> or <Form.Item> with <Tooltip title="권한이 없습니다"> wrapping restricted element
+- "guard:" → <Popconfirm> or Modal.confirm before the action; title = warning message from hint
+- "copy_flow:" → "복제 후 수정" <Button> that clones selected item into edit modal pre-filled via useState
+- "notification:" → <List> of event types each with <Switch> for subscribe/unsubscribe; use useState for subscription state
 - Do NOT add utility buttons not in spec (새로고침, 내보내기, 인쇄 etc.)
 - Normal flow only — no empty/loading/error state screens`
 

@@ -21,6 +21,8 @@ interface ResultScreenProps {
   onCancelMockup: () => void
   mockupGenerating: MockupType | null
   onReupload: () => void
+  requirementsUrl: string
+  onRequirementsUrlChange: (url: string) => void
 }
 
 // ============================================================================
@@ -170,6 +172,8 @@ export default function ResultScreen({
   onCancelMockup,
   mockupGenerating,
   onReupload,
+  requirementsUrl,
+  onRequirementsUrlChange,
 }: ResultScreenProps) {
   const [showMockupModal, setShowMockupModal] = useState(false)
   const [isRegenerate, setIsRegenerate] = useState(false)
@@ -216,7 +220,7 @@ export default function ResultScreen({
       </div>
 
       <div className="overflow-x-auto">
-        <div className="max-w-[700px] mx-auto px-6 py-8 min-w-[500px]">
+        <div className="max-w-[900px] mx-auto px-6 py-8 min-w-[500px]">
           {/* 파일 정보 */}
           <div className="flex items-center gap-2 mb-6">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2">
@@ -228,52 +232,81 @@ export default function ResultScreen({
             <span className="text-sm text-muted-foreground">방금 분석됨</span>
           </div>
 
-        {/* 점수 + 목업 생성 카드 */}
-        <div className="grid grid-cols-3 gap-4 mb-8 [&>div]:max-h-[200px]">
-          <Card className="flex flex-col items-center justify-center">
+        {/* 점수 + 사용자 요구사항 + 목업 카드 */}
+        <div className="grid grid-cols-3 gap-2 mb-8">
+          {/* Score - 2행 span */}
+          <Card className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
             <CardContent className="flex items-center justify-center p-4">
               <ScoreGauge score={result.sufficiency_score} />
             </CardContent>
           </Card>
 
+          {/* 사용자 요구사항 - 2열 span */}
+          <Card className="col-span-2 !py-0">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-sm font-medium">사용자 요구사항 추가</span>
+                <span className="text-[10px] text-blue-500">Beta</span>
+                <span className="text-[10px] text-muted-foreground">선택</span>
+                <a
+                  href="https://wiki.team.musinsa.com/wiki/spaces/~712020ee34afa80ab546f4bc1737fa25a14aa1/pages/498877379/UX+UI"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto text-[10px] text-muted-foreground underline hover:text-foreground"
+                >예시</a>
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                목업 생성 시 PRD와 함께 반영됩니다. Confluence 페이지의 브라우저 주소창 URL을 붙여넣으세요.
+              </p>
+              <input
+                type="url"
+                value={requirementsUrl}
+                onChange={e => onRequirementsUrlChange(e.target.value)}
+                placeholder="https://wiki.team.musinsa.com/wiki/spaces/.../pages/..."
+                disabled={mockupGenerating !== null}
+                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground disabled:opacity-50"
+              />
+            </CardContent>
+          </Card>
+
           {/* Lo-Fi 카드 */}
-          <Card className={hasMockupLowFi ? '' : 'bg-muted/30'}>
-            <CardContent className="p-4 space-y-2.5 h-full flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Lo-Fi 목업</span>
+          <Card className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
+            <CardContent className="p-3 h-full flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-semibold">Lo-Fi</span>
                   <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-border bg-muted text-muted-foreground">
                     와이어프레임
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
                   {hasMockupLowFi && mockupLowFiAt
                     ? `${formatHistoryDate(mockupLowFiAt)} 생성`
                     : '아직 생성되지 않았습니다'}
                 </p>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 shrink-0">
                 {mockupGenerating === 'lowfi' ? (
                   <>
-                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" disabled>
-                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                    <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
                       {Math.round(mockupProgress)}%
                     </Button>
-                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onCancelMockup}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={onCancelMockup}>
                       취소
                     </Button>
                   </>
                 ) : hasMockupLowFi ? (
                   <>
-                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
+                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
                       보기
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('lowfi', true)} disabled={mockupGenerating !== null}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', true)} disabled={mockupGenerating !== null}>
                       재생성
                     </Button>
                   </>
                 ) : (
-                  <Button variant="default" size="sm" className="w-full h-8 text-xs" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
+                  <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
                     생성하기
                   </Button>
                 )}
@@ -282,43 +315,43 @@ export default function ResultScreen({
           </Card>
 
           {/* Hi-Fi 카드 */}
-          <Card className={hasMockupHiFi ? '' : 'bg-muted/30'}>
-            <CardContent className="p-4 space-y-2.5 h-full flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Hi-Fi 목업</span>
+          <Card className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
+            <CardContent className="p-3 h-full flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-semibold">Hi-Fi</span>
                   <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 bg-primary/10 text-primary">
                     인터랙티브
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
                   {hasMockupHiFi && mockupHiFiAt
                     ? `${formatHistoryDate(mockupHiFiAt)} 생성`
                     : '아직 생성되지 않았습니다'}
                 </p>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 shrink-0">
                 {mockupGenerating === 'hifi' ? (
                   <>
-                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" disabled>
-                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                    <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
                       {Math.round(mockupProgress)}%
                     </Button>
-                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onCancelMockup}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={onCancelMockup}>
                       취소
                     </Button>
                   </>
                 ) : hasMockupHiFi ? (
                   <>
-                    <Button variant="default" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
+                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
                       보기
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={() => onGenerateMockup('hifi', true)} disabled={mockupGenerating !== null}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', true)} disabled={mockupGenerating !== null}>
                       재생성
                     </Button>
                   </>
                 ) : (
-                  <Button variant="default" size="sm" className="w-full h-8 text-xs" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
+                  <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
                     생성하기
                   </Button>
                 )}

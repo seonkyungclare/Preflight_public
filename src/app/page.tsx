@@ -141,6 +141,7 @@ interface AppState {
   mockupGenerating: MockupType | null  // 생성 중인 타입, null이면 미생성 중
   historyId: string | null  // 현재 분석 세션의 history 엔트리 ID
   historyCreatedAt: number | null
+  requirementsUrl: string  // 사용자 요구사항 Confluence URL (선택)
 }
 
 // ─── 메인 페이지 (스크린 상태 머신) ────────────────────────────────────────────
@@ -161,6 +162,7 @@ export default function Home() {
     analysis: null,
     historyId: null,
     historyCreatedAt: null,
+    requirementsUrl: '',
   })
 
   // PRD 파일 업로드 후 Claude 분석 스트리밍 시작
@@ -234,11 +236,31 @@ export default function Home() {
     abortRef.current = controller
 
     try {
+      // 사용자 요구사항 URL이 있으면 Confluence에서 가져와서 prdText에 합치기
+      let combinedPrdText = state.prdText
+      if (state.requirementsUrl.trim()) {
+        try {
+          const reqRes = await fetch('/api/fetch-confluence', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: state.requirementsUrl.trim() }),
+          })
+          if (reqRes.ok) {
+            const reqData = await reqRes.json() as { title?: string; text?: string }
+            if (reqData.text) {
+              combinedPrdText = `${state.prdText}\n\n=== 사용자 요구사항: ${reqData.title ?? ''} ===\n${reqData.text}`
+            }
+          }
+        } catch {
+          // 요구사항 fetch 실패해도 PRD만으로 목업 생성 계속
+        }
+      }
+
       const res = await fetch('/api/mockup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prdText: state.prdText,
+          prdText: combinedPrdText,
           // analysisText에 전체 analysis JSON을 전달 (mockup_directives 포함)
           analysisText: JSON.stringify(state.analysis),
           type,
@@ -310,6 +332,7 @@ export default function Home() {
       mockupGenerating: null,
       historyId: entry.id,
       historyCreatedAt: entry.createdAt,
+      requirementsUrl: '',
     })
   }
 
@@ -351,6 +374,8 @@ export default function Home() {
           onCancelMockup={handleCancelMockup}
           mockupGenerating={state.mockupGenerating}
           onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null }))}
+          requirementsUrl={state.requirementsUrl}
+          onRequirementsUrlChange={url => setState(prev => ({ ...prev, requirementsUrl: url }))}
         />
       )}
 
