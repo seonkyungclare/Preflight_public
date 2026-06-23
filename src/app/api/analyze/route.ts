@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
+export const maxDuration = 300
+
 
 // ============================================================================
 // Preflight Verification Protocol v2.0

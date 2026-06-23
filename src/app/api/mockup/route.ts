@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { parse as babelParse } from '@babel/parser'
 
+export const maxDuration = 300 // Vercel 최대 실행 시간 300초 (Pro plan)
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -304,6 +306,13 @@ function getModel(): string {
   return process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6'
 }
 
+// 화면 생성에는 빠른 모델 사용 (Hobby 플랜 60초 제한 대응)
+function getScreenModel(): string {
+  return process.env.ANTHROPIC_SCREEN_MODEL ?? 'claude-haiku-4-5-20251001'
+}
+
+const MAX_SCREENS = 6 // 화면 수 상한 (60초 제한 대응)
+
 function extractText(content: Anthropic.Messages.Message['content']): string {
   return content.map(b => (b.type === 'text' ? b.text : '')).join('').trim()
 }
@@ -352,7 +361,7 @@ async function extractSpec(
   } catch { /* ignore — non-JSON analysisText */ }
 
   const result = await callClaudeCached(anthropic, {
-    max_tokens: 16000,
+    max_tokens: 6000,
     temperature: 0.1,
     system: [
       { type: 'text', text: SPEC_EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
@@ -476,14 +485,14 @@ async function generateScreen(
 ): Promise<string | null> {
   const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
 
-  const result = await callClaudeCached(anthropic, {
-    max_tokens: type === 'hifi' ? 8000 : 5000,
+  const result = await anthropic.messages.create({
+    model: getScreenModel(),
+    max_tokens: type === 'hifi' ? 4000 : 3000,
     temperature: type === 'hifi' ? 0.3 : 0.15,
-    system: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
-    ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
+    system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
-  })
+    stream: false,
+  }) as Anthropic.Messages.Message
 
   if (result.stop_reason === 'max_tokens') {
     console.warn(`[mockup] Screen ${screen.id} hit max_tokens`)
@@ -983,6 +992,15 @@ export async function POST(req: Request): Promise<Response> {
       console.error('[mockup v3] Spec extraction failed:', err)
       return Response.json({ error: 'PRD 구조 추출에 실패했습니다. 다시 시도해주세요.' }, { status: 500 })
     }
+    // 화면 수 상한 적용 (60초 제한 대응): 메뉴 화면 우선, 나머지 순서대로
+    if (spec.screens.length > MAX_SCREENS) {
+      const menuIds = new Set(spec.menu_screen_ids)
+      const menuScreens = spec.screens.filter(s => menuIds.has(s.id))
+      const subScreens = spec.screens.filter(s => !menuIds.has(s.id))
+      spec.screens = [...menuScreens, ...subScreens].slice(0, MAX_SCREENS)
+      console.log(`[mockup v3] Capped screens to ${MAX_SCREENS}`)
+    }
+
     console.log(`[mockup v3] Spec: ${spec.screens.length} screens, ${spec.menu_screen_ids.length} in menu`)
 
     if (spec.screens.length === 0) {
