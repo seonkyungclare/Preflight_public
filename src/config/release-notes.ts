@@ -5,6 +5,14 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-06-23',
+    changes: [
+      '사용자 요구사항 추가 (Beta) — 목업 생성 시 Confluence 요구사항 문서를 함께 반영. 결과 화면에서 URL 입력 후 생성하면 PRD와 합산',
+      'UX 힌트 자동 추출 — 드롭존·조건부 필드·유효성 검증·이력 타임라인 등 UX 패턴을 문서에서 인식해 lo-fi/hi-fi에 자동 반영',
+      '결과 화면 레이아웃 개선 — 최대 너비 900px 확장, 카드 배치 재구성',
+    ],
+  },
+  {
     date: '2026-06-18',
     changes: [
       'Hi-Fi 프로토타입 품질 개선 — 이상적인 사용자 플로우 연결과 UX 퀄리티 (시각적 위계·즉각 피드백·일관성)에 집중',
