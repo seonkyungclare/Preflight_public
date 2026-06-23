@@ -16,7 +16,6 @@ interface ScreenSpec {
   actions: string[]
   navigates_to: string[]
   parent_id?: string  // set for 2nd-level screens; omitted for top-level menu screens
-  ux_hints?: string[] // UX/UI-specific behaviors derived from user requirements (e.g. conditional fields, validation states, component types)
 }
 
 interface NoteItem {
@@ -59,8 +58,7 @@ Output schema:
       "fields": ["필드명1"],
       "actions": ["버튼명1"],
       "navigates_to": ["target_screen_id"],
-      "parent_id": "parent_screen_id_or_omit_if_top_level",
-      "ux_hints": ["UX 패턴 설명1"]
+      "parent_id": "parent_screen_id_or_omit_if_top_level"
     }
   ],
   "menu_screen_ids": ["id"],
@@ -114,57 +112,8 @@ If the input contains a section starting with "=== 사용자 요구사항:", tre
 - Merge any additional fields, columns, actions, or flows mentioned there into the relevant screens
 - If a requirement contradicts the PRD, prefer the requirement (it is more specific and up-to-date)
 - If a screen is mentioned only in requirements (not in PRD), add it as a new screen entry with appropriate type and parent_id
-- Reflect tone, terminology, and domain-specific wording from the requirements section into screen names and labels
-- Extract UX-specific behaviors into each screen's ux_hints array using the rules below
-
-### ux_hints extraction rules
-ux_hints captures UI patterns and behaviors that go beyond simple field/action lists.
-These rules apply to ANY requirements document, regardless of domain or writing style.
-Read each requirement semantically — do not rely on exact Korean keywords. Infer intent.
-
-For each screen, scan the requirements and extract hints using these categories:
-
-**dropzone** — any mention of bulk upload, drag-and-drop, file import, batch registration via file
-→ "dropzone: [설명] 파일 업로드 드롭존"
-
-**timepicker** — any mention of time precision (hour/minute), scheduled time input, HH:MM, reservation time
-→ "timepicker: [설명] 시간 입력 UI (HH:MM)"
-
-**calendar** — any mention of timeline view, slot calendar, gantt-style grid, date × resource matrix
-→ "calendar: [설명] 날짜×리소스 그리드 캘린더"
-
-**timeline** — any mention of audit log, change history, edit log, who changed what when
-→ "timeline: [설명] 변경 이력 타임라인 (수정자·일시·항목)"
-
-**filter_chip** — any mention of status filter chips, tag-based filtering, quick filter toggles
-→ "filter_chip: [설명] 상태 필터 칩"
-
-**preview** — any mention of preview, thumbnail, simulated rendering, visual confirmation before publish
-→ "preview: [설명] 미리보기 영역"
-
-**stats** — any mention of KPI, metrics, performance indicators, comparison with past period
-→ "stats: [설명] 지표 카드 (현재값 + 비교값)"
-
-**conditional** — any mention of fields that appear/hide based on another field's value, type-based field switching
-→ "conditional: [조건 필드] 값에 따라 [표시 필드] 노출/숨김"
-
-**validation** — any mention of real-time validation, inline error, format check, auto-trim, dead link detection
-→ "validation: [필드명] — [검증 내용 및 오류 표시 방식]"
-
-**permission** — any mention of role-based access, account-type restrictions, feature gating by user type
-→ "permission: [조건] 에 따라 [항목] 비활성화 또는 안내 메시지 표시"
-
-**guard** — any mention of confirmation popup before destructive/impactful action, warning before edit/delete
-→ "guard: [액션] 전 경고 팝업 — [경고 내용 요약]"
-
-**notification** — any mention of alerts, subscriptions, event-based notifications, status change alarms
-→ "notification: [이벤트] 발생 시 알림 구독 UI"
-
-**copy_flow** — any mention of clone, duplicate then edit, one-click copy workflow
-→ "copy_flow: [대상] 복제 후 수정 플로우"
-
-General rule: if a requirement clearly describes a UI behavior not covered above, write a free-form hint in Korean that captures the intent concisely (e.g. "자동완성: [필드명] 입력 시 추천 목록 노출").
-Only add hints that are actionable at the screen level — skip system-level or backend-only requirements.`
+- Reflect domain-specific terminology from the requirements into screen names and labels
+- Do NOT extract ux_hints — UX behaviors will be passed directly to screen generation`
 
 const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
 
@@ -187,21 +136,22 @@ Rules:
 - Actions without clear navigation target: render as visual-only (no onClick)
 - Do NOT add elements not in the screen spec
 
-## ux_hints rendering rules (wireframe level)
-When the screen spec includes ux_hints, reflect the intent structurally using grayscale shapes:
-- "dropzone:" → dashed rectangle with centered label "📂 파일 드롭 영역"
-- "timepicker:" → input box with label "날짜 / 시간 (HH:MM)"
-- "calendar:" → grid table skeleton (rows = 리소스, columns = 날짜, cells = colored bars)
-- "timeline:" → 3-column table at bottom of screen: 수정자 | 수정일시 | 변경항목
-- "filter_chip:" → row of small outlined rectangle chips with status text
-- "preview:" → bordered rectangle labeled "미리보기" with placeholder thumbnail grid
-- "stats:" → row of metric cards (label on top, large number below, small comparison below that)
-- "conditional:" → field group with bracket label "[조건에 따라 노출]"
-- "validation:" → input with red-dashed border + small error text placeholder below
-- "permission:" → lighter-bordered rectangle with gray label + "🔒" prefix
-- "guard:" → button with "⚠" prefix and small note "확인 팝업 발생"
-- "copy_flow:" → action button labeled "복제 후 수정" with arrow indicator
-- "notification:" → toggle row labeled "알림 구독" with on/off placeholder`
+## User Requirements (wireframe level)
+If the prompt includes a USER REQUIREMENTS section, read it and apply relevant items to this screen using grayscale shapes:
+- Bulk upload / drag-and-drop / file import → dashed rectangle labeled "📂 파일 드롭 영역"
+- Time precision / HH:MM / scheduled time → input box labeled "날짜 / 시간 (HH:MM)"
+- Timeline view / slot calendar / gantt grid → grid table skeleton (rows = 리소스, columns = 날짜)
+- Audit log / change history → 3-column table at bottom: 수정자 | 수정일시 | 변경항목
+- Status filter chips / tag filters → row of small outlined rectangle chips
+- Preview / thumbnail / rendering → bordered rectangle labeled "미리보기"
+- KPI / metrics / performance comparison → row of metric cards (label, value, comparison)
+- Conditional fields / type-based field switch → field group with label "[조건에 따라 노출]"
+- Real-time validation / inline error / URL check → input with red-dashed border + error text below
+- Role-based access / permission gating → lighter-bordered rectangle with "🔒" prefix
+- Confirmation popup / warning before action → button with "⚠" prefix + "확인 팝업 발생" note
+- Clone / duplicate-then-edit flow → button labeled "복제 후 수정"
+- Alert subscription / event notification → toggle row labeled "알림 구독"
+Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.`
 
 const HIFI_SYSTEM = `You generate high-fidelity Ant Design React component functions for interactive prototypes.
 
@@ -229,22 +179,22 @@ Rules:
 - Exact PRD field/column names — do not rename
 - Do NOT add columns/fields not in spec
 
-## ux_hints rendering rules
-When the screen spec includes ux_hints, implement each hint with the appropriate Ant Design component:
-
-- "dropzone:" → <Upload.Dragger> with drag-and-drop area; accept=".xlsx,.csv" or as described
-- "timepicker:" → <DatePicker showTime format="YYYY-MM-DD HH:mm"> for time-precision input
-- "calendar:" → resource × date grid table with colored <Tag> or div bars; use useState for selected date range
-- "timeline:" → <Timeline> or <Table> with columns [수정자, 수정일시, 변경항목] placed at bottom of screen; use realistic mock history rows
-- "filter_chip:" → <Space> with <Tag> chips toggling via useState (checked: color="blue", unchecked: default)
-- "preview:" → Card grid of small thumbnail placeholders with segment labels (e.g. 여성 20대, 남성 30대)
-- "stats:" → <Row> of <Col><Statistic> cards; include a comparison value with <Badge> or colored text
-- "conditional:" → useState for condition selector (e.g. <Radio.Group>); use conditional rendering {value === 'A' && <Form.Item>} to show/hide field groups
-- "validation:" → <Input> with onChange validation; show <Alert type="error" message="..."> below on invalid; use useState for error state
-- "permission:" → disabled <Button> or <Form.Item> with <Tooltip title="권한이 없습니다"> wrapping restricted element
-- "guard:" → <Popconfirm> or Modal.confirm before the action; title = warning message from hint
-- "copy_flow:" → "복제 후 수정" <Button> that clones selected item into edit modal pre-filled via useState
-- "notification:" → <List> of event types each with <Switch> for subscribe/unsubscribe; use useState for subscription state
+## User Requirements (hi-fi level)
+If the prompt includes a USER REQUIREMENTS section, read it and implement relevant items for THIS screen using appropriate Ant Design components:
+- Bulk upload / drag-and-drop / file import → <Upload.Dragger> with drag-and-drop area
+- Time precision / HH:MM / scheduled time → <DatePicker showTime format="YYYY-MM-DD HH:mm">
+- Timeline view / slot calendar / gantt grid → resource × date grid table with colored <Tag> bars; useState for date range
+- Audit log / change history → <Table> columns [수정자, 수정일시, 변경항목] at bottom; realistic mock rows
+- Status filter chips / tag filters → <Space> with <Tag> chips toggling via useState (active: color="blue")
+- Preview / thumbnail / rendering → Card grid of thumbnail placeholders with segment labels
+- KPI / metrics / performance comparison → <Row> of <Col><Statistic> with comparison value in colored text
+- Conditional fields / type-based field switch → <Radio.Group> with useState; conditional rendering {val === 'A' && <Form.Item>}
+- Real-time validation / inline error / URL check → <Input> with onChange; <Alert type="error"> below on invalid state
+- Role-based access / permission gating → disabled <Form.Item> or <Button> with <Tooltip title="권한이 없습니다">
+- Confirmation popup / warning before action → <Popconfirm> or Modal.confirm with warning message
+- Clone / duplicate-then-edit flow → "복제 후 수정" <Button> that opens pre-filled edit modal via useState
+- Alert subscription / event notification → <List> of events each with <Switch>; useState for subscription state
+Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.
 - Do NOT add utility buttons not in spec (새로고침, 내보내기, 인쇄 etc.)
 - Normal flow only — no empty/loading/error state screens`
 
@@ -306,9 +256,8 @@ function getModel(): string {
   return process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6'
 }
 
-// 화면 생성에는 빠른 모델 사용 (Hobby 플랜 60초 제한 대응)
 function getScreenModel(): string {
-  return process.env.ANTHROPIC_SCREEN_MODEL ?? 'claude-haiku-4-5-20251001'
+  return process.env.ANTHROPIC_SCREEN_MODEL ?? getModel()
 }
 
 const MAX_SCREENS = 6 // 화면 수 상한 (60초 제한 대응)
@@ -361,7 +310,7 @@ async function extractSpec(
   } catch { /* ignore — non-JSON analysisText */ }
 
   const result = await callClaudeCached(anthropic, {
-    max_tokens: 6000,
+    max_tokens: 12000,
     temperature: 0.1,
     system: [
       { type: 'text', text: SPEC_EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
@@ -451,7 +400,7 @@ async function extractFlows(
 // STEP 2: SCREEN GENERATION (per-screen, runs in parallel)
 // ============================================================================
 
-function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], type: 'lowfi' | 'hifi'): string {
+function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], type: 'lowfi' | 'hifi', requirementsText?: string): string {
   const navTargets = screen.navigates_to
     .map(id => {
       const t = allScreens.find(s => s.id === id)
@@ -470,6 +419,9 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
   if (screen.fields.length > 0) lines.push(`FIELDS (all required): ${screen.fields.join(', ')}`)
   if (screen.actions.length > 0) lines.push(`ACTIONS: ${screen.actions.join(', ')}`)
   if (navTargets) lines.push(`NAVIGATION TARGETS: ${navTargets}`)
+  if (requirementsText) {
+    lines.push(``, `USER REQUIREMENTS (apply relevant items to this screen):`, requirementsText)
+  }
   if (type === 'hifi') {
     lines.push(``, `Return ONLY: function Screen_${screen.id}({ navigate }) { ... }`)
   }
@@ -482,8 +434,9 @@ async function generateScreen(
   allScreens: ScreenSpec[],
   type: 'lowfi' | 'hifi',
   systemPrompt: string,
+  requirementsText?: string,
 ): Promise<string | null> {
-  const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
+  const userPrompt = buildScreenUserPrompt(screen, allScreens, type, requirementsText)
 
   const result = await anthropic.messages.create({
     model: getScreenModel(),
@@ -1007,6 +960,10 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ error: 'PRD에서 화면을 추출하지 못했습니다.' }, { status: 500 })
     }
 
+    // 사용자 요구사항 섹션 원문 추출 (있을 경우 화면 생성에 직접 전달)
+    const reqMatch = prdText.match(/=== 사용자 요구사항[^=]*===([\s\S]*)$/)
+    const requirementsText = reqMatch ? reqMatch[1].trim() : undefined
+
     // Step 2: 화면 생성 + flows 추출 병렬 실행
     console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens + flows in parallel`)
     const systemPrompt = type === 'hifi' ? HIFI_SYSTEM : LOFI_SYSTEM
@@ -1015,7 +972,7 @@ export async function POST(req: Request): Promise<Response> {
       Promise.all(
         spec.screens.map(async screen => {
           try {
-            return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt)
+            return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt, requirementsText)
           } catch (e) {
             console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
             return null
