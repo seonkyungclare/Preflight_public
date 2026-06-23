@@ -399,11 +399,6 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
         )}
       </div>
 
-      <div className="mt-8 flex gap-6 text-xs text-muted-foreground">
-        <span>✓ 화면 인벤토리 검증</span>
-        <span>✓ 엣지케이스 탐지</span>
-        <span>✓ 목업 자동 생성</span>
-      </div>
 
       <p className="mt-12 text-xs text-muted-foreground">
         문의: MSSnP Product Design/MSSnP Commerce Core Design{' '}
