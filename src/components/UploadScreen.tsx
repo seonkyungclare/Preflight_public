@@ -429,7 +429,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
           <div className="space-y-4 pt-1 max-h-80 overflow-y-auto scrollbar-hide">
             {releaseNotes.map((entry, i) => (
               <div key={i}>
-                <p className="text-xs text-muted-foreground mb-1.5">{entry.date}</p>
+                <p className="text-xs text-muted-foreground mb-1.5">{entry.date.replace(/^(\d{4})-(\d{1,2})-(\d{1,2})(.*)$/, (_, y, m, d, rest) => `${y}.${m}.${d}${rest}`)}</p>
                 <ul className="space-y-1">
                   {entry.changes.map((change, j) => (
                     <li key={j} className="text-sm text-foreground/80 flex gap-2">
