@@ -440,7 +440,7 @@ async function generateScreen(
 
   const result = await anthropic.messages.create({
     model: getScreenModel(),
-    max_tokens: type === 'hifi' ? 4000 : 3000,
+    max_tokens: type === 'hifi' ? 6000 : 4000,
     temperature: type === 'hifi' ? 0.3 : 0.15,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
