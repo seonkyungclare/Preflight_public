@@ -108,11 +108,11 @@ These are universal UI conventions — populate navigates_to and flows based on 
 - trigger: short Korean label describing what user does (예: "행 클릭", "저장 버튼", "취소", "생성 버튼")
 
 ## User Requirements Section
-If the input contains a section starting with "=== 사용자 요구사항:", treat it as supplementary UX/UI requirements that OVERRIDE or EXTEND the PRD.
-- Merge any additional fields, columns, actions, or flows mentioned there into the relevant screens
-- If a requirement contradicts the PRD, prefer the requirement (it is more specific and up-to-date)
+If the input contains a section starting with "=== 사용자 요구사항:", treat it as ADDITIVE supplementary UX/UI requirements. The PRD is the source of truth.
+- ADD any extra fields, columns, or actions mentioned in requirements to the relevant screens — but NEVER remove or replace PRD-defined fields, columns, or actions
+- If a requirement contradicts or differs from the PRD, the PRD definition takes priority — the requirement is ignored
 - If a screen is mentioned only in requirements (not in PRD), add it as a new screen entry with appropriate type and parent_id
-- Reflect domain-specific terminology from the requirements into screen names and labels
+- Reflect domain-specific terminology from the requirements into screen names and labels only when the PRD does not already define them
 - Do NOT extract ux_hints — UX behaviors will be passed directly to screen generation`
 
 const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
