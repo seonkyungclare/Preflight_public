@@ -202,7 +202,8 @@ If the prompt includes a USER REQUIREMENTS section, read it and implement releva
 - Alert subscription / event notification → <List> of events each with <Switch>; useState for subscription state
 Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.
 - Do NOT add utility buttons not in spec (새로고침, 내보내기, 인쇄 etc.)
-- Normal flow only — no empty/loading/error state screens`
+- Normal flow only — no empty/loading/error state screens
+- MARKING (REQUIRED when USER REQUIREMENTS section is present): For every UI element you add to implement a user requirement, add data-req="요구사항 키워드" to its outermost JSX container element. Use a concise Korean label from the requirement as the value (e.g., data-req="시간 정밀도 HH:MM", data-req="파일 드래그앤드롭"). This attribute enables the User Requirements overlay indicator feature.`
 
 // ============================================================================
 // CODE UTILITIES
@@ -751,6 +752,44 @@ function generateNotePanelLofi(spec: MockupSpec): string {
 }`
 }
 
+function generateUserRequirementsOverlay(): string {
+  return `function UserRequirementsOverlay() {
+  const [active, setActive] = React.useState(false)
+  const [ovals, setOvals] = React.useState([])
+  const [tooltip, setTooltip] = React.useState(null)
+  const scan = React.useCallback(() => {
+    const elements = Array.from(document.querySelectorAll('[data-req]'))
+    const newOvals = elements.map(el => {
+      const rect = el.getBoundingClientRect()
+      return { top: rect.top + rect.height / 2 - 15, left: rect.left + rect.width / 2 - 15, req: el.getAttribute('data-req') }
+    }).filter(o => o.top > -15 && o.top < window.innerHeight && o.left > -15 && o.left < window.innerWidth)
+    setOvals(newOvals)
+  }, [])
+  React.useEffect(() => {
+    if (!active) { setOvals([]); setTooltip(null); return }
+    scan()
+    window.addEventListener('scroll', scan, true)
+    window.addEventListener('resize', scan)
+    return () => { window.removeEventListener('scroll', scan, true); window.removeEventListener('resize', scan) }
+  }, [active, scan])
+  return (
+    <>
+      <button onClick={() => setActive(v => !v)} style={{ position:'fixed', top:12, right:16, zIndex:2000, background: active ? '#EB0517' : '#fff', color: active ? '#fff' : '#EB0517', border:'1.5px solid #EB0517', borderRadius:6, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', boxShadow:'0 2px 8px rgba(0,0,0,0.15)' }}>
+        User Requirements
+      </button>
+      {active && ovals.map((o, i) => (
+        <div key={i} onMouseEnter={() => setTooltip(o)} onMouseLeave={() => setTooltip(null)} style={{ position:'fixed', top:o.top, left:o.left, width:30, height:30, borderRadius:'50%', background:'rgba(235,5,23,0.3)', zIndex:1999, cursor:'pointer', pointerEvents:'auto' }} />
+      ))}
+      {active && tooltip && (
+        <div style={{ position:'fixed', top: Math.max(4, tooltip.top - 48), left: Math.min(tooltip.left - 8, window.innerWidth - 256), background:'rgba(0,0,0,0.8)', color:'#fff', padding:'4px 8px', borderRadius:4, fontSize:12, zIndex:2001, maxWidth:240, pointerEvents:'none', whiteSpace:'pre-wrap', lineHeight:1.4 }}>
+          {tooltip.req}
+        </div>
+      )}
+    </>
+  )
+}`
+}
+
 // ============================================================================
 // STEP 3: FINAL ASSEMBLY
 // ============================================================================
@@ -809,7 +848,7 @@ ${screenRenders}
 }`
 }
 
-function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec, requirementsText?: string): string {
   // Critical screens first in menu
   const menuScreens = spec.screens
     .filter(s => spec.menu_screen_ids.includes(s.id))
@@ -873,6 +912,8 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
     }
   }
 
+  const overlayCode = requirementsText ? `\n${generateUserRequirementsOverlay()}` : ''
+
   return `import React, { useState, useEffect } from 'react'
 import ReactFlow, { Controls, Background } from 'reactflow'
 import 'reactflow/dist/style.css'
@@ -885,6 +926,7 @@ ${generateFlowDiagramHifi(spec, codeFlows)}
 ${screenFunctions}
 
 ${generateNotePanelHifi(spec)}
+${overlayCode}
 
 const MENU_ITEMS = [
   { key: 'flow', label: '📊 사용자 flow 보기' },
@@ -914,7 +956,7 @@ export default function App() {
 ${screenRenders}
           </Layout.Content>
         </Layout>
-        <NotePanel />
+        <NotePanel />${requirementsText ? '\n        <UserRequirementsOverlay />' : ''}
       </Layout>
     </ConfigProvider>
   )
@@ -1019,7 +1061,7 @@ export async function POST(req: Request): Promise<Response> {
     // Step 3: Assemble
     console.log(`[mockup v3] Step 3: assembling (${screenCodes.size}/${spec.screens.length} screens)`)
     const appCode = type === 'hifi'
-      ? assembleHifiApp(screenCodes, spec)
+      ? assembleHifiApp(screenCodes, spec, requirementsText)
       : assembleLofiApp(screenCodes, spec)
 
     // Final validation
