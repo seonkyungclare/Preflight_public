@@ -10,7 +10,8 @@ export async function GET(req: Request): Promise<Response> {
   const state = randomBytes(16).toString('hex')
   const callbackUri = buildCallbackUri(req)
 
-  cookies().set(ATLASSIAN_STATE_COOKIE, state, {
+  const cookieStore = await cookies()
+  cookieStore.set(ATLASSIAN_STATE_COOKIE, state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

@@ -1,11 +1,12 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+// astryx 실제 디자인시스템 컴포넌트 (StyleX 런타임 + astryx.css)
+import { Button as AstryxButton } from '@astryxdesign/core/Button'
+import { Card as AstryxCard } from '@astryxdesign/core/Card'
+import { TabList, Tab } from '@astryxdesign/core/TabList'
+import { Banner } from '@astryxdesign/core/Banner'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { releaseNotes } from '@/config/release-notes'
 import {
   listEntries,
@@ -35,6 +36,8 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   const [atlassianCloudUrl, setAtlassianCloudUrl] = useState<string | undefined>(undefined)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
+  // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
+  const [tab, setTab] = useState<'confluence' | 'file'>('confluence')
 
   async function refreshHistory() {
     try {
@@ -196,7 +199,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   const canAddMore = files.length < MAX_FILES
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12 relative [&_button]:rounded-md">
+    <div data-astryx-theme="neutral" className="min-h-screen flex flex-col items-center justify-center px-6 py-12 relative [&_button]:rounded-md">
       {/* 우측 상단 — 이전 분석 */}
       <button
         onClick={() => { refreshHistory(); setShowHistory(true) }}
@@ -225,26 +228,29 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
       </p>
 
       <div className="w-full max-w-xl">
-        <Tabs defaultValue="confluence">
-          <TabsList className="mb-4 w-full">
-            <TabsTrigger value="confluence" className="flex-1">Confluence URL</TabsTrigger>
-            <TabsTrigger value="file" className="flex-1">파일 업로드</TabsTrigger>
-          </TabsList>
+        <TabList value={tab} onChange={(v) => setTab(v as 'confluence' | 'file')} layout="fill" className="mb-4">
+          <Tab value="confluence" label="Confluence URL" />
+          <Tab value="file" label="파일 업로드" />
+        </TabList>
 
-          {/* 파일 업로드 탭 */}
-          <TabsContent value="file" className="space-y-4">
-            <Card
+        {/* 파일 업로드 탭 */}
+        {tab === 'file' && (
+          <div className="space-y-4">
+            <AstryxCard
+              variant={dragging ? 'blue' : 'default'}
+              padding={0}
+              // 드롭존 시인성: astryx 기본 보더가 옅어 inline 점선 보더로 대체(inline 이 레이어보다 우선)
+              style={{ borderStyle: 'dashed', borderWidth: 2, borderColor: 'var(--color-border-emphasized)' }}
               className={[
-                'w-full border-2 border-dashed outline-none transition-all',
+                'w-full outline-none transition-all',
                 canAddMore ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
-                dragging ? 'border-primary bg-primary/5' : 'hover:border-primary/50',
               ].join(' ')}
               onDragOver={(e) => { e.preventDefault(); if (canAddMore) setDragging(true) }}
               onDragLeave={() => setDragging(false)}
               onDrop={(e) => { if (canAddMore) onDrop(e); else e.preventDefault() }}
               onClick={() => canAddMore && inputRef.current?.click()}
             >
-              <CardContent className="flex flex-col items-center gap-4 py-12">
+              <div className="flex flex-col items-center gap-4 py-12">
                 <input
                   ref={inputRef}
                   type="file"
@@ -269,8 +275,8 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
                     PDF, MD, TXT 지원 · 최대 {MAX_FILES}개 파일 · 각 파일 10MB 이하
                   </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </AstryxCard>
 
             {/* 선택된 파일 목록 */}
             {files.length > 0 && (
@@ -303,28 +309,23 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
             )}
 
             {files.length > 0 && (
-              <Button
-                onClick={handleFileSubmit}
-                disabled={parsing}
-                className="w-full py-6 text-base font-semibold"
+              <AstryxButton
+                variant="primary"
                 size="lg"
-              >
-                {parsing ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    파일 파싱 중…
-                  </span>
-                ) : (
-                  `PRD 분석 시작 → (${files.length}개)`
-                )}
-              </Button>
+                label={parsing ? '파일 파싱 중…' : `PRD 분석 시작 → (${files.length}개)`}
+                isLoading={parsing}
+                onClick={handleFileSubmit}
+                style={{ width: '100%' }}
+              />
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          {/* Confluence URL 탭 */}
-          <TabsContent value="confluence" className="space-y-4">
-            <Card>
-              <CardContent className="flex flex-col gap-4 py-8 px-6">
+        {/* Confluence URL 탭 */}
+        {tab === 'confluence' && (
+          <div className="space-y-4">
+            <AstryxCard padding={0}>
+              <div className="flex flex-col gap-4 py-8 px-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-primary shrink-0">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -351,13 +352,13 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
                 </div>
 
                 {atlassianConnected === false && (
-                  <Button
+                  <AstryxButton
+                    variant="secondary"
+                    size="lg"
+                    label="Atlassian 계정 연결"
                     onClick={() => { window.location.href = '/api/auth/atlassian/login' }}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    Atlassian 계정 연결
-                  </Button>
+                    style={{ width: '100%' }}
+                  />
                 )}
 
                 {atlassianConnected && (
@@ -369,33 +370,24 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
                     className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground"
                   />
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </AstryxCard>
 
             {atlassianConnected && confluenceUrl.trim() && (
-              <Button
-                onClick={handleUrlSubmit}
-                disabled={parsing}
-                className="w-full py-6 text-base font-semibold"
+              <AstryxButton
+                variant="primary"
                 size="lg"
-              >
-                {parsing ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    페이지 가져오는 중…
-                  </span>
-                ) : (
-                  'PRD 분석 시작 →'
-                )}
-              </Button>
+                label={parsing ? '페이지 가져오는 중…' : 'PRD 분석 시작 →'}
+                isLoading={parsing}
+                onClick={handleUrlSubmit}
+                style={{ width: '100%' }}
+              />
             )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
 
         {displayError && (
-          <Alert variant="destructive" className="mt-3">
-            <AlertDescription>{displayError}</AlertDescription>
-          </Alert>
+          <Banner status="error" title={displayError} className="mt-3" />
         )}
       </div>
 
@@ -421,12 +413,9 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
         </div>
       )}
 
-      <Dialog open={showBuildInfo} onOpenChange={setShowBuildInfo}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">업데이트 내역</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-1 max-h-80 overflow-y-auto scrollbar-hide">
+      <Dialog data-astryx-theme="neutral" isOpen={showBuildInfo} onOpenChange={setShowBuildInfo}>
+        <DialogHeader title="업데이트 내역" onOpenChange={setShowBuildInfo} hasDivider />
+        <div className="space-y-4 pt-1 max-h-80 overflow-y-auto scrollbar-hide">
             {releaseNotes.map((entry, i) => (
               <div key={i}>
                 <p className="text-xs text-muted-foreground mb-1.5">{entry.date.replace(/^(\d{4})-(\d{1,2})-(\d{1,2})(.*)$/, (_, y, m, d, rest) => `${y}.${m}.${d}${rest}`)}</p>
@@ -441,16 +430,12 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
               </div>
             ))}
           </div>
-        </DialogContent>
       </Dialog>
 
       {/* 이전 분석 다이얼로그 */}
-      <Dialog open={showHistory} onOpenChange={setShowHistory}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm">이전 분석 ({history.length})</DialogTitle>
-          </DialogHeader>
-          <div className="pt-1">
+      <Dialog data-astryx-theme="neutral" isOpen={showHistory} onOpenChange={setShowHistory}>
+        <DialogHeader title={`이전 분석 (${history.length})`} onOpenChange={setShowHistory} hasDivider />
+        <div className="pt-1">
             {history.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 저장된 분석이 없습니다
@@ -505,7 +490,6 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
               </>
             )}
           </div>
-        </DialogContent>
       </Dialog>
     </div>
   )

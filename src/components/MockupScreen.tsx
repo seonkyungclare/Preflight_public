@@ -9,7 +9,7 @@ import {
   useSandpack,
 } from '@codesandbox/sandpack-react'
 import type { AnalysisResult, MockupType } from '@/app/page'
-import { Button } from '@/components/ui/button'
+import { Button as AstryxButton } from '@astryxdesign/core/Button'
 
 interface MockupScreenProps {
   files: Record<string, string>
@@ -96,7 +96,7 @@ export default function MockupScreen({ files, type, onBack }: MockupScreenProps)
     <>
       <style>{`html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; } @keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
 
-      <div className="fixed inset-0 bg-background text-foreground font-sans">
+      <div data-astryx-theme="neutral" className="fixed inset-0 bg-background text-foreground font-sans">
 
         {/* 헤더 */}
         <div
@@ -109,15 +109,18 @@ export default function MockupScreen({ files, type, onBack }: MockupScreenProps)
             <span className="text-sm text-muted-foreground">목업 미리보기</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleCopyCode}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mr-1.5">
-                <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              코드 복사
-            </Button>
-            <Button variant="outline" size="sm" onClick={onBack}>
-              ✕ 닫기
-            </Button>
+            <AstryxButton
+              variant="secondary"
+              size="sm"
+              label="코드 복사"
+              onClick={handleCopyCode}
+              icon={
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              }
+            />
+            <AstryxButton variant="secondary" size="sm" label="✕ 닫기" onClick={onBack} />
           </div>
         </div>
 

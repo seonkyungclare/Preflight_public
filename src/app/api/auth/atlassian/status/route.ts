@@ -7,8 +7,9 @@ import {
 } from '@/lib/atlassian-auth'
 
 export async function GET(): Promise<Response> {
-  const sessionToken = cookies().get(ATLASSIAN_COOKIE)?.value
-  const refreshToken = cookies().get(ATLASSIAN_REFRESH_COOKIE)?.value
+  const cookieStore = await cookies()
+  const sessionToken = cookieStore.get(ATLASSIAN_COOKIE)?.value
+  const refreshToken = cookieStore.get(ATLASSIAN_REFRESH_COOKIE)?.value
   const session = decodeSession(sessionToken, refreshToken)
   if (!session) return Response.json({ connected: false })
 

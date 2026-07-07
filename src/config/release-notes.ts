@@ -5,6 +5,14 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-07-07',
+    changes: [
+      'UI 디자인 시스템 개편 (astryx 적용) — 버튼·카드·탭·뱃지 등 전반 컴포넌트를 새 디자인 시스템으로 교체해 일관된 룩앤필 제공',
+      '결과 화면 가독성 개선 — 체크리스트 카드 영역 구분 정리, 파일명 아이콘 복구, 재생성 로딩 버튼 크기 고정 등 세부 UX 다듬기',
+      '최신 프레임워크로 업그레이드 — React 19 / Next.js 15 적용으로 안정성·성능 개선',
+    ],
+  },
+  {
     date: '2026-06-23 11:52',
     changes: [
       '사용자 요구사항 추가 (Beta) — 목업 생성 시 Confluence 요구사항 문서를 함께 반영. 결과 화면에서 URL 입력 후 생성하면 PRD와 합산',

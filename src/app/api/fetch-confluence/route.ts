@@ -44,7 +44,7 @@ async function resolveToPageId(url: string, accessToken: string): Promise<string
   return null
 }
 
-function setSessionCookie(session: SessionData) {
+async function setSessionCookie(session: SessionData) {
   const cookieOpts = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -52,9 +52,10 @@ function setSessionCookie(session: SessionData) {
     maxAge: ATLASSIAN_SESSION_MAX_AGE,
     path: '/',
   }
-  cookies().set(ATLASSIAN_COOKIE, encodeSessionCore(session), cookieOpts)
+  const cookieStore = await cookies()
+  cookieStore.set(ATLASSIAN_COOKIE, encodeSessionCore(session), cookieOpts)
   if (session.refreshToken) {
-    cookies().set(ATLASSIAN_REFRESH_COOKIE, encodeRefreshToken(session.refreshToken), cookieOpts)
+    cookieStore.set(ATLASSIAN_REFRESH_COOKIE, encodeRefreshToken(session.refreshToken), cookieOpts)
   }
 }
 
@@ -72,7 +73,7 @@ async function ensureValidAccessToken(session: SessionData): Promise<SessionData
     cloudUrl: session.cloudUrl,
     expiresAt: Date.now() + refreshed.expires_in * 1000,
   }
-  setSessionCookie(newSession)
+  await setSessionCookie(newSession)
   return newSession
 }
 
@@ -89,8 +90,9 @@ export async function POST(req: Request): Promise<Response> {
 
   const { url } = body as { url: string }
 
-  const sessionToken = cookies().get(ATLASSIAN_COOKIE)?.value
-  const refreshToken = cookies().get(ATLASSIAN_REFRESH_COOKIE)?.value
+  const cookieStore = await cookies()
+  const sessionToken = cookieStore.get(ATLASSIAN_COOKIE)?.value
+  const refreshToken = cookieStore.get(ATLASSIAN_REFRESH_COOKIE)?.value
   const initialSession = decodeSession(sessionToken, refreshToken)
   if (!initialSession || !initialSession.cloudId) {
     return Response.json(

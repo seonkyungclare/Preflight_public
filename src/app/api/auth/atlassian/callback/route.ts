@@ -25,7 +25,8 @@ export async function GET(req: Request): Promise<Response> {
     return Response.redirect(`${url.origin}/?atlassian_error=invalid_callback`, 302)
   }
 
-  const stateCookie = cookies().get(ATLASSIAN_STATE_COOKIE)?.value
+  const cookieStore = await cookies()
+  const stateCookie = cookieStore.get(ATLASSIAN_STATE_COOKIE)?.value
   if (!stateCookie || stateCookie !== stateFromUrl) {
     return Response.redirect(`${url.origin}/?atlassian_error=state_mismatch`, 302)
   }
@@ -52,12 +53,12 @@ export async function GET(req: Request): Promise<Response> {
       maxAge: ATLASSIAN_SESSION_MAX_AGE,
       path: '/',
     }
-    cookies().set(ATLASSIAN_COOKIE, sessionCookie, cookieOpts)
+    cookieStore.set(ATLASSIAN_COOKIE, sessionCookie, cookieOpts)
     if (tokenRes.refresh_token) {
-      cookies().set(ATLASSIAN_REFRESH_COOKIE, encodeRefreshToken(tokenRes.refresh_token), cookieOpts)
+      cookieStore.set(ATLASSIAN_REFRESH_COOKIE, encodeRefreshToken(tokenRes.refresh_token), cookieOpts)
     }
     console.log(`[atlassian callback] session=${sessionCookie.length}자 refresh=${tokenRes.refresh_token ? '있음' : '없음'}`)
-    cookies().delete(ATLASSIAN_STATE_COOKIE)
+    cookieStore.delete(ATLASSIAN_STATE_COOKIE)
 
     return Response.redirect(`${url.origin}/?atlassian_connected=1`, 302)
   } catch (e) {

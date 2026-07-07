@@ -1,11 +1,11 @@
 "use client";
 
 import { useChangelog } from "@/hooks/useChangelog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
+// astryx 실제 컴포넌트 (StyleX 런타임 + astryx.css)
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
+import { Badge as AstryxBadge } from "@astryxdesign/core/Badge";
+import { Divider as AstryxDivider } from "@astryxdesign/core/Divider";
 
 const CHANGELOG = [
   {
@@ -37,50 +37,52 @@ const SECTION_META = {
 export function WhatsNewModal() {
   const { isOpen, dismiss, version } = useChangelog();
   const latest = CHANGELOG[0];
+  const handleOpenChange = (open: boolean) => { if (!open) dismiss(); };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) dismiss() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <div className="flex items-center gap-2 mb-1">
-            <Badge variant="secondary" className="text-xs">New</Badge>
-            <span className="text-xs text-muted-foreground">v{version} · {latest.date}</span>
-          </div>
-          <DialogTitle>업데이트 내역</DialogTitle>
-        </DialogHeader>
-
-        <Separator />
-
-        <ScrollArea className="max-h-72 pr-3">
-          <div className="flex flex-col gap-4 py-2">
-            {latest.sections.map((section) => {
-              const meta = SECTION_META[section.type];
-              return (
-                <div key={section.type}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${meta.dotClass}`} />
-                    <span className="text-xs font-semibold">{meta.label}</span>
-                  </div>
-                  <ul className="ml-3 space-y-0.5 list-none">
-                    {section.items.map((item) => (
-                      <li key={item} className="text-sm text-muted-foreground relative pl-3">
-                        <span className="absolute left-0 text-muted-foreground">–</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+    // astryx Dialog 는 native <dialog>+showModal 로 top-layer 렌더 → 테마 토큰 해석 위해
+    // data-astryx-theme 를 Dialog 에 직접 부여
+    <Dialog
+      data-astryx-theme="neutral"
+      isOpen={isOpen}
+      onOpenChange={handleOpenChange}
+    >
+      <DialogHeader
+        title="업데이트 내역"
+        subtitle={`v${version} · ${latest.date}`}
+        onOpenChange={handleOpenChange}
+        startContent={<AstryxBadge variant="info" label="New" />}
+        hasDivider
+      />
+      <div className="max-h-72 overflow-y-auto pr-3 scrollbar-hide">
+        <div className="flex flex-col gap-4 py-2">
+          {latest.sections.map((section) => {
+            const meta = SECTION_META[section.type];
+            return (
+              <div key={section.type}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${meta.dotClass}`} />
+                  <span className="text-xs font-semibold">{meta.label}</span>
                 </div>
-              );
-            })}
-          </div>
-        </ScrollArea>
-
-        <Separator />
-
-        <div className="flex justify-end pt-1">
-          <Button size="sm" onClick={dismiss}>확인</Button>
+                <ul className="ml-3 space-y-0.5 list-none">
+                  {section.items.map((item) => (
+                    <li key={item} className="text-sm text-muted-foreground relative pl-3">
+                      <span className="absolute left-0 text-muted-foreground">–</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </div>
-      </DialogContent>
+      </div>
+
+      <AstryxDivider />
+
+      <div className="flex justify-end pt-1">
+        <AstryxButton variant="primary" size="sm" label="확인" onClick={dismiss} />
+      </div>
     </Dialog>
   );
 }

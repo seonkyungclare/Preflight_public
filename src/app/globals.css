@@ -1,3 +1,13 @@
+/* 캐스케이드 레이어 순서 명시(뒤일수록 우선).
+ * Tailwind preflight(base)의 button{background:transparent} 등이 astryx 컴포넌트
+ * 스타일을 덮어쓰지 않도록 astryx-base 를 Tailwind 레이어보다 뒤에 둔다. */
+@layer base, components, utilities, astryx-theme, reset, astryx-base;
+
+/* astryx 컴포넌트 사전컴파일 StyleX CSS (런타임 stylex.props 가 참조하는 atomic class 정의) */
+@import '@astryxdesign/core/astryx.css';
+/* astryx neutral 테마 토큰 (색/타이포/반경 CSS 변수) */
+@import '@astryxdesign/theme-neutral/theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -84,6 +94,72 @@
   html {
     @apply font-sans;
   }
+}
+
+/* ─── astryx 파일럿: shadcn 토큰 → astryx(neutral) 토큰 리매핑 ──────────────────
+ * data-astryx-theme="neutral" 이 붙은 서브트리에서만 색/반경이 astryx 값으로 치환됨.
+ * unlayered 규칙이라 @layer base 의 :root 기본값보다 우선한다.
+ *
+ * 이 앱은 <html class="dark"> 로 다크모드 고정이므로 color-scheme 을 dark 로 맞춰
+ * astryx light-dark() 토큰이 다크 팔레트로 해석되게 한다(기존 앱 톤과 정합).
+ * background/color 를 컨테이너에 명시해, 색 클래스 없이 상속에만 의존하는 텍스트
+ * (로고 span 등)도 astryx 토큰 색을 받도록 한다.
+ * (본문 폰트는 한글 렌더링 위해 SUIT 유지 — astryx Figtree 로 바꾸지 않음)
+ */
+[data-astryx-theme="neutral"] {
+  color-scheme: dark;
+  background-color: var(--color-background-body);
+  color: var(--color-text-primary);
+
+  --background: var(--color-background-body);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-background-card);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-background-popover);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-on-accent);
+  --secondary: var(--color-background-muted);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-background-muted);
+  --muted-foreground: var(--color-text-secondary);
+  --accent: var(--color-background-muted);
+  --accent-foreground: var(--color-text-primary);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-on-error);
+  --border: var(--color-border);
+  --input: var(--color-border-emphasized);
+  --ring: var(--color-accent);
+  --radius: var(--radius-element);
+}
+
+/* Tailwind preflight(unlayered)가 레이어에 속한 astryx 컴포넌트 스타일을 이기는 문제 해결.
+ * preflight 의 unlayered 규칙:
+ *   - `*{border-width:0}` → astryx Card/Divider/Badge 등의 테두리를 0 으로 만듦
+ *     (astryx neutral 다크는 body 와 card 배경색이 같아 '테두리'로 영역을 구분하므로 치명적)
+ *   - `button{background:transparent; color:inherit}` → astryx Button 의 채움/글자색 제거
+ * revert-layer 로 astryx-base 레이어의 원래 값을 되살린다.
+ * (이 규칙들 자체가 unlayered 라 preflight 를 이기고, astryx 컴포넌트에만 스코프되어 shadcn 엔 영향 없음) */
+[data-astryx-theme] [class*="astryx-"] {
+  border-width: revert-layer;
+  border-style: revert-layer;
+  border-color: revert-layer;
+}
+[data-astryx-theme] .astryx-button {
+  background-color: revert-layer;
+  color: revert-layer;
+  /* preflight button{padding:0; margin:0} 로 사라진 버튼 내부 여백 복구 */
+  padding: revert-layer;
+  margin: revert-layer;
+}
+/* 카드 테두리를 은은한 astryx --color-border(#FFFFFF1A)로 낮춤 (기본 revert 값은 더 진한 border-emphasized) */
+[data-astryx-theme] .astryx-card {
+  border-color: var(--color-border);
+}
+/* sm 버튼(생성하기/보기/재생성 등) 글자 크기 2px 축소.
+ * preflight 의 button{font-size:100%} 로 16px 로 커진 것을 14px 로 조정 */
+[data-astryx-theme] .astryx-button.sm {
+  font-size: 14px;
 }
 
 @layer utilities {

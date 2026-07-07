@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Progress } from '@/components/ui/progress'
+import { ProgressBar } from '@astryxdesign/core/ProgressBar'
 
 const STEPS = [
   '파일 텍스트 추출 중',
@@ -42,7 +42,7 @@ export default function AnalyzingScreen() {
   }, [completedCount])
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6">
+    <div data-astryx-theme="neutral" className="min-h-screen flex flex-col items-center justify-center px-6">
       <h2 className="text-xl font-bold mb-2">PRD 분석 중...</h2>
       <p className="text-muted-foreground text-sm mb-6">잠시만 기다려주세요. 보통 1분~3분가량 소요됩니다.</p>
 
@@ -51,7 +51,7 @@ export default function AnalyzingScreen() {
           <span className="text-xs text-muted-foreground">진행률</span>
           <span className="text-sm font-semibold">{Math.round(progress)}%</span>
         </div>
-        <Progress value={progress} className="h-2" />
+        <ProgressBar value={Math.round(progress)} max={100} label="진행률" isLabelHidden variant="accent" />
       </div>
 
       <div className="w-full max-w-sm space-y-4">

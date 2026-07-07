@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import ScoreGauge from '@/components/ScoreGauge'
 import type { AnalysisResult, MissingItem, DevItem, MockupType } from '@/app/page'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+// astryx 실제 컴포넌트 (StyleX 런타임 + astryx.css)
+import { Button as AstryxButton } from '@astryxdesign/core/Button'
+import { Badge as AstryxBadge, type BadgeVariant } from '@astryxdesign/core/Badge'
+import { Card as AstryxCard } from '@astryxdesign/core/Card'
+import { TabList, Tab } from '@astryxdesign/core/TabList'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { formatHistoryDate } from '@/lib/analysis-history'
 
 interface ResultScreenProps {
@@ -32,13 +33,12 @@ interface ResultScreenProps {
 // v2: critical_questions[i]는 객체 — {tag, question, format, options, impact, blocks}
 // ============================================================================
 
-type TagVariant = 'default' | 'secondary' | 'outline'
-
-const TAG_VARIANTS: Record<string, TagVariant> = {
-  '디자인': 'default',
-  '개발': 'secondary',
-  '비즈니스': 'outline',
-  'UX정책': 'outline',
+// astryx Badge 의 semantic/color variant 로 매핑
+const TAG_VARIANTS: Record<string, BadgeVariant> = {
+  '디자인': 'blue',
+  '개발': 'purple',
+  '비즈니스': 'orange',
+  'UX정책': 'teal',
 }
 
 // 태그 문자열에서 대괄호 제거: "[개발]" -> "개발", "개발" -> "개발"
@@ -48,11 +48,11 @@ function stripBrackets(tag: string): string {
 }
 
 // v1 문자열 파싱 (기존 로직 유지)
-function parseTagFromString(q: string): { tag: string | null; variant: TagVariant; rest: string } {
+function parseTagFromString(q: string): { tag: string | null; variant: BadgeVariant; rest: string } {
   const match = q.match(/^\[([^\]]+)\](.*)/)
-  if (!match) return { tag: null, variant: 'secondary', rest: q }
+  if (!match) return { tag: null, variant: 'neutral', rest: q }
   const tag = match[1]
-  return { tag, variant: TAG_VARIANTS[tag] ?? 'secondary', rest: match[2].trim() }
+  return { tag, variant: TAG_VARIANTS[tag] ?? 'neutral', rest: match[2].trim() }
 }
 
 // v2 객체 대응 — 추후 렌더링에서 활용
@@ -118,13 +118,13 @@ function extractNotesText(notes: unknown): string {
 }
 
 // v2 severity 뱃지 스타일
-function severityBadge(severity?: number): { variant: TagVariant; label: string } | null {
+function severityBadge(severity?: number): { variant: BadgeVariant; label: string } | null {
   if (severity === undefined || severity === null) return null
-  const map: Record<number, { variant: TagVariant; label: string }> = {
-    1: { variant: 'outline', label: 'Cosmetic' },
-    2: { variant: 'outline', label: 'Minor' },
-    3: { variant: 'secondary', label: 'Major' },
-    4: { variant: 'default', label: 'Catastrophic' },
+  const map: Record<number, { variant: BadgeVariant; label: string }> = {
+    1: { variant: 'neutral', label: 'Cosmetic' },
+    2: { variant: 'info', label: 'Minor' },
+    3: { variant: 'warning', label: 'Major' },
+    4: { variant: 'error', label: 'Catastrophic' },
   }
   return map[severity] ?? null
 }
@@ -177,23 +177,8 @@ export default function ResultScreen({
 }: ResultScreenProps) {
   const [showMockupModal, setShowMockupModal] = useState(false)
   const [isRegenerate, setIsRegenerate] = useState(false)
-  const [mockupProgress, setMockupProgress] = useState(0)
-
-  useEffect(() => {
-    if (mockupGenerating === null) {
-      setMockupProgress(0)
-      return
-    }
-    setMockupProgress(0)
-    const interval = setInterval(() => {
-      setMockupProgress(prev => {
-        if (prev >= 98) return prev
-        const increment = prev < 60 ? 2 : prev < 82 ? 0.4 : prev < 92 ? 0.15 : 0.03
-        return Math.min(prev + increment, 98)
-      })
-    }, 300)
-    return () => clearInterval(interval)
-  }, [mockupGenerating])
+  // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
+  const [tab, setTab] = useState('recommendations')
 
   const devItems: DevItem[] = result.missing_for_developers ?? []
 
@@ -203,7 +188,7 @@ export default function ResultScreen({
   >
 
   return (
-    <div className="min-h-screen [&_button]:rounded-md">
+    <div data-astryx-theme="neutral" className="min-h-screen [&_button]:rounded-md">
       {/* 헤더 */}
       <div className="border-b px-6 py-4 flex items-center gap-3">
         <button
@@ -223,7 +208,7 @@ export default function ResultScreen({
         <div className="max-w-[900px] mx-auto px-6 py-8 min-w-[500px]">
           {/* 파일 정보 */}
           <div className="flex items-center gap-2 mb-6">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <path d="M14 2v6h6" />
             </svg>
@@ -235,15 +220,15 @@ export default function ResultScreen({
         {/* 점수 + 사용자 요구사항 + 목업 카드 */}
         <div className="grid grid-cols-3 gap-2 mb-8">
           {/* Score - 2행 span */}
-          <Card className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
-            <CardContent className="flex items-center justify-center p-4">
+          <AstryxCard padding={0} className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
+            <div className="flex items-center justify-center p-4">
               <ScoreGauge score={result.sufficiency_score} />
-            </CardContent>
-          </Card>
+            </div>
+          </AstryxCard>
 
           {/* 사용자 요구사항 - 2열 span */}
-          <Card className="col-span-2 !py-0">
-            <CardContent className="p-3">
+          <AstryxCard padding={0} className="col-span-2 !py-0">
+            <div className="p-3">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-sm font-medium">사용자 요구사항 추가</span>
                 <span className="text-[10px] text-blue-500">Beta</span>
@@ -266,12 +251,12 @@ export default function ResultScreen({
                 disabled={mockupGenerating !== null}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground disabled:opacity-50"
               />
-            </CardContent>
-          </Card>
+            </div>
+          </AstryxCard>
 
           {/* Lo-Fi 카드 */}
-          <Card className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
-            <CardContent className="p-3 h-full flex items-center justify-between gap-3">
+          <AstryxCard padding={0} className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
+            <div className="p-3 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">Lo-Fi</span>
@@ -288,35 +273,30 @@ export default function ResultScreen({
               <div className="flex gap-1.5 shrink-0">
                 {mockupGenerating === 'lowfi' ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
-                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
-                      {mockupProgress >= 92 ? `마무리 중... ${Math.round(mockupProgress)}%` : `${Math.round(mockupProgress)}%`}
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={onCancelMockup}>
-                      취소
-                    </Button>
+                    <AstryxButton
+                      variant="primary"
+                      size="sm"
+                      isLoading
+                      isDisabled
+                      label="생성 중"
+                    />
+                    <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
                   </>
                 ) : hasMockupLowFi ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
-                      보기
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', true)} disabled={mockupGenerating !== null}>
-                      재생성
-                    </Button>
+                    <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup('lowfi', false)} isDisabled={mockupGenerating !== null} />
+                    <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup('lowfi', true)} isDisabled={mockupGenerating !== null} />
                   </>
                 ) : (
-                  <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
-                    생성하기
-                  </Button>
+                  <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup('lowfi', false)} isDisabled={mockupGenerating !== null} />
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </AstryxCard>
 
           {/* Hi-Fi 카드 */}
-          <Card className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
-            <CardContent className="p-3 h-full flex items-center justify-between gap-3">
+          <AstryxCard padding={0} className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
+            <div className="p-3 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">Hi-Fi</span>
@@ -333,59 +313,54 @@ export default function ResultScreen({
               <div className="flex gap-1.5 shrink-0">
                 {mockupGenerating === 'hifi' ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
-                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
-                      {mockupProgress >= 92 ? `마무리 중... ${Math.round(mockupProgress)}%` : `${Math.round(mockupProgress)}%`}
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={onCancelMockup}>
-                      취소
-                    </Button>
+                    <AstryxButton
+                      variant="primary"
+                      size="sm"
+                      isLoading
+                      isDisabled
+                      label="생성 중"
+                    />
+                    <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
                   </>
                 ) : hasMockupHiFi ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
-                      보기
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', true)} disabled={mockupGenerating !== null}>
-                      재생성
-                    </Button>
+                    <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup('hifi', false)} isDisabled={mockupGenerating !== null} />
+                    <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup('hifi', true)} isDisabled={mockupGenerating !== null} />
                   </>
                 ) : (
-                  <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
-                    생성하기
-                  </Button>
+                  <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup('hifi', false)} isDisabled={mockupGenerating !== null} />
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </AstryxCard>
         </div>
 
         {/* 탭 */}
-        <Tabs defaultValue="recommendations">
-          <TabsList className="mb-6 w-full h-auto flex-wrap gap-1">
-            <TabsTrigger value="recommendations" className="flex-1 min-w-fit">UX 제안</TabsTrigger>
-            <TabsTrigger value="summary" className="flex-1 min-w-fit">요약</TabsTrigger>
-            <TabsTrigger value="missing" className="flex-1 min-w-fit">디자이너 체크리스트 ({result.missing_for_designers.length})</TabsTrigger>
-            <TabsTrigger value="dev" className="flex-1 min-w-fit">개발자 체크리스트 ({devItems.length})</TabsTrigger>
-            <TabsTrigger value="questions" className="flex-1 min-w-fit">PO 확인 필요 ({result.critical_questions.length})</TabsTrigger>
-          </TabsList>
+        <TabList value={tab} onChange={setTab} layout="fill" className="mb-6">
+          <Tab value="recommendations" label="UX 제안" />
+          <Tab value="summary" label="요약" />
+          <Tab value="missing" label={`디자이너 체크리스트 (${result.missing_for_designers.length})`} />
+          <Tab value="dev" label={`개발자 체크리스트 (${devItems.length})`} />
+          <Tab value="questions" label={`PO 확인 필요 (${result.critical_questions.length})`} />
+        </TabList>
 
           {/* 요약 탭 */}
-          <TabsContent value="summary" className="space-y-6">
+          {tab === 'summary' && (
+          <div className="space-y-6">
             <div>
               <p className="text-sm text-muted-foreground mb-4">PRD에서 명확하게 정의된 항목들</p>
               <div className="space-y-3">
                 {result.validated.map((item, i) => (
-                  <Card key={i}>
-                    <CardContent className="flex items-start gap-3 py-3 px-4">
+                  <AstryxCard padding={0} key={i}>
+                    <div className="flex items-start gap-3 py-3 px-4">
                       <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3">
                           <path d="M5 13l4 4L19 7" />
                         </svg>
                       </div>
                       <span className="text-sm">{item}</span>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </AstryxCard>
                 ))}
               </div>
             </div>
@@ -407,8 +382,8 @@ export default function ResultScreen({
                   } : null
 
                   return (
-                    <Card key={key}>
-                      <CardContent className="py-4 px-4 space-y-2">
+                    <AstryxCard padding={0} key={key}>
+                      <div className="py-4 px-4 space-y-2">
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium">{CRITERIA_LABELS[key] ?? key}</span>
                           <span className={`font-bold ${text}`}>{val.score}/10</span>
@@ -428,16 +403,18 @@ export default function ResultScreen({
                         ) : (
                           <p className="text-xs text-muted-foreground leading-relaxed">{notesText}</p>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </AstryxCard>
                   )
                 })}
               </div>
             </div>
-          </TabsContent>
+          </div>
+          )}
 
           {/* 디자이너 체크리스트 탭 */}
-          <TabsContent value="missing" className="space-y-4">
+          {tab === 'missing' && (
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
               디자이너가 작업을 시작하기 전에 확인이 필요한 항목들
             </p>
@@ -450,11 +427,11 @@ export default function ResultScreen({
               }
               const sev = severityBadge(v2Item.severity)
               return (
-                <Card key={i} className="border-amber-800/40">
-                  <CardContent className="pt-5 px-5 pb-5">
+                <AstryxCard padding={0} key={i}>
+                  <div className="pt-5 px-5 pb-5">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-amber-400 border-amber-400/30">{item.screen}</Badge>
-                      {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
+                      <AstryxBadge variant="orange" label={item.screen} />
+                      {sev && <AstryxBadge variant={sev.variant} label={sev.label} />}
                       {v2Item.principle && (
                         <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
                       )}
@@ -469,19 +446,21 @@ export default function ResultScreen({
                       </p>
                     )}
                     <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" className="mt-0.5 flex-shrink-0">
                         <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
                       </svg>
                       <p className="text-xs text-muted-foreground">{item.suggestion}</p>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </AstryxCard>
               )
             })}
-          </TabsContent>
+          </div>
+          )}
 
           {/* 개발자 체크리스트 탭 */}
-          <TabsContent value="dev" className="space-y-4">
+          {tab === 'dev' && (
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
               개발 착수 전 시스템·데이터 로직 관점에서 확인이 필요한 항목들
             </p>
@@ -494,11 +473,11 @@ export default function ResultScreen({
               }
               const sev = severityBadge(v2Item.severity)
               return (
-                <Card key={i} className="border-blue-800/40">
-                  <CardContent className="pt-5 px-5 pb-5">
+                <AstryxCard padding={0} key={i}>
+                  <div className="pt-5 px-5 pb-5">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
-                      <Badge variant="secondary" className="text-blue-400">{item.module}</Badge>
-                      {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
+                      <AstryxBadge variant="blue" label={item.module} />
+                      {sev && <AstryxBadge variant={sev.variant} label={sev.label} />}
                     </div>
                     <p className="text-sm mb-3">
                       <span className="text-blue-400 font-medium">문제: </span>
@@ -510,19 +489,21 @@ export default function ResultScreen({
                       </p>
                     )}
                     <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" className="mt-0.5 flex-shrink-0">
                         <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
                       </svg>
                       <p className="text-xs text-muted-foreground">{item.suggestion}</p>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </AstryxCard>
               )
             })}
-          </TabsContent>
+          </div>
+          )}
 
           {/* PO 확인 필요 탭 */}
-          <TabsContent value="questions" className="space-y-3">
+          {tab === 'questions' && (
+          <div className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
               개발 착수 전 PO가 답변해야 할 핵심 질문들
             </p>
@@ -530,14 +511,14 @@ export default function ResultScreen({
               // v1: string, v2: object
               if (isQuestionV2(q)) {
                 const tagText = stripBrackets(q.tag)
-                const variant = TAG_VARIANTS[tagText] ?? 'secondary'
+                const variant = TAG_VARIANTS[tagText] ?? 'neutral'
                 return (
-                  <Card key={i} className="border-destructive/20">
-                    <CardContent className="flex items-start gap-4 py-4 px-5">
+                  <AstryxCard padding={0} key={i}>
+                    <div className="flex items-start gap-4 py-4 px-5">
                       <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
                       <div className="flex flex-col gap-2 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant={variant} className="w-fit">{tagText}</Badge>
+                          <AstryxBadge variant={variant} label={tagText} />
                           {q.format && (
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
                               {q.format}
@@ -568,28 +549,30 @@ export default function ResultScreen({
                           </p>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </AstryxCard>
                 )
               }
               // v1 fallback — 문자열 기반
               const { tag, variant, rest } = parseTagFromString(q as string)
               return (
-                <Card key={i} className="border-destructive/20">
-                  <CardContent className="flex items-start gap-4 py-4 px-5">
+                <AstryxCard padding={0} key={i}>
+                  <div className="flex items-start gap-4 py-4 px-5">
                     <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
                     <div className="flex flex-col gap-1.5">
-                      {tag && <Badge variant={variant} className="w-fit">{tag}</Badge>}
+                      {tag && <AstryxBadge variant={variant} label={tag} />}
                       <span className="text-sm">{rest}</span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </AstryxCard>
               )
             })}
-          </TabsContent>
+          </div>
+          )}
 
           {/* UX 제안 탭 */}
-          <TabsContent value="recommendations" className="space-y-3">
+          {tab === 'recommendations' && (
+          <div className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
               사용성 및 비즈니스 성과를 높이기 위한 UX 제안
             </p>
@@ -597,15 +580,15 @@ export default function ResultScreen({
               const n = normalizeRec(rec)
               const hasV2Meta = n.principle || n.perspective || n.effort || n.expected_impact
               return (
-                <Card key={i}>
-                  <CardContent className="flex items-start gap-4 py-4 px-5">
+                <AstryxCard padding={0} key={i}>
+                  <div className="flex items-start gap-4 py-4 px-5">
                     <span className="flex-shrink-0 mt-0.5">💡</span>
                     <div className="flex flex-col gap-2 flex-1">
                       <span className="text-sm">{n.text}</span>
                       {hasV2Meta && (
                         <div className="flex items-center gap-2 flex-wrap">
-                          {n.principle && <Badge variant="outline" className="text-[10px]">{n.principle}</Badge>}
-                          {n.perspective && <Badge variant="secondary" className="text-[10px]">{n.perspective}</Badge>}
+                          {n.principle && <AstryxBadge variant="neutral" label={n.principle} />}
+                          {n.perspective && <AstryxBadge variant="purple" label={n.perspective} />}
                           {n.effort && <span className="text-[10px] text-muted-foreground">효과 난이도: {n.effort}</span>}
                         </div>
                       )}
@@ -615,24 +598,23 @@ export default function ResultScreen({
                         </p>
                       )}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </AstryxCard>
               )
             })}
-          </TabsContent>
-        </Tabs>
+          </div>
+          )}
         </div>
       </div>
 
       {/* 목업 타입 선택 모달 */}
-      <Dialog open={showMockupModal} onOpenChange={(open) => { setShowMockupModal(open); if (!open) setIsRegenerate(false) }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{isRegenerate ? '목업 재생성' : '목업 스타일 선택'}</DialogTitle>
-            <DialogDescription>
-              {isRegenerate ? '재생성할 스타일을 선택하세요' : '원하는 목업 스타일을 선택하세요'}
-            </DialogDescription>
-          </DialogHeader>
+      <Dialog data-astryx-theme="neutral" isOpen={showMockupModal} onOpenChange={(open) => { setShowMockupModal(open); if (!open) setIsRegenerate(false) }}>
+        <DialogHeader
+          title={isRegenerate ? '목업 재생성' : '목업 스타일 선택'}
+          subtitle={isRegenerate ? '재생성할 스타일을 선택하세요' : '원하는 목업 스타일을 선택하세요'}
+          onOpenChange={(open) => { setShowMockupModal(open); if (!open) setIsRegenerate(false) }}
+          hasDivider
+        />
 
           <div className="grid grid-cols-2 gap-3 mt-2">
             <button
@@ -679,7 +661,6 @@ export default function ResultScreen({
               )}
             </button>
           </div>
-        </DialogContent>
       </Dialog>
     </div>
   )
