@@ -139,9 +139,10 @@ interface AppState {
   mockupHiFiAt: number | null
   error: string | null
   mockupGenerating: MockupType | null  // 생성 중인 타입, null이면 미생성 중
+  mockupProgress: number | null  // 생성 진행률 0-100, null이면 아직 진행률 미수신
+  mockupSpec: unknown  // 앞선 생성에서 확정된 화면 구조(spec). Lo-Fi/Hi-Fi가 공유해 동일 화면 집합 보장
   historyId: string | null  // 현재 분석 세션의 history 엔트리 ID
   historyCreatedAt: number | null
-  requirementsUrl: string  // 사용자 요구사항 Confluence URL (선택)
 }
 
 // ─── 메인 페이지 (스크린 상태 머신) ────────────────────────────────────────────
@@ -159,10 +160,11 @@ export default function Home() {
     mockupHiFiAt: null,
     error: null,
     mockupGenerating: null,
+    mockupProgress: null,
+    mockupSpec: null,
     analysis: null,
     historyId: null,
     historyCreatedAt: null,
-    requirementsUrl: '',
   })
 
   // PRD 파일 업로드 후 Claude 분석 스트리밍 시작
@@ -177,6 +179,7 @@ export default function Home() {
       mockupFilesHiFi: null,
       mockupLowFiAt: null,
       mockupHiFiAt: null,
+      mockupSpec: null,
     }))
 
     try {
@@ -186,7 +189,11 @@ export default function Home() {
         body: JSON.stringify({ prdText }),
       })
 
-      if (!res.ok || !res.body) throw new Error('분석 요청 실패')
+      if (!res.ok) {
+        const serverMsg = await res.text().catch(() => '')
+        throw new Error(serverMsg || '분석 요청 실패')
+      }
+      if (!res.body) throw new Error('분석 요청 실패')
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -216,7 +223,7 @@ export default function Home() {
       }).catch(err => console.error('[history] 저장 실패:', err))
     } catch (e) {
       console.error('[분석 오류] 에러:', e)
-      const errorMsg = '분석 중 오류가 발생했습니다'
+      const errorMsg = (e as Error)?.message || '분석 중 오류가 발생했습니다'
       setState(prev => ({ ...prev, screen: 'upload', error: errorMsg }))
     }
   }
@@ -231,46 +238,62 @@ export default function Home() {
       return
     }
 
-    setState(prev => ({ ...prev, mockupGenerating: type }))
+    setState(prev => ({ ...prev, mockupGenerating: type, mockupProgress: 0 }))
     const controller = new AbortController()
     abortRef.current = controller
 
     try {
-      // 사용자 요구사항 URL이 있으면 Confluence에서 가져와서 prdText에 합치기
-      let combinedPrdText = state.prdText
-      if (state.requirementsUrl.trim()) {
-        try {
-          const reqRes = await fetch('/api/fetch-confluence', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: state.requirementsUrl.trim() }),
-          })
-          if (reqRes.ok) {
-            const reqData = await reqRes.json() as { title?: string; text?: string }
-            if (reqData.text) {
-              combinedPrdText = `${state.prdText}\n\n=== 사용자 요구사항: ${reqData.title ?? ''} ===\n${reqData.text}`
-            }
-          }
-        } catch {
-          // 요구사항 fetch 실패해도 PRD만으로 목업 생성 계속
-        }
-      }
-
       const res = await fetch('/api/mockup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prdText: combinedPrdText,
+          prdText: state.prdText,
           // analysisText에 전체 analysis JSON을 전달 (mockup_directives 포함)
           analysisText: JSON.stringify(state.analysis),
           type,
+          // 앞서 확정된 spec이 있으면 재사용 → Lo-Fi/Hi-Fi가 동일 화면 집합 공유(요건 ④)
+          existingSpec: state.mockupSpec ?? undefined,
         }),
         signal: controller.signal,
       })
 
-      if (!res.ok) throw new Error('목업 생성 실패')
+      if (!res.ok || !res.body) throw new Error('목업 생성 실패')
 
-      const data = await res.json() as { files: Record<string, string> }
+      // NDJSON 스트림 파싱: {type:'progress'|'done'|'error'} 이벤트를 줄 단위로 수신
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let files: Record<string, string> | null = null
+      let receivedSpec: unknown = null
+      let streamError: string | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? '' // 마지막 조각은 미완성일 수 있어 버퍼에 보관
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const evt = JSON.parse(line) as
+            | { type: 'progress'; progress: number; message?: string }
+            | { type: 'done'; files: Record<string, string>; spec?: unknown }
+            | { type: 'error'; error: string }
+          if (evt.type === 'progress') {
+            setState(prev => ({ ...prev, mockupProgress: evt.progress }))
+          } else if (evt.type === 'done') {
+            files = evt.files
+            receivedSpec = evt.spec ?? null
+          } else if (evt.type === 'error') {
+            streamError = evt.error
+          }
+        }
+      }
+
+      if (streamError) throw new Error(streamError)
+      if (!files) throw new Error('목업 생성 실패')
+
+      const data = { files }
       console.log('[mockup] 생성 완료, 새 탭 오픈 시도', { type, fileKeys: Object.keys(data.files) })
       const now = Date.now()
       const nextLowFi = type === 'lowfi' ? data.files : state.mockupFilesLowFi
@@ -280,6 +303,9 @@ export default function Home() {
       setState(prev => ({
         ...prev,
         mockupGenerating: null,
+        mockupProgress: null,
+        // 확정된 spec 보관(없으면 기존 유지) → 다음 fidelity 생성 시 동일 화면 집합 재사용
+        mockupSpec: receivedSpec ?? prev.mockupSpec,
         mockupFilesLowFi: nextLowFi,
         mockupFilesHiFi: nextHiFi,
         mockupLowFiAt: nextLowFiAt,
@@ -303,9 +329,9 @@ export default function Home() {
     } catch (e) {
       // 취소한 경우 에러 표시 없이 조용히 종료
       if ((e as Error).name === 'AbortError') {
-        setState(prev => ({ ...prev, mockupGenerating: null }))
+        setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null }))
       } else {
-        setState(prev => ({ ...prev, mockupGenerating: null, error: (e as Error).message }))
+        setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null, error: (e as Error).message }))
       }
     } finally {
       abortRef.current = null
@@ -330,9 +356,10 @@ export default function Home() {
       mockupHiFiAt: entry.mockupHiFiAt,
       error: null,
       mockupGenerating: null,
+      mockupProgress: null,
+      mockupSpec: null,
       historyId: entry.id,
       historyCreatedAt: entry.createdAt,
-      requirementsUrl: '',
     })
   }
 
@@ -373,9 +400,8 @@ export default function Home() {
           onGenerateMockup={handleGenerateMockup}
           onCancelMockup={handleCancelMockup}
           mockupGenerating={state.mockupGenerating}
-          onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null }))}
-          requirementsUrl={state.requirementsUrl}
-          onRequirementsUrlChange={url => setState(prev => ({ ...prev, requirementsUrl: url }))}
+          mockupProgress={state.mockupProgress}
+          onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null, mockupSpec: null }))}
         />
       )}
 
@@ -386,18 +412,24 @@ export default function Home() {
 // ─── 스트리밍된 텍스트에서 JSON 파싱 ──────────────────────────────────────────
 
 function parseAnalysis(raw: string): AnalysisResult {
-  const cleaned = raw
-    .replace(/^```(?:json)?\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim()
+  // /api/analyze는 tool use로 스키마 검증된 JSON을 그대로 내려주므로 파싱이 안전하다.
+  // 혹시 코드펜스가 섞인 레거시/예외 응답이 오면 아래 fallback으로 복구한다.
+  let parsed: AnalysisResult
+  try {
+    parsed = JSON.parse(raw) as AnalysisResult
+  } catch {
+    const cleaned = raw
+      .replace(/^```(?:json)?\n?/, '')
+      .replace(/\n?```$/, '')
+      .trim()
 
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start === -1 || end === -1) {
-    throw new Error('응답에서 JSON을 찾지 못했습니다')
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
+    if (start === -1 || end === -1) {
+      throw new Error('응답에서 JSON을 찾지 못했습니다')
+    }
+    parsed = JSON.parse(cleaned.slice(start, end + 1)) as AnalysisResult
   }
-
-  const parsed = JSON.parse(cleaned.slice(start, end + 1)) as AnalysisResult
 
   // v1/v2 호환을 위한 최소 방어 로직 — 필수 필드 누락 시 빈 기본값 주입
   // (렌더링 중 map/length 호출이 깨지지 않도록)

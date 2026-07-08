@@ -157,14 +157,50 @@ export async function POST(req: Request): Promise<Response> {
 
     const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 
+    // 표를 markdown 표로 보존 (유저스토리·스코프·매트릭스 등 표 기반 내용의 행/열 구조 유지).
+    // 외부 gfm 플러그인은 사내 npm 레지스트리에서 차단되므로 간단한 표 변환을 직접 구현한다.
+    td.addRule('tables', {
+      filter: 'table',
+      replacement: (_content, node) => {
+        const rows = Array.from((node as Element).querySelectorAll('tr'))
+        if (rows.length === 0) return ''
+        const cellsOf = (tr: Element) =>
+          Array.from(tr.querySelectorAll('th, td')).map(td =>
+            (td.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|'),
+          )
+        const matrix = rows.map(cellsOf).filter(r => r.length > 0)
+        if (matrix.length === 0) return ''
+        const colCount = Math.max(...matrix.map(r => r.length))
+        const pad = (r: string[]) => {
+          const c = [...r]
+          while (c.length < colCount) c.push('')
+          return c
+        }
+        const line = (cells: string[]) => `| ${cells.join(' | ')} |`
+        const header = pad(matrix[0])
+        const sep = header.map(() => '---')
+        const body = matrix.slice(1).map(pad)
+        return `\n\n${[line(header), line(sep), ...body.map(line)].join('\n')}\n\n`
+      },
+    })
+
+    // ac:* 컨테이너 매크로(layout/panel/expand 등)는 내부 content만 통과시킨다.
     td.addRule('confluenceMacros', {
       filter: (node) => node.nodeName.toLowerCase().startsWith('ac:'),
       replacement: (content) => content,
     })
 
     const cleanedHtml = html
+      // 다이어그램 매크로(drawio/gliffy/mermaid/plantuml)는 텍스트가 아니라 살릴 수 없으므로 마커로 표시
+      .replace(
+        /<ac:structured-macro[^>]*ac:name="(?:drawio|gliffy|mermaid|plantuml)"[\s\S]*?<\/ac:structured-macro>/g,
+        '\n[다이어그램]\n',
+      )
+      // 이미지/첨부 리소스 → 마커
       .replace(/<ac:image[^>]*>[\s\S]*?<\/ac:image>/g, '[이미지]')
       .replace(/<ri:[^>]*\/>/g, '')
+      // 매크로 파라미터(width/layout 등 설정값)는 본문이 아니므로 제거 → "wide1800" 류 누수 방지
+      .replace(/<ac:parameter[\s\S]*?<\/ac:parameter>/g, '')
 
     const markdown = td.turndown(cleanedHtml).trim()
 

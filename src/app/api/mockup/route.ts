@@ -28,7 +28,6 @@ interface MockupSpec {
   screens: ScreenSpec[]
   menu_screen_ids: string[]
   flows: Array<{ from: string; to: string; trigger: string }>
-  forced_states: string[]
   critical_screen_ids: string[]
   attention_areas: Array<{ dimension: string; score: number; focus: string }>
   note_items: NoteItem[]
@@ -38,6 +37,8 @@ interface RequestBody {
   prdText: string
   analysisText: string
   type: 'lowfi' | 'hifi'
+  // 앞서 생성한 spec을 재사용하면 Lo-Fi/Hi-Fi가 동일 화면 집합을 공유한다.
+  existingSpec?: MockupSpec
 }
 
 // ============================================================================
@@ -63,11 +64,10 @@ Output schema:
   ],
   "menu_screen_ids": ["id"],
   "flows": [{ "from": "id", "to": "id", "trigger": "트리거" }],
-  "forced_states": [],
   "critical_screen_ids": [],
   "attention_areas": [{ "dimension": "차원명", "score": 5, "focus": "구체적 약점" }],
   "note_items": [
-    { "category": "missing|ambiguous|omitted|attention", "item": "항목명", "reason": "이유" }
+    { "category": "missing|ambiguous|omitted", "item": "항목명", "reason": "이유" }
   ]
 }
 
@@ -77,8 +77,22 @@ Rules:
 - fields: ALL PRD-defined form/detail fields — do not omit any
 - actions: ALL PRD-defined buttons/actions for this screen
 - navigates_to: screen ids reachable from this screen — derive from PRD AND Standard Navigation Flows below
-- forced_states, critical_screen_ids, attention_areas: derive from analysis.mockup_directives
-- note_items: PRD gaps, ambiguities, missing specs, and attention areas from analysis
+- critical_screen_ids, attention_areas: derive from analysis.mockup_directives
+- note_items: PRD 갭만 (missing/ambiguous/omitted). 주의영역(attention)은 attention_areas가 담당하므로 note_items에 중복 기재하지 말 것
+
+## Menu / Information Architecture (메뉴 구조 우선 채택)
+PRD가 명시적으로 정의한 메뉴 구조를 IA의 최우선 근거로 삼는다. 메뉴 도식이 이미지/다이어그램으로만 존재해 텍스트가 없더라도, 아래 텍스트 단서에서 IA를 복원한다:
+- **진입 경로(breadcrumb)**: "A > B > C > 화면명" 형태의 경로. 마지막 항목이 화면, 그 앞 경로가 상위 메뉴 계층이다.
+  - 예: "Bizest > 파트너 > 성장솔루션 관리 > 디스플레이 광고 관리" → "디스플레이 광고 관리"를 1st-level 메뉴 화면으로, 같은 상위 경로를 공유하는 화면들을 형제 메뉴로 묶는다.
+- **섹션 제목/목차**: 기능 요구사항 섹션 제목(예: "디스플레이 광고 관리", "인벤토리 관리", "검수 관리")도 메뉴 후보다.
+- 여러 진입 경로가 같은 상위(예: "성장솔루션 관리")를 공유하면 그 하위 항목들을 menu_screen_ids로 채택한다.
+
+## User Stories (유저스토리 → 화면·액션·권한 도출)
+PRD에 "유저스토리"(액터/시스템 동작 표 포함)가 있으면 화면 설계의 핵심 근거로 삼는다:
+- 유저스토리의 **액터·진입 경로**로 화면과 접근 권한을 결정한다.
+- 각 스토리 문장("~할 수 있다", "~조회한다")에서 **화면 동작을 actions로, 조회 대상 데이터를 columns/fields로** 도출한다.
+- "시스템 동작"(예: 권한 없음 시 403, 생성·수정 불가) 같은 제약은 해당 화면의 actions/note_items에 반영한다.
+- 표가 다소 흐트러져 있어도 행 번호(1, 2, 3…)를 기준으로 개별 스토리를 구분해 해석한다.
 
 ## Screen hierarchy (2-level max)
 Decide per screen whether it's 1st-level (top menu) or 2nd-level (sub-page):
@@ -98,22 +112,16 @@ NOT a separate screen (keep as action in parent, no separate screen entry):
 These are universal UI conventions — populate navigates_to and flows based on these rules:
 - list screen → detail screen of the same domain (trigger: "행 클릭")
 - any screen with "생성/추가/등록" action → form screen or back to same screen (trigger: "생성 버튼")
-- form screen → parent list screen after submit (trigger: "저장/확인")
+- form screen → parent list screen after submit (trigger: "저장")
 - detail screen → parent list screen (trigger: "목록으로")
 - any screen → any screen explicitly linked in PRD (trigger: PRD's exact wording)
 
 ## flows population rules
 - Include ALL navigations: PRD-explicit + Standard Navigation Flows derived above
+- navigates_to/flows는 **실제 관계가 있는 화면만** 연결한다: 같은 도메인의 목록↔상세, 부모↔자식(parent_id), PRD에 명시된 링크. 관계가 불명확하면 연결하지 말 것(엉뚱한 화면 연결 방지).
 - Every menu screen should appear in at least one flow (as from or to)
-- trigger: short Korean label describing what user does (예: "행 클릭", "저장 버튼", "취소", "생성 버튼")
-
-## User Requirements Section
-If the input contains a section starting with "=== 사용자 요구사항:", treat it as ADDITIVE supplementary UX/UI requirements. The PRD is the source of truth.
-- ADD any extra fields, columns, or actions mentioned in requirements to the relevant screens — but NEVER remove or replace PRD-defined fields, columns, or actions
-- If a requirement contradicts or differs from the PRD, the PRD definition takes priority — the requirement is ignored
-- If a screen is mentioned only in requirements (not in PRD), add it as a new screen entry with appropriate type and parent_id
-- Reflect domain-specific terminology from the requirements into screen names and labels only when the PRD does not already define them
-- Do NOT extract ux_hints — UX behaviors will be passed directly to screen generation`
+- trigger: 아래 표준 어휘만 사용 — 정방향은 "행 클릭" | "생성 버튼" | "저장", 뒤로가기는 "목록으로" | "취소"
+  (뒤로가기 trigger는 다이어그램에서 역방향 엣지로 필터되므로 반드시 "목록으로"/"취소"로 표기)`
 
 const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
 
@@ -134,24 +142,7 @@ Rules:
 - All actions from spec: rendered as outlined rectangles with text labels
 - Navigation actions (when target is in navigates_to): call navigate('targetId') onClick
 - Actions without clear navigation target: render as visual-only (no onClick)
-- Do NOT add elements not in the screen spec
-
-## User Requirements (wireframe level)
-If the prompt includes a USER REQUIREMENTS section, read it and apply relevant items to this screen using grayscale shapes:
-- Bulk upload / drag-and-drop / file import → dashed rectangle labeled "📂 파일 드롭 영역"
-- Time precision / HH:MM / scheduled time → input box labeled "날짜 / 시간 (HH:MM)"
-- Timeline view / slot calendar / gantt grid → grid table skeleton (rows = 리소스, columns = 날짜)
-- Audit log / change history → 3-column table at bottom: 수정자 | 수정일시 | 변경항목
-- Status filter chips / tag filters → row of small outlined rectangle chips
-- Preview / thumbnail / rendering → bordered rectangle labeled "미리보기"
-- KPI / metrics / performance comparison → row of metric cards (label, value, comparison)
-- Conditional fields / type-based field switch → field group with label "[조건에 따라 노출]"
-- Real-time validation / inline error / URL check → input with red-dashed border + error text below
-- Role-based access / permission gating → lighter-bordered rectangle with "🔒" prefix
-- Confirmation popup / warning before action → button with "⚠" prefix + "확인 팝업 발생" note
-- Clone / duplicate-then-edit flow → button labeled "복제 후 수정"
-- Alert subscription / event notification → toggle row labeled "알림 구독"
-Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.`
+- Do NOT add elements not in the screen spec`
 
 const HIFI_SYSTEM = `You generate high-fidelity Ant Design React component functions for interactive prototypes.
 
@@ -173,37 +164,20 @@ Pre-imported (DO NOT re-import):
 Rules:
 - All text Korean
 - Realistic Korean placeholder data: brand/product names, dates "2026-04-15", amounts "₩2,400,000", mixed PRD-defined statuses
-- List type: Table with 3–5 rows, ALL columns filled, no empty cells
+- List type: Table with 3 rows, ALL columns filled, no empty cells
 - Full interactivity — NO dead ends:
   · Table rows: onClick → open Modal (≤5 detail fields) or Drawer (>5 detail fields) with Descriptions
   · "생성/추가/등록" actions: open Form Modal with PRD fields, submit → close + add to list + message.success
   · "수정/편집" actions: open same Form Modal pre-filled, submit → update list + message.success
   · "삭제" actions: Popconfirm or Modal.confirm → remove from list
-  · Cross-screen navigation: call navigate('targetId')
+  · Cross-screen navigation: call navigate('targetId') — 반드시 프롬프트의 NAVIGATION TARGETS에 나열된 정확한 id로만. 목록에 없으면 다른 화면으로 이동시키지 말 것(임의 id 생성 금지).
 - Use useState for: list data, modal/drawer open state, selected item, form visibility
 - Primary action button: type="primary", top-right of content area
 - Exact PRD field/column names — do not rename
 - Do NOT add columns/fields not in spec
 
-## User Requirements (hi-fi level)
-If the prompt includes a USER REQUIREMENTS section, read it and implement relevant items for THIS screen using appropriate Ant Design components:
-- Bulk upload / drag-and-drop / file import → <Upload.Dragger> with drag-and-drop area
-- Time precision / HH:MM / scheduled time → <DatePicker showTime format="YYYY-MM-DD HH:mm">
-- Timeline view / slot calendar / gantt grid → resource × date grid table with colored <Tag> bars; useState for date range
-- Audit log / change history → <Table> columns [수정자, 수정일시, 변경항목] at bottom; realistic mock rows
-- Status filter chips / tag filters → <Space> with <Tag> chips toggling via useState (active: color="blue")
-- Preview / thumbnail / rendering → Card grid of thumbnail placeholders with segment labels
-- KPI / metrics / performance comparison → <Row> of <Col><Statistic> with comparison value in colored text
-- Conditional fields / type-based field switch → <Radio.Group> with useState; conditional rendering {val === 'A' && <Form.Item>}
-- Real-time validation / inline error / URL check → <Input> with onChange; <Alert type="error"> below on invalid state
-- Role-based access / permission gating → disabled <Form.Item> or <Button> with <Tooltip title="권한이 없습니다">
-- Confirmation popup / warning before action → <Popconfirm> or Modal.confirm with warning message
-- Clone / duplicate-then-edit flow → "복제 후 수정" <Button> that opens pre-filled edit modal via useState
-- Alert subscription / event notification → <List> of events each with <Switch>; useState for subscription state
-Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.
 - Do NOT add utility buttons not in spec (새로고침, 내보내기, 인쇄 etc.)
-- Normal flow only — no empty/loading/error state screens
-- MARKING (REQUIRED when USER REQUIREMENTS section is present): For every UI element you add to implement a user requirement, add data-req="요구사항 키워드" to its outermost JSX container element. Use a concise Korean label from the requirement as the value (e.g., data-req="시간 정밀도 HH:MM", data-req="파일 드래그앤드롭"). This attribute enables the User Requirements overlay indicator feature.`
+- Normal flow only — no empty/loading/error state screens`
 
 // ============================================================================
 // CODE UTILITIES
@@ -267,7 +241,9 @@ function getScreenModel(): string {
   return process.env.ANTHROPIC_SCREEN_MODEL ?? getModel()
 }
 
-const MAX_SCREENS = 6 // 화면 수 상한 (60초 제한 대응)
+// 화면 수 상한(화면은 병렬 생성되므로 벽시계 시간은 화면 수에 크게 비례하지 않음).
+// 실행시간·토큰·동시호출 한도 안전장치. env MOCKUP_MAX_SCREENS로 조정 가능.
+const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 12
 
 function extractText(content: Anthropic.Messages.Message['content']): string {
   return content.map(b => (b.type === 'text' ? b.text : '')).join('').trim()
@@ -345,69 +321,13 @@ async function extractSpec(
 }
 
 // ============================================================================
-// STEP 1-B: FLOW EXTRACTION (dedicated small call)
-// ============================================================================
-
-const FLOW_EXTRACTION_SYSTEM = `You are a UX analyst. Given a list of screens and a PRD, generate ALL navigation flows between screens.
-Return a JSON array only. No markdown, no explanation.
-
-Output format:
-[{ "from": "screen_id", "to": "screen_id", "trigger": "한국어 트리거" }]
-
-Rules:
-- Include BOTH PRD-explicit flows AND Standard Navigation Flows below
-- trigger: short Korean action label (예: "행 클릭", "생성 버튼", "저장", "취소", "목록으로", "상세보기")
-- Only include flows where BOTH from and to are in the given screen id list
-- A list screen should have at least one outgoing flow (to detail or form)
-- Every screen should appear in at least one flow (as from or to)
-
-Standard Navigation Flows (always apply):
-- list → detail/form via "행 클릭" or "상세보기"
-- any screen with 생성/추가/등록 action → form screen or back to same screen via "생성 버튼"
-- form → parent list via "저장" or "확인"
-- detail → parent list via "목록으로" or "이전"
-- any cross-screen button in PRD → add that flow`
-
-async function extractFlows(
-  anthropic: Anthropic,
-  spec: MockupSpec,
-  prdText: string,
-): Promise<Array<{ from: string; to: string; trigger: string }>> {
-  const screenList = spec.screens
-    .map(s => `- ${s.id} ("${s.name}", type: ${s.type}, actions: [${s.actions.join(', ')}])`)
-    .join('\n')
-
-  const result = await callClaudeCached(anthropic, {
-    max_tokens: 2000,
-    temperature: 0.1,
-    system: [
-      { type: 'text', text: FLOW_EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
-    ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
-    messages: [{
-      role: 'user',
-      content: `Screens:\n${screenList}\n\nPRD (for flow context):\n${prdText.slice(0, 3000)}\n\nGenerate all flows as a JSON array.`,
-    }],
-  })
-
-  const text = extractText(result.content)
-  const start = text.indexOf('[')
-  const end = text.lastIndexOf(']')
-  if (start === -1 || end === -1) return []
-
-  try {
-    const flows = JSON.parse(text.slice(start, end + 1)) as Array<{ from: string; to: string; trigger: string }>
-    const validIds = new Set(spec.screens.map(s => s.id))
-    return flows.filter(f => validIds.has(f.from) && validIds.has(f.to) && f.from !== f.to)
-  } catch {
-    return []
-  }
-}
-
-// ============================================================================
 // STEP 2: SCREEN GENERATION (per-screen, runs in parallel)
+// ----------------------------------------------------------------------------
+// flow는 별도 LLM 호출 없이 spec.flows(추출 단계 산출) + 각 화면의 navigates_to +
+// 생성된 코드의 navigate() 파싱(codeFlows)만으로 구성한다 → LLM 호출 1회 절약.
 // ============================================================================
 
-function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], type: 'lowfi' | 'hifi', requirementsText?: string): string {
+function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], type: 'lowfi' | 'hifi'): string {
   const navTargets = screen.navigates_to
     .map(id => {
       const t = allScreens.find(s => s.id === id)
@@ -425,15 +345,20 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
   if (screen.columns.length > 0) lines.push(`COLUMNS (all required): ${screen.columns.join(', ')}`)
   if (screen.fields.length > 0) lines.push(`FIELDS (all required): ${screen.fields.join(', ')}`)
   if (screen.actions.length > 0) lines.push(`ACTIONS: ${screen.actions.join(', ')}`)
-  if (navTargets) lines.push(`NAVIGATION TARGETS: ${navTargets}`)
-  if (requirementsText) {
-    lines.push(``, `USER REQUIREMENTS (apply relevant items to this screen):`, requirementsText)
-  }
+  // navigate()는 여기 나열된 id로만 허용한다. 목록에 없으면 화면 간 이동을 만들지 않는다(엉뚱한 연결 방지).
+  lines.push(
+    navTargets
+      ? `NAVIGATION TARGETS (navigate() ONLY to these exact ids; never invent or guess another id): ${navTargets}`
+      : `NAVIGATION TARGETS: (none — do NOT call navigate() to any other screen)`,
+  )
   if (type === 'hifi') {
     lines.push(``, `Return ONLY: function Screen_${screen.id}({ navigate }) { ... }`)
   }
   return lines.join('\n')
 }
+
+// 화면 1개당 출력 상한. antd 화면은 코드가 길어 넉넉히 잡는다(8192 초과이므로 output-128k 베타 필요).
+const SCREEN_MAX_TOKENS = 9000
 
 async function generateScreen(
   anthropic: Anthropic,
@@ -441,42 +366,60 @@ async function generateScreen(
   allScreens: ScreenSpec[],
   type: 'lowfi' | 'hifi',
   systemPrompt: string,
-  requirementsText?: string,
 ): Promise<string | null> {
-  const userPrompt = buildScreenUserPrompt(screen, allScreens, type, requirementsText)
+  const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
+  // Hi-Fi는 antd라 코드가 길어 넉넉히, Lo-Fi는 단순해 기존 상한 유지.
+  const maxTokens = type === 'hifi' ? SCREEN_MAX_TOKENS : 4000
+  const temperature = type === 'hifi' ? 0.3 : 0.15
 
-  const result = await anthropic.messages.create({
-    model: getScreenModel(),
-    max_tokens: type === 'hifi' ? 6000 : 4000,
-    temperature: type === 'hifi' ? 0.3 : 0.15,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-    stream: false,
-  }) as Anthropic.Messages.Message
+  // 첫 시도가 실패(max_tokens 잘림·괄호 불완전·repair 실패)하면 1회 재시도해 화면 drop을 최소화한다.
+  // 모든 화면이 같은 systemPrompt를 쓰므로 prompt-caching으로 반복 입력 토큰 절약.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const attemptPrompt =
+      attempt === 0
+        ? userPrompt
+        : `${userPrompt}\n\n(RETRY: 직전 응답이 너무 길어 잘렸습니다. mock 데이터와 JSX를 더 압축해, 반드시 완결된 하나의 함수로 반환하세요.)`
 
-  if (result.stop_reason === 'max_tokens') {
-    console.warn(`[mockup] Screen ${screen.id} hit max_tokens`)
-    return null
+    const result = (await anthropic.beta.messages.create({
+      model: getScreenModel(),
+      max_tokens: maxTokens,
+      temperature,
+      system: [
+        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+      ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
+      messages: [{ role: 'user', content: attemptPrompt }],
+      stream: false,
+      betas: ['output-128k-2025-02-19', 'prompt-caching-2024-07-31'],
+    })) as unknown as Anthropic.Messages.Message
+
+    if (result.stop_reason === 'max_tokens') {
+      console.warn(`[mockup] Screen ${screen.id} hit max_tokens (attempt ${attempt + 1})`)
+      continue
+    }
+
+    const output = extractText(result.content)
+    const code = extractCode(output) ?? output.trim()
+
+    if (!isCodeComplete(code)) {
+      console.warn(`[mockup] Screen ${screen.id}: incomplete brackets (attempt ${attempt + 1})`)
+      continue
+    }
+
+    // Validate syntax in isolation (wrap with minimal shell to check)
+    const wrapped = `import React, { useState } from 'react'\n${code}\nexport default function _Test() { return null }`
+    const err = validateJsx(wrapped)
+    if (err) {
+      console.warn(`[mockup] Screen ${screen.id} syntax error: ${err.message} (line ${err.line})`)
+      const repaired = await repairScreen(anthropic, code, err.message, screen.id)
+      if (repaired) return repaired
+      continue
+    }
+
+    return code
   }
 
-  const output = extractText(result.content)
-  const code = extractCode(output) ?? output.trim()
-
-  if (!isCodeComplete(code)) {
-    console.warn(`[mockup] Screen ${screen.id}: incomplete brackets`)
-    return null
-  }
-
-  // Validate syntax in isolation (wrap with minimal shell to check)
-  const wrapped = `import React, { useState } from 'react'\n${code}\nexport default function _Test() { return null }`
-  const err = validateJsx(wrapped)
-  if (err) {
-    console.warn(`[mockup] Screen ${screen.id} syntax error: ${err.message} (line ${err.line})`)
-    const repaired = await repairScreen(anthropic, code, err.message, screen.id)
-    return repaired
-  }
-
-  return code
+  console.warn(`[mockup] Screen ${screen.id}: 2회 시도 모두 실패 — drop`)
+  return null
 }
 
 async function repairScreen(
@@ -519,15 +462,15 @@ ${brokenCode}`,
 // STEP 3: ASSEMBLY HELPERS (programmatic — no LLM)
 // ============================================================================
 
-function generateFlowDiagramHifi(spec: MockupSpec, codeFlows: Array<{ from: string; to: string; trigger: string }> = []): string {
+function generateFlowDiagramHifi(spec: MockupSpec, codeFlows: Array<{ from: string; to: string; trigger: string }> = [], codedIds: Set<string> = new Set()): string {
   const nodeW1 = 180, nodeH1 = 60
   const nodeW2 = 160, nodeH2 = 52
 
-  // 노드: 1depth(menu) + 2depth(parent_id 있는 screens)
+  // 노드: 1depth(menu) + 2depth(parent_id 있는 screens). 코드가 실제 생성된 화면만 노드로 노출(클릭 시 빈 화면 방지).
   type DiagramNode = { id: string; name: string; depth: number }
   const nodes: DiagramNode[] = [
-    ...spec.screens.filter(s => spec.menu_screen_ids.includes(s.id)).map(s => ({ id: s.id, name: s.name, depth: 1 })),
-    ...spec.screens.filter(s => !!s.parent_id && spec.menu_screen_ids.includes(s.parent_id!)).map(s => ({ id: s.id, name: s.name, depth: 2 })),
+    ...spec.screens.filter(s => codedIds.has(s.id) && spec.menu_screen_ids.includes(s.id)).map(s => ({ id: s.id, name: s.name, depth: 1 })),
+    ...spec.screens.filter(s => codedIds.has(s.id) && !!s.parent_id && spec.menu_screen_ids.includes(s.parent_id!)).map(s => ({ id: s.id, name: s.name, depth: 2 })),
   ]
   const diagramNodeIds = new Set(nodes.map(n => n.id))
 
@@ -628,8 +571,8 @@ function generateFlowDiagramHifi(spec: MockupSpec, codeFlows: Array<{ from: stri
 }`
 }
 
-function generateFlowDiagramLofi(spec: MockupSpec): string {
-  const menuScreens = spec.screens.filter(s => spec.menu_screen_ids.includes(s.id))
+function generateFlowDiagramLofi(spec: MockupSpec, codedIds: Set<string> = new Set()): string {
+  const menuScreens = spec.screens.filter(s => codedIds.has(s.id) && spec.menu_screen_ids.includes(s.id))
   return `function FlowDiagram({ navigate }) {
   const screens = ${JSON.stringify(menuScreens.map(s => ({ id: s.id, name: s.name })))}
   return (
@@ -752,54 +695,67 @@ function generateNotePanelLofi(spec: MockupSpec): string {
 }`
 }
 
-function generateUserRequirementsOverlay(): string {
-  return `function UserRequirementsOverlay() {
-  const [active, setActive] = React.useState(false)
-  const [ovals, setOvals] = React.useState([])
-  const [tooltip, setTooltip] = React.useState(null)
-  const scan = React.useCallback(() => {
-    const elements = Array.from(document.querySelectorAll('[data-req]'))
-    const newOvals = elements.map(el => {
-      const rect = el.getBoundingClientRect()
-      return { top: rect.top + rect.height / 2 - 15, left: rect.left + rect.width / 2 - 15, req: el.getAttribute('data-req') }
-    }).filter(o => o.top > -15 && o.top < window.innerHeight && o.left > -15 && o.left < window.innerWidth)
-    setOvals(newOvals)
-  }, [])
-  React.useEffect(() => {
-    if (!active) { setOvals([]); setTooltip(null); return }
-    scan()
-    window.addEventListener('scroll', scan, true)
-    window.addEventListener('resize', scan)
-    return () => { window.removeEventListener('scroll', scan, true); window.removeEventListener('resize', scan) }
-  }, [active, scan])
-  return (
-    <>
-      <button onClick={() => setActive(v => !v)} style={{ position:'fixed', top:12, right:16, zIndex:2000, background: active ? '#EB0517' : '#fff', color: active ? '#fff' : '#EB0517', border:'1.5px solid #EB0517', borderRadius:6, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', boxShadow:'0 2px 8px rgba(0,0,0,0.15)' }}>
-        User Requirements
-      </button>
-      {active && ovals.map((o, i) => (
-        <div key={i} onMouseEnter={() => setTooltip(o)} onMouseLeave={() => setTooltip(null)} style={{ position:'fixed', top:o.top, left:o.left, width:30, height:30, borderRadius:'50%', background:'rgba(235,5,23,0.3)', zIndex:1999, cursor:'pointer', pointerEvents:'auto' }} />
-      ))}
-      {active && tooltip && (
-        <div style={{ position:'fixed', top: Math.max(4, tooltip.top - 48), left: Math.min(tooltip.left - 8, window.innerWidth - 256), background:'rgba(0,0,0,0.8)', color:'#fff', padding:'4px 8px', borderRadius:4, fontSize:12, zIndex:2001, maxWidth:240, pointerEvents:'none', whiteSpace:'pre-wrap', lineHeight:1.4 }}>
-          {tooltip.req}
-        </div>
-      )}
-    </>
-  )
-}`
-}
-
 // ============================================================================
 // STEP 3: FINAL ASSEMBLY
 // ============================================================================
 
-function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
-  const menuScreens = spec.screens.filter(s => spec.menu_screen_ids.includes(s.id))
-  const firstScreen = spec.critical_screen_ids[0] ?? spec.menu_screen_ids[0] ?? spec.screens[0]?.id ?? 'flow'
+// 첫 화면을 "실제 코드가 생성된 화면 id"로 확정한다.
+// critical_screen_ids는 analyze에서 온 "화면명"일 수 있으므로 name→id 매핑도 시도.
+// 매칭되는 게 없으면 flow 다이어그램('flow')으로 폴백해 빈 화면을 방지한다.
+function pickFirstScreen(spec: MockupSpec, codedIds: Set<string>): string {
+  const nameToId = new Map(spec.screens.map(s => [s.name, s.id]))
+  const resolve = (v: string): string | null => {
+    if (codedIds.has(v)) return v
+    const mapped = nameToId.get(v)
+    return mapped && codedIds.has(mapped) ? mapped : null
+  }
+  for (const c of spec.critical_screen_ids ?? []) {
+    const id = resolve(c)
+    if (id) return id
+  }
+  for (const mid of spec.menu_screen_ids ?? []) {
+    if (codedIds.has(mid)) return mid
+  }
+  return spec.screens.find(s => codedIds.has(s.id))?.id ?? 'flow'
+}
 
-  const menuItems = menuScreens
-    .map(s => `  { id: '${s.id}', label: '${s.name.replace(/'/g, "\\'")}' }`)
+function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+  const codedIds = new Set(screenCodes.keys())
+  const has = (id: string) => screenCodes.has(id)
+  const menuScreens = spec.screens.filter(s => spec.menu_screen_ids.includes(s.id))
+
+  // 2-depth(parent_id 있는 화면: 상세/생성폼/수정폼 등)를 부모별로 그룹화 — Hi-Fi와 동일 규칙
+  const subsByParent = new Map<string, ScreenSpec[]>()
+  for (const s of spec.screens) {
+    if (!s.parent_id) continue
+    if (!subsByParent.has(s.parent_id)) subsByParent.set(s.parent_id, [])
+    subsByParent.get(s.parent_id)!.push(s)
+  }
+
+  // LNB 항목: 1-depth 메뉴 바로 아래에 그 하위 2-depth를 들여쓰기(depth)로 배치.
+  // 코드가 실제로 생성된 화면만 진입점으로 노출해 죽은 링크를 방지한다.
+  type MenuEntry = { id: string; label: string; depth: 1 | 2 }
+  const menuEntries: MenuEntry[] = []
+  for (const s of menuScreens) {
+    if (has(s.id)) menuEntries.push({ id: s.id, label: s.name, depth: 1 })
+    for (const sub of subsByParent.get(s.id) ?? []) {
+      if (has(sub.id)) menuEntries.push({ id: sub.id, label: sub.name, depth: 2 })
+    }
+  }
+  // 어느 메뉴에도 걸리지 않은 화면(부모가 메뉴가 아니거나 고아)도 디자이너가 만들 대표 화면이므로 진입점 보장
+  const covered = new Set(menuEntries.map(e => e.id))
+  for (const s of spec.screens) {
+    if (has(s.id) && !covered.has(s.id)) {
+      menuEntries.push({ id: s.id, label: s.name, depth: s.parent_id ? 2 : 1 })
+      covered.add(s.id)
+    }
+  }
+
+  const firstScreen = pickFirstScreen(spec, codedIds)
+  const renderedIds = spec.screens.filter(s => has(s.id)).map(s => s.id)
+
+  const menuItems = menuEntries
+    .map(e => `  { id: '${e.id}', label: '${e.label.replace(/'/g, "\\'")}', depth: ${e.depth} }`)
     .join(',\n')
 
   const screenFunctions = spec.screens
@@ -814,16 +770,17 @@ function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
 
   return `import React, { useState } from 'react'
 
-${generateFlowDiagramLofi(spec)}
+${generateFlowDiagramLofi(spec, codedIds)}
 
 ${screenFunctions}
 
 ${generateNotePanelLofi(spec)}
 
 const MENU_ITEMS = [
-  { id: 'flow', label: '🗺 화면 목록' },
+  { id: 'flow', label: '🗺 화면 목록', depth: 1 },
 ${menuItems}
 ]
+const RENDERED_IDS = ${JSON.stringify(renderedIds)}
 
 export default function App() {
   const [page, setPage] = useState('${firstScreen}')
@@ -833,14 +790,15 @@ export default function App() {
         <div style={{ padding: '0 16px 10px', fontSize: 11, color: '#bdbdbd', fontWeight: 600, letterSpacing: 1 }}>메뉴</div>
         {MENU_ITEMS.map(item => (
           <div key={item.id} onClick={() => setPage(item.id)}
-            style={{ padding: '9px 16px', cursor: 'pointer', background: page === item.id ? '#f0f0f0' : 'transparent', color: page === item.id ? '#212121' : '#757575', fontWeight: page === item.id ? 600 : 400, borderLeft: page === item.id ? '3px solid #212121' : '3px solid transparent' }}>
-            {item.label}
+            style={{ padding: '9px 16px', paddingLeft: item.depth === 2 ? 32 : 16, cursor: 'pointer', background: page === item.id ? '#f0f0f0' : 'transparent', color: page === item.id ? '#212121' : '#757575', fontWeight: page === item.id ? 600 : (item.depth === 2 ? 400 : 500), fontSize: item.depth === 2 ? 12 : 13, borderLeft: page === item.id ? '3px solid #212121' : '3px solid transparent' }}>
+            {item.depth === 2 ? '└ ' : ''}{item.label}
           </div>
         ))}
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {page === 'flow' && <FlowDiagram navigate={setPage} />}
 ${screenRenders}
+        {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
       </div>
       <NotePanel />
     </div>
@@ -848,10 +806,12 @@ ${screenRenders}
 }`
 }
 
-function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec, requirementsText?: string): string {
-  // Critical screens first in menu
+function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+  const codedIds = new Set(screenCodes.keys())
+
+  // Critical screens first in menu. 코드가 생성된 화면만 메뉴에 노출(죽은 링크 방지).
   const menuScreens = spec.screens
-    .filter(s => spec.menu_screen_ids.includes(s.id))
+    .filter(s => codedIds.has(s.id) && spec.menu_screen_ids.includes(s.id))
     .sort((a, b) => {
       const ai = spec.critical_screen_ids.indexOf(a.id)
       const bi = spec.critical_screen_ids.indexOf(b.id)
@@ -860,12 +820,13 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec, req
       return 0
     })
 
-  const firstScreen = spec.critical_screen_ids[0] ?? spec.menu_screen_ids[0] ?? spec.screens[0]?.id ?? 'flow'
+  const firstScreen = pickFirstScreen(spec, codedIds)
+  const renderedIds = spec.screens.filter(s => codedIds.has(s.id)).map(s => s.id)
 
-  // 2depth: parent_id가 있는 screens를 부모별로 그룹화
+  // 2depth: parent_id가 있고 코드가 생성된 screens를 부모별로 그룹화
   const subsByParent = new Map<string, ScreenSpec[]>()
   for (const screen of spec.screens) {
-    if (!screen.parent_id) continue
+    if (!screen.parent_id || !codedIds.has(screen.id)) continue
     if (!subsByParent.has(screen.parent_id)) subsByParent.set(screen.parent_id, [])
     subsByParent.get(screen.parent_id)!.push(screen)
   }
@@ -912,8 +873,6 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec, req
     }
   }
 
-  const overlayCode = requirementsText ? `\n${generateUserRequirementsOverlay()}` : ''
-
   return `import React, { useState, useEffect } from 'react'
 import ReactFlow, { Controls, Background } from 'reactflow'
 import 'reactflow/dist/style.css'
@@ -921,17 +880,17 @@ import * as dagre from 'dagre'
 import { Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined, DownloadOutlined } from '@ant-design/icons'
 
-${generateFlowDiagramHifi(spec, codeFlows)}
+${generateFlowDiagramHifi(spec, codeFlows, codedIds)}
 
 ${screenFunctions}
 
 ${generateNotePanelHifi(spec)}
-${overlayCode}
 
 const MENU_ITEMS = [
   { key: 'flow', label: '📊 사용자 flow 보기' },
 ${menuItems}
 ]
+const RENDERED_IDS = ${JSON.stringify(renderedIds)}
 
 export default function App() {
   const [page, setPage] = useState('${firstScreen}')
@@ -954,9 +913,10 @@ export default function App() {
           <Layout.Content style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
             {page === 'flow' && <FlowDiagram navigate={setPage} />}
 ${screenRenders}
+            {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
           </Layout.Content>
         </Layout>
-        <NotePanel />${requirementsText ? '\n        <UserRequirementsOverlay />' : ''}
+        <NotePanel />
       </Layout>
     </ConfigProvider>
   )
@@ -979,109 +939,171 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'prdText와 analysisText가 필요합니다' }, { status: 400 })
   }
 
-  const { prdText, analysisText, type = 'lowfi' } = body as RequestBody
+  const { prdText, analysisText, type = 'lowfi', existingSpec } = body as RequestBody
 
-  try {
-    const anthropic = getAnthropicClient()
+  // 앞선 생성에서 확정된 spec이 있으면 재사용한다(Lo-Fi/Hi-Fi가 동일 화면 집합 공유).
+  // 화면 배열이 비어있지 않은 경우에만 유효한 spec으로 인정.
+  const providedSpec =
+    existingSpec && Array.isArray(existingSpec.screens) && existingSpec.screens.length > 0
+      ? existingSpec
+      : undefined
 
-    // Step 1: Extract spec (small, fast, sequential)
-    console.log(`[mockup v3] type=${type} — Step 1: extracting spec`)
-    let spec: MockupSpec
-    try {
-      spec = await extractSpec(anthropic, prdText, analysisText)
-    } catch (err) {
-      console.error('[mockup v3] Spec extraction failed:', err)
-      return Response.json({ error: 'PRD 구조 추출에 실패했습니다. 다시 시도해주세요.' }, { status: 500 })
-    }
-    // 화면 수 상한 적용 (60초 제한 대응): 메뉴 화면 우선, 나머지 순서대로
-    if (spec.screens.length > MAX_SCREENS) {
-      const menuIds = new Set(spec.menu_screen_ids)
-      const menuScreens = spec.screens.filter(s => menuIds.has(s.id))
-      const subScreens = spec.screens.filter(s => !menuIds.has(s.id))
-      spec.screens = [...menuScreens, ...subScreens].slice(0, MAX_SCREENS)
-      console.log(`[mockup v3] Capped screens to ${MAX_SCREENS}`)
-    }
+  // NDJSON 스트림으로 진행률을 실시간 전송한다.
+  // 이벤트: {type:'progress', progress, message} / {type:'done', files} / {type:'error', error}
+  // 진행률 배분: spec 추출 ~20% → 화면 생성 20~85%(화면당 균등) → 조립 90% → 완료 100%
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false
+      const emit = (obj: Record<string, unknown>) => {
+        if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`))
+      }
+      const finish = () => {
+        if (!closed) {
+          closed = true
+          controller.close()
+        }
+      }
 
-    console.log(`[mockup v3] Spec: ${spec.screens.length} screens, ${spec.menu_screen_ids.length} in menu`)
+      try {
+        const anthropic = getAnthropicClient()
+        emit({ type: 'progress', progress: 5, message: '요청을 준비하고 있습니다' })
 
-    if (spec.screens.length === 0) {
-      return Response.json({ error: 'PRD에서 화면을 추출하지 못했습니다.' }, { status: 500 })
-    }
-
-    // 사용자 요구사항 섹션 원문 추출 (있을 경우 화면 생성에 직접 전달)
-    const reqMatch = prdText.match(/=== 사용자 요구사항[^=]*===([\s\S]*)$/)
-    const requirementsText = reqMatch ? reqMatch[1].trim() : undefined
-
-    // Step 2: 화면 생성 + flows 추출 병렬 실행
-    console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens + flows in parallel`)
-    const systemPrompt = type === 'hifi' ? HIFI_SYSTEM : LOFI_SYSTEM
-
-    const [results, extractedFlows] = await Promise.all([
-      Promise.all(
-        spec.screens.map(async screen => {
+        // Step 1: Spec 확보 — 재사용 가능한 spec이 있으면 추출을 건너뛴다(요건 ④)
+        let spec: MockupSpec
+        if (providedSpec) {
+          spec = providedSpec
+          console.log(`[mockup v3] Step 1: reusing provided spec (${spec.screens.length} screens)`)
+          emit({ type: 'progress', progress: 20, message: `저장된 화면 구조 재사용 (${spec.screens.length}개 화면)` })
+        } else {
+          console.log('[mockup v3] Step 1: extracting spec')
+          emit({ type: 'progress', progress: 10, message: 'PRD 화면 구조 분석 중' })
           try {
-            return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt, requirementsText)
-          } catch (e) {
-            console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
-            return null
+            spec = await extractSpec(anthropic, prdText, analysisText)
+          } catch (err) {
+            console.error('[mockup v3] Spec extraction failed:', err)
+            emit({ type: 'error', error: 'PRD 구조 추출에 실패했습니다. 다시 시도해주세요.' })
+            return finish()
+          }
+          // 화면 수 상한: 메뉴 화면 우선, 초과분은 잘라낸다. 단 조용히 버리지 않고
+          // NotePanel '미구현' 항목으로 노출해 디자이너가 누락 화면을 인지하도록 한다.
+          let droppedScreens: ScreenSpec[] = []
+          if (spec.screens.length > MAX_SCREENS) {
+            const menuIds = new Set(spec.menu_screen_ids)
+            const ordered = [
+              ...spec.screens.filter(s => menuIds.has(s.id)),
+              ...spec.screens.filter(s => !menuIds.has(s.id)),
+            ]
+            droppedScreens = ordered.slice(MAX_SCREENS)
+            spec.screens = ordered.slice(0, MAX_SCREENS)
+            spec.note_items = [
+              ...(spec.note_items ?? []),
+              ...droppedScreens.map(s => ({
+                category: 'omitted' as const,
+                item: s.name,
+                reason: `화면 수 상한(${MAX_SCREENS}개)으로 이번 목업에서 제외됨 — 디자이너 별도 구현 필요`,
+              })),
+            ]
+            console.warn(
+              `[mockup v3] Capped ${ordered.length} → ${MAX_SCREENS} screens. Dropped: ${droppedScreens.map(s => s.name).join(', ')}`,
+            )
+          }
+
+          if (spec.screens.length === 0) {
+            emit({ type: 'error', error: 'PRD에서 화면을 추출하지 못했습니다.' })
+            return finish()
+          }
+
+          emit({
+            type: 'progress',
+            progress: 20,
+            message:
+              droppedScreens.length > 0
+                ? `화면 구조 분석 완료 (${spec.screens.length}개 생성, ${droppedScreens.length}개 제외)`
+                : `화면 구조 분석 완료 (${spec.screens.length}개 화면)`,
+          })
+        }
+
+        console.log(`[mockup v3] Spec: ${spec.screens.length} screens, ${spec.menu_screen_ids.length} in menu`)
+
+        // Step 2: 화면을 병렬 생성. 화면이 완료될 때마다 진행률 emit.
+        // (flow는 별도 LLM 호출 없이 spec.flows + navigates_to + codeFlows로 조립 단계에서 구성)
+        console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens in parallel`)
+        const systemPrompt = type === 'hifi' ? HIFI_SYSTEM : LOFI_SYSTEM
+        const total = spec.screens.length
+        let completed = 0
+
+        const results = await Promise.all(
+          spec.screens.map(async screen => {
+            try {
+              return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt)
+            } catch (e) {
+              console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
+              return null
+            } finally {
+              completed++
+              const pct = 20 + Math.round((completed / total) * 65)
+              emit({ type: 'progress', progress: pct, message: `화면 생성 중 (${completed}/${total})` })
+            }
+          }),
+        )
+        console.log(`[mockup v3] Flows: ${spec.flows.length} (from spec) + navigates_to + codeFlows`)
+
+        const screenCodes = new Map<string, string>()
+        spec.screens.forEach((screen, i) => {
+          const code = results[i]
+          if (code) {
+            screenCodes.set(screen.id, code)
+          } else {
+            console.warn(`[mockup v3] Screen "${screen.name}" (${screen.id}) failed — skipping`)
           }
         })
-      ),
-      extractFlows(anthropic, spec, prdText).catch(e => {
-        console.warn('[mockup v3] Flow extraction failed:', e)
-        return [] as Array<{ from: string; to: string; trigger: string }>
-      }),
-    ])
 
-    // spec.flows를 extractedFlows로 보강 (중복 제거)
-    const existingKeys = new Set(spec.flows.map(f => `${f.from}__${f.to}`))
-    for (const f of extractedFlows) {
-      const key = `${f.from}__${f.to}`
-      if (!existingKeys.has(key)) {
-        spec.flows.push(f)
-        existingKeys.add(key)
+        if (screenCodes.size === 0) {
+          emit({ type: 'error', error: '화면 생성에 모두 실패했습니다. 다시 시도해주세요.' })
+          return finish()
+        }
+
+        // Step 3: Assemble
+        emit({ type: 'progress', progress: 90, message: '화면 조립 중' })
+        console.log(`[mockup v3] Step 3: assembling (${screenCodes.size}/${spec.screens.length} screens)`)
+        const appCode = type === 'hifi'
+          ? assembleHifiApp(screenCodes, spec)
+          : assembleLofiApp(screenCodes, spec)
+
+        // Final validation
+        const finalError = validateJsx(appCode)
+        if (finalError) {
+          console.error('[mockup v3] Assembly validation error:', finalError.message, `line ${finalError.line}`)
+          emit({
+            type: 'error',
+            error: '목업 조립 후 구문 오류가 발생했습니다. 다시 시도해주세요.',
+            detail: finalError.message,
+          })
+          return finish()
+        }
+
+        console.log(`[mockup v3] Done ✓ screens=${screenCodes.size}/${spec.screens.length}`)
+        emit({ type: 'progress', progress: 100, message: '완료' })
+        // spec을 함께 반환 → 클라이언트가 보관했다가 재생성 시 재사용(동일 화면 집합 유지)
+        emit({ type: 'done', files: { '/App.js': appCode }, spec })
+        finish()
+      } catch (error) {
+        console.error('[mockup v3] 오류:', error)
+        const msg =
+          error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')
+            ? 'API 키가 필요합니다.'
+            : '목업 생성 중 오류가 발생했습니다'
+        emit({ type: 'error', error: msg })
+        finish()
       }
-    }
-    console.log(`[mockup v3] Flows: ${spec.flows.length} total`)
+    },
+  })
 
-    const screenCodes = new Map<string, string>()
-    spec.screens.forEach((screen, i) => {
-      const code = results[i]
-      if (code) {
-        screenCodes.set(screen.id, code)
-      } else {
-        console.warn(`[mockup v3] Screen "${screen.name}" (${screen.id}) failed — skipping`)
-      }
-    })
-
-    if (screenCodes.size === 0) {
-      return Response.json({ error: '화면 생성에 모두 실패했습니다. 다시 시도해주세요.' }, { status: 500 })
-    }
-
-    // Step 3: Assemble
-    console.log(`[mockup v3] Step 3: assembling (${screenCodes.size}/${spec.screens.length} screens)`)
-    const appCode = type === 'hifi'
-      ? assembleHifiApp(screenCodes, spec, requirementsText)
-      : assembleLofiApp(screenCodes, spec)
-
-    // Final validation
-    const finalError = validateJsx(appCode)
-    if (finalError) {
-      console.error('[mockup v3] Assembly validation error:', finalError.message, `line ${finalError.line}`)
-      return Response.json({
-        error: '목업 조립 후 구문 오류가 발생했습니다. 다시 시도해주세요.',
-        detail: finalError.message,
-      }, { status: 500 })
-    }
-
-    console.log(`[mockup v3] Done ✓ type=${type} screens=${screenCodes.size}/${spec.screens.length}`)
-    return Response.json({ files: { '/App.js': appCode } })
-
-  } catch (error) {
-    console.error('[mockup v3] 오류:', error)
-    if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {
-      return Response.json({ error: 'API 키가 필요합니다.' }, { status: 500 })
-    }
-    return Response.json({ error: '목업 생성 중 오류가 발생했습니다' }, { status: 500 })
-  }
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+    },
+  })
 }

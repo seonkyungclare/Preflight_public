@@ -5,6 +5,7 @@ import ScoreGauge from '@/components/ScoreGauge'
 import type { AnalysisResult, MissingItem, DevItem, MockupType } from '@/app/page'
 // astryx 실제 컴포넌트 (StyleX 런타임 + astryx.css)
 import { Button as AstryxButton } from '@astryxdesign/core/Button'
+import { Spinner } from '@astryxdesign/core/Spinner'
 import { Badge as AstryxBadge, type BadgeVariant } from '@astryxdesign/core/Badge'
 import { Card as AstryxCard } from '@astryxdesign/core/Card'
 import { TabList, Tab } from '@astryxdesign/core/TabList'
@@ -21,9 +22,8 @@ interface ResultScreenProps {
   onGenerateMockup: (type: MockupType, regenerate?: boolean) => void
   onCancelMockup: () => void
   mockupGenerating: MockupType | null
+  mockupProgress: number | null
   onReupload: () => void
-  requirementsUrl: string
-  onRequirementsUrlChange: (url: string) => void
 }
 
 // ============================================================================
@@ -171,10 +171,12 @@ export default function ResultScreen({
   onGenerateMockup,
   onCancelMockup,
   mockupGenerating,
+  mockupProgress,
   onReupload,
-  requirementsUrl,
-  onRequirementsUrlChange,
 }: ResultScreenProps) {
+  // 진행률이 있으면 "생성 중 45%", 없으면 "생성 중"
+  const generatingLabel =
+    mockupProgress != null ? `생성 중 ${mockupProgress}%` : '생성 중'
   const [showMockupModal, setShowMockupModal] = useState(false)
   const [isRegenerate, setIsRegenerate] = useState(false)
   // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
@@ -217,7 +219,7 @@ export default function ResultScreen({
             <span className="text-sm text-muted-foreground">방금 분석됨</span>
           </div>
 
-        {/* 점수 + 사용자 요구사항 + 목업 카드 */}
+        {/* 점수 + 목업 카드 */}
         <div className="grid grid-cols-3 gap-2 mb-8">
           {/* Score - 2행 span */}
           <AstryxCard padding={0} className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
@@ -226,36 +228,8 @@ export default function ResultScreen({
             </div>
           </AstryxCard>
 
-          {/* 사용자 요구사항 - 2열 span */}
-          <AstryxCard padding={0} className="col-span-2 !py-0">
-            <div className="p-3">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-sm font-medium">사용자 요구사항 추가</span>
-                <span className="text-[10px] text-blue-500">Beta</span>
-                <span className="text-[10px] text-muted-foreground">선택</span>
-                <a
-                  href="https://wiki.team.musinsa.com/wiki/spaces/~712020ee34afa80ab546f4bc1737fa25a14aa1/pages/498877379/UX+UI"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-auto text-[10px] text-muted-foreground underline hover:text-foreground"
-                >예시</a>
-              </div>
-              <p className="text-xs text-muted-foreground mb-2">
-                목업 생성 시 PRD와 함께 반영됩니다. Confluence 페이지의 브라우저 주소창 URL을 붙여넣으세요.
-              </p>
-              <input
-                type="url"
-                value={requirementsUrl}
-                onChange={e => onRequirementsUrlChange(e.target.value)}
-                placeholder="https://wiki.team.musinsa.com/wiki/spaces/.../pages/..."
-                disabled={mockupGenerating !== null}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground disabled:opacity-50"
-              />
-            </div>
-          </AstryxCard>
-
           {/* Lo-Fi 카드 */}
-          <AstryxCard padding={0} className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
+          <AstryxCard padding={0} className={`col-span-2 max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
             <div className="p-3 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -276,9 +250,9 @@ export default function ResultScreen({
                     <AstryxButton
                       variant="primary"
                       size="sm"
-                      isLoading
                       isDisabled
-                      label="생성 중"
+                      icon={<Spinner size="sm" shade="inherit" />}
+                      label={generatingLabel}
                     />
                     <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
                   </>
@@ -295,7 +269,7 @@ export default function ResultScreen({
           </AstryxCard>
 
           {/* Hi-Fi 카드 */}
-          <AstryxCard padding={0} className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
+          <AstryxCard padding={0} className={`col-span-2 max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
             <div className="p-3 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -316,9 +290,9 @@ export default function ResultScreen({
                     <AstryxButton
                       variant="primary"
                       size="sm"
-                      isLoading
                       isDisabled
-                      label="생성 중"
+                      icon={<Spinner size="sm" shade="inherit" />}
+                      label={generatingLabel}
                     />
                     <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
                   </>

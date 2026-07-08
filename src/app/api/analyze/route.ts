@@ -15,7 +15,7 @@ export const maxDuration = 300
 // - mockup_directives 신설 (analyze ↔ mockup 연결 고리)
 // ============================================================================
 const SYSTEM_PROMPT = `You are a senior product engineer and UX specialist reviewing a PRD.
-Follow the Preflight Verification Protocol v2.0 strictly. Return a single valid JSON object — no markdown fences, no extra text.
+Follow the Preflight Verification Protocol v2.0 strictly. Call the \`submit_analysis\` tool with your analysis result — do not write the JSON as text.
  
 ## 0. Core Principles
  
@@ -276,6 +276,108 @@ Before returning JSON, verify:
  
 Respond in Korean for all string values. Return JSON only.`
 
+// tool use로 구조화된 결과를 강제한다. 모델이 JSON을 "텍스트"로 쓰지 않고
+// API가 스키마에 맞춰 파싱한 객체(tool_use.input)를 돌려주므로,
+// "Bad escaped character" 같은 JSON 파싱 오류가 원천 차단된다.
+// v1/v2 응답 호환을 위해 상위 shape만 검증하고 하위는 additionalProperties로 완화한다.
+const ANALYSIS_TOOL: Anthropic.Messages.Tool = {
+  name: 'submit_analysis',
+  description:
+    'Preflight Verification Protocol v2.0 분석 결과를 제출한다. 반드시 이 도구를 호출해 구조화된 결과를 반환할 것.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      sufficiency_score: { type: 'integer' },
+      is_sufficient: { type: 'boolean' },
+      project_type: { type: 'string' },
+      applied_weights: { type: 'object', additionalProperties: { type: 'number' } },
+      criteria: {
+        type: 'object',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            score: { type: ['integer', 'null'] },
+            evidence: { type: 'string' },
+            missing: { type: 'array', items: { type: 'string' } },
+            applied_principle: { type: 'string' },
+          },
+          additionalProperties: true,
+        },
+      },
+      severity_summary: {
+        type: 'object',
+        properties: {
+          catastrophic: { type: 'integer' },
+          major: { type: 'integer' },
+          minor: { type: 'integer' },
+          cosmetic: { type: 'integer' },
+        },
+      },
+      validated: { type: 'array', items: { type: 'string' } },
+      missing_for_designers: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            screen: { type: 'string' },
+            issue: { type: 'string' },
+            principle: { type: 'string' },
+            severity: { type: 'integer' },
+            user_impact: { type: 'string' },
+            suggestion: { type: 'string' },
+          },
+          additionalProperties: true,
+        },
+      },
+      missing_for_developers: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            module: { type: 'string' },
+            issue: { type: 'string' },
+            risk: { type: 'string' },
+            severity: { type: 'integer' },
+            suggestion: { type: 'string' },
+          },
+          additionalProperties: true,
+        },
+      },
+      critical_questions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            tag: { type: 'string' },
+            question: { type: 'string' },
+            format: { type: 'string' },
+            options: { type: 'array', items: { type: 'string' } },
+            impact: { type: 'string' },
+            blocks: { type: 'array', items: { type: 'string' } },
+          },
+          additionalProperties: true,
+        },
+      },
+      ux_recommendations: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            recommendation: { type: 'string' },
+            principle: { type: 'string' },
+            perspective: { type: 'string' },
+            effort: { type: 'string' },
+            expected_impact: { type: 'string' },
+          },
+          additionalProperties: true,
+        },
+      },
+      mockup_directives: { type: 'object', additionalProperties: true },
+    },
+    required: ['sufficiency_score', 'is_sufficient', 'criteria'],
+  },
+}
+
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
   if (!apiKey) {
@@ -298,11 +400,9 @@ function getAnthropicModelCandidates(): string[] {
   return unique
 }
 
-function extractText(content: Anthropic.Messages.Message['content']): string {
-  return content
-    .map(block => (block.type === 'text' ? block.text : ''))
-    .join('')
-    .trim()
+function extractToolInput(content: Anthropic.Messages.Message['content']): unknown {
+  const toolUse = content.find(block => block.type === 'tool_use')
+  return toolUse && toolUse.type === 'tool_use' ? toolUse.input : null
 }
 
 async function createMessageWithModelFallback(
@@ -364,15 +464,29 @@ export async function POST(req: Request): Promise<Response> {
 const result = await createMessageWithModelFallback(anthropic, {
       max_tokens: 24000,
       temperature: 0.2,
+      tools: [ANALYSIS_TOOL],
+      tool_choice: { type: 'tool', name: ANALYSIS_TOOL.name },
       messages: [{ role: 'user', content: fullPrompt }],
     })
 
-    console.log(`[analyze v2] stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)  // ← 이 줄 추가
+    console.log(`[analyze v2] stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
 
-    const output = extractText(result.content)
-    // 클라이언트의 parseAnalysis가 텍스트 응답을 기대하므로 plain text 반환
-    return new Response(output, {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    // 응답이 max_tokens로 잘리면 tool_use.input JSON도 불완전하므로 명시적으로 안내
+    if (result.stop_reason === 'max_tokens') {
+      return new Response('분석 응답이 너무 길어 잘렸습니다. PRD 분량을 줄여 다시 시도해주세요.', {
+        status: 502,
+      })
+    }
+
+    const analysis = extractToolInput(result.content)
+    if (analysis == null) {
+      console.error('[analyze] tool_use 블록을 찾지 못했습니다:', JSON.stringify(result.content))
+      return new Response('분석 결과를 생성하지 못했습니다. 다시 시도해주세요.', { status: 502 })
+    }
+
+    // tool_use.input은 API가 스키마에 맞춰 파싱한 객체 → 직렬화만 하면 항상 valid JSON
+    return new Response(JSON.stringify(analysis), {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
     })
   } catch (error) {
     console.error('[analyze] Claude API 오류:', error)

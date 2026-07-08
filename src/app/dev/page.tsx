@@ -2,7 +2,6 @@
 
 import ResultScreen from '@/components/ResultScreen'
 import type { AnalysisResult } from '@/app/page'
-import { useState } from 'react'
 
 const MOCK_RESULT: AnalysisResult = {
   sufficiency_score: 72,
@@ -33,8 +32,6 @@ const MOCK_RESULT: AnalysisResult = {
 }
 
 export default function DevPage() {
-  const [requirementsUrl, setRequirementsUrl] = useState('')
-
   return (
     <ResultScreen
       fileName="dev-mock-prd.md"
@@ -46,9 +43,8 @@ export default function DevPage() {
       onGenerateMockup={(type, regenerate) => alert(`목업 생성: ${type}, regenerate=${regenerate}`)}
       onCancelMockup={() => alert('취소')}
       mockupGenerating={null}
+      mockupProgress={null}
       onReupload={() => alert('재업로드')}
-      requirementsUrl={requirementsUrl}
-      onRequirementsUrlChange={setRequirementsUrl}
     />
   )
 }
