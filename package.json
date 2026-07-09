@@ -17,6 +17,7 @@
     "@base-ui/react": "^1.4.0",
     "@codesandbox/sandpack-react": "^2.19.10",
     "@stylexjs/stylex": "^0.18.3",
+    "@vercel/analytics": "^2.0.1",
     "ai": "^4.3.16",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
