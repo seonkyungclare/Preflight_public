@@ -870,11 +870,20 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
     if (subs.length === 0) {
       return `  { key: '${s.id}', label: '${label}' }`
     }
-    const children = subs
-      .map(sub => `    { key: '${sub.id}', label: '${sub.name.replace(/'/g, "\\'")}' }`)
-      .join(',\n')
-    return `  { key: '${s.id}', label: '${label}', children: [\n${children}\n  ] }`
+    // antd SubMenu 제목은 펼침/접기 토글만 되고 onClick(navigate)이 안 걸린다.
+    // → 부모 화면 자체를 첫 자식(leaf)으로 넣어 클릭 가능하게 하고, SubMenu key는 페이지가 아닌 합성 키(grp_)로 둔다.
+    const childItems = [
+      `    { key: '${s.id}', label: '${label}' }`,
+      ...subs.map(sub => `    { key: '${sub.id}', label: '${sub.name.replace(/'/g, "\\'")}' }`),
+    ].join(',\n')
+    return `  { key: 'grp_${s.id}', label: '${label}', children: [\n${childItems}\n  ] }`
   })
+
+  // 하위가 있는 메뉴는 기본으로 펼쳐 Lo-Fi처럼 모든 항목이 바로 보이게 한다.
+  const openKeys = menuScreens
+    .filter(s => (subsByParent.get(s.id) ?? []).length > 0)
+    .map(s => `'grp_${s.id}'`)
+    .join(', ')
 
   // 메뉴(1-depth + 그 하위 2-depth)에 이미 포함된 화면 집합
   const coveredInMenu = new Set<string>()
@@ -968,6 +977,7 @@ export default function App() {
           <Menu
             mode="inline"
             selectedKeys={[page]}
+            defaultOpenKeys={[${openKeys}]}
             onClick={({ key }) => setPage(key)}
             style={{ borderRight: 0, marginTop: 4 }}
             items={MENU_ITEMS}
