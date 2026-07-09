@@ -709,6 +709,18 @@ function pickFirstScreen(spec: MockupSpec, codedIds: Set<string>): string {
     const mapped = nameToId.get(v)
     return mapped && codedIds.has(mapped) ? mapped : null
   }
+
+  // 1) user flow의 진입점 우선: 들어오는 엣지가 없는 화면(source). 목록 화면 등 흐름의 시작점이 첫 화면이 되도록.
+  const incoming = new Set<string>()
+  for (const f of spec.flows ?? []) incoming.add(f.to)
+  for (const s of spec.screens) for (const t of s.navigates_to ?? []) incoming.add(t)
+  const sources = spec.screens.filter(s => codedIds.has(s.id) && !incoming.has(s.id))
+  if (sources.length > 0) {
+    const menuSet = new Set(spec.menu_screen_ids ?? [])
+    return (sources.find(s => menuSet.has(s.id)) ?? sources[0]).id
+  }
+
+  // 2) critical → menu → 아무 생성 화면 → flow 폴백
   for (const c of spec.critical_screen_ids ?? []) {
     const id = resolve(c)
     if (id) return id
@@ -776,6 +788,25 @@ ${screenFunctions}
 
 ${generateNotePanelLofi(spec)}
 
+class ScreenErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null } }
+  static getDerivedStateFromError(err) { return { err } }
+  componentDidUpdate(prev) { if (prev.pageKey !== this.props.pageKey && this.state.err) this.setState({ err: null }) }
+  render() {
+    if (this.state.err) {
+      const msg = this.state.err && this.state.err.message ? this.state.err.message : String(this.state.err)
+      return (
+        <div style={{ padding: 24 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#c00', marginBottom: 8 }}>이 화면을 표시하는 중 오류가 발생했습니다</div>
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 12, whiteSpace: 'pre-wrap' }}>{msg}</div>
+          <button onClick={this.props.onReset} style={{ padding: '6px 12px', border: '1px solid #e0e0e0', background: '#fff', cursor: 'pointer' }}>← 처음으로</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 const MENU_ITEMS = [
   { id: 'flow', label: '🗺 화면 목록', depth: 1 },
 ${menuItems}
@@ -796,9 +827,11 @@ export default function App() {
         ))}
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
+        <ScreenErrorBoundary pageKey={page} onReset={() => setPage('flow')}>
         {page === 'flow' && <FlowDiagram navigate={setPage} />}
 ${screenRenders}
         {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
+        </ScreenErrorBoundary>
       </div>
       <NotePanel />
     </div>
@@ -831,7 +864,7 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
     subsByParent.get(screen.parent_id)!.push(screen)
   }
 
-  const menuItems = menuScreens.map(s => {
+  const menuItemArr = menuScreens.map(s => {
     const subs = subsByParent.get(s.id) ?? []
     const label = s.name.replace(/'/g, "\\'")
     if (subs.length === 0) {
@@ -841,7 +874,20 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
       .map(sub => `    { key: '${sub.id}', label: '${sub.name.replace(/'/g, "\\'")}' }`)
       .join(',\n')
     return `  { key: '${s.id}', label: '${label}', children: [\n${children}\n  ] }`
-  }).join(',\n')
+  })
+
+  // 메뉴(1-depth + 그 하위 2-depth)에 이미 포함된 화면 집합
+  const coveredInMenu = new Set<string>()
+  for (const s of menuScreens) {
+    coveredInMenu.add(s.id)
+    for (const sub of subsByParent.get(s.id) ?? []) coveredInMenu.add(sub.id)
+  }
+  // 코드가 생성됐지만 메뉴에 안 걸린 화면(고아)도 LNB 최상위 진입점으로 노출 (첫 화면 누락 방지)
+  const orphanItemArr = spec.screens
+    .filter(s => codedIds.has(s.id) && !coveredInMenu.has(s.id))
+    .map(s => `  { key: '${s.id}', label: '${s.name.replace(/'/g, "\\'")}' }`)
+
+  const menuItems = [...menuItemArr, ...orphanItemArr].join(',\n')
 
   const screenFunctions = spec.screens
     .filter(s => screenCodes.has(s.id))
@@ -886,6 +932,24 @@ ${screenFunctions}
 
 ${generateNotePanelHifi(spec)}
 
+class ScreenErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null } }
+  static getDerivedStateFromError(err) { return { err } }
+  componentDidUpdate(prev) { if (prev.pageKey !== this.props.pageKey && this.state.err) this.setState({ err: null }) }
+  render() {
+    if (this.state.err) {
+      const msg = this.state.err && this.state.err.message ? this.state.err.message : String(this.state.err)
+      return (
+        <div style={{ padding: 24 }}>
+          <Alert type="error" showIcon message="이 화면을 표시하는 중 오류가 발생했습니다" description={msg} style={{ marginBottom: 12 }} />
+          <Button onClick={this.props.onReset}>← 처음으로</Button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 const MENU_ITEMS = [
   { key: 'flow', label: '📊 사용자 flow 보기' },
 ${menuItems}
@@ -911,9 +975,11 @@ export default function App() {
         </Layout.Sider>
         <Layout>
           <Layout.Content style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
+            <ScreenErrorBoundary pageKey={page} onReset={() => setPage('flow')}>
             {page === 'flow' && <FlowDiagram navigate={setPage} />}
 ${screenRenders}
             {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
+            </ScreenErrorBoundary>
           </Layout.Content>
         </Layout>
         <NotePanel />
