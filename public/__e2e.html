@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>E2E seed</title></head>
+<body>
+<p style="font-family:sans-serif">목업 데이터 주입 중…</p>
+<script>
+fetch('/__e2e-mockup.json')
+  .then(function (r) { return r.json() })
+  .then(function (d) {
+    sessionStorage.setItem('preflight_mockup', JSON.stringify(d))
+    location.href = '/mockup'
+  })
+  .catch(function (e) { document.body.textContent = '주입 실패: ' + e.message })
+</script>
+</body>
+</html>

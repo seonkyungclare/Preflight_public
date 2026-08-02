@@ -276,12 +276,59 @@ Before returning JSON, verify:
  
 Respond in Korean for all string values. Return JSON only.`
 
+function hasAnthropicApiKey(): boolean {
+  const k = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
+  return typeof k === 'string' && k.trim().length > 0 && k.startsWith('sk-ant-')
+}
+
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY(또는 anthropic_api_key) 환경변수가 설정되어 있지 않습니다')
   }
   return new Anthropic({ apiKey })
+}
+
+// Claude Code CLI를 직접 실행 (API 키 불필요, 로컬 인증 사용)
+// next-server 프로세스가 launched 된 셸 환경에 따라 `claude` 가 PATH 에 없을 수
+// 있다. 표준 후보 경로를 PATH 에 보강해 spawn 실패를 줄인다.
+function resolveClaudePath(): { cmd: string; envPath: string } {
+  const home = process.env.HOME ?? ''
+  const extras = [
+    `${home}/.local/bin`,
+    `${home}/.bun/bin`,
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ].filter(Boolean)
+  const currentPath = process.env.PATH ?? ''
+  const segments = new Set(currentPath.split(':').filter(Boolean))
+  for (const e of extras) segments.add(e)
+  return { cmd: 'claude', envPath: Array.from(segments).join(':') }
+}
+
+function runClaude(prompt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process')
+    const { cmd, envPath } = resolveClaudePath()
+    const child = spawn(cmd, ['-p', prompt], {
+      shell: false,
+      env: { ...process.env, PATH: envPath },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+    child.on('close', (code: number | null) => {
+      if (code === 0) resolve(stdout.trim())
+      else {
+        // claude CLI 가 인증 실패시 stdout 으로 401 본문을 뱉으므로 같이 노출.
+        const merged = (stderr.trim() || stdout.trim() || '(no output)').slice(0, 400)
+        reject(new Error(`claude CLI 종료 코드 ${code}: ${merged}`))
+      }
+    })
+    child.on('error', (err: Error) => reject(new Error(`claude CLI 실행 실패: ${err.message}`)))
+  })
 }
 
 function getAnthropicModelCandidates(): string[] {
@@ -355,30 +402,36 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { prdText } = body as { prdText: string }
-
-  // 시스템 지시사항과 사용자 요청을 하나의 프롬프트로 조합
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n다음 PRD를 분석해줘:\n\n${prdText}`
+  const userMessage = `다음 PRD를 분석해줘:\n\n${prdText}`
 
   try {
-    const anthropic = getAnthropicClient()
-const result = await createMessageWithModelFallback(anthropic, {
-      max_tokens: 24000,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: fullPrompt }],
-    })
-
-    console.log(`[analyze v2] stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)  // ← 이 줄 추가
-
-    const output = extractText(result.content)
-    // 클라이언트의 parseAnalysis가 텍스트 응답을 기대하므로 plain text 반환
+    let output: string
+    if (hasAnthropicApiKey()) {
+      // SDK 경로 — system / user 분리, 모델 명시, 더 강한 instruction following
+      const anthropic = getAnthropicClient()
+      const result = await createMessageWithModelFallback(anthropic, {
+        max_tokens: 16000,
+        temperature: 0.2,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+      })
+      console.log(`[analyze] SDK stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
+      if (result.stop_reason === 'max_tokens') {
+        return new Response('분석 결과가 max_tokens 에 도달해 잘렸습니다. 다시 시도해주세요.', { status: 500 })
+      }
+      output = extractText(result.content)
+    } else {
+      // CLI 폴백 — API 키 없을 때 로컬 claude CLI 사용
+      const fullPrompt = `${SYSTEM_PROMPT}\n\n${userMessage}`
+      output = await runClaude(fullPrompt)
+      console.log(`[analyze] CLI 응답 길이: ${output.length}`)
+    }
     return new Response(output, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })
   } catch (error) {
-    console.error('[analyze] Claude API 오류:', error)
-    if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {
-      return new Response('API 키가 필요합니다. 서버 환경변수 ANTHROPIC_API_KEY를 설정해주세요.', { status: 500 })
-    }
-    return new Response('분석 중 오류가 발생했습니다', { status: 500 })
+    console.error('[analyze] Claude 호출 오류:', error)
+    const detail = error instanceof Error ? error.message : String(error)
+    return new Response(`분석 중 오류가 발생했습니다: ${detail}`, { status: 500 })
   }
 }

@@ -17,3 +17,7 @@ out/
 .DS_Store
 *.pem
 .env*.local
+
+# Claude Code worktrees
+.claude/worktrees/
+tsconfig.tsbuildinfo

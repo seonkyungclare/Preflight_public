@@ -1,7 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { parse as babelParse } from '@babel/parser'
+import { buildHifiConventions } from '@/lib/mcds-prompt'
 
 export const maxDuration = 300 // Vercel 최대 실행 시간 300초 (Pro plan)
+
+// MCDS 캐노니컬 컨벤션 (src/vendor/mcds/conventions.md — 출처 명기 단일 원천).
+// 배치·순서·컴포넌트 선택 규칙은 HIFI_SYSTEM이 아니라 이 블록이 권위 원천이다.
+const MCDS_CONVENTIONS = buildHifiConventions()
 
 // ============================================================================
 // TYPES
@@ -153,7 +158,7 @@ If the prompt includes a USER REQUIREMENTS section, read it and apply relevant i
 - Alert subscription / event notification → toggle row labeled "알림 구독"
 Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.`
 
-const HIFI_SYSTEM = `You generate high-fidelity Ant Design React component functions for interactive prototypes.
+const HIFI_SYSTEM = `You generate high-fidelity React screen functions using @musinsa/mcds — Musinsa's internal admin design system (built on antd v6). Implement the screen spec precisely — do not invent elements the spec does not list.
 
 Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
@@ -165,41 +170,124 @@ Code style (COMPACT — token budget is limited):
 - Do not repeat similar JSX blocks — use .map() instead
 - Keep variable names short but readable (e.g. open not isModalVisible)
 
-Pre-imported (DO NOT re-import):
+Pre-imported identifiers (DO NOT re-import; use ONLY these):
 - React, useState (from 'react')
-- antd: Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider
-- @ant-design/icons: PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined, DownloadOutlined
+- MCDS templates: AdminListRecipeLayout, AdminStatusRecipeLayout, AdminRegistrationRecipeLayout, AdminDetailReadRecipeLayout, AdminDetailEditableRecipeLayout, AdminTreeWorkspaceRecipeLayout
+- MCDS modules: RecipeSearchArea, RecipeResultsTable, RecipeAccordionSections, RecipeNotice, FormField, ReadOnlyField, SearchModalField, LookupPickerModal, HierarchySelectField, Modal, ConfirmActionDialog, HelpAlertPanel, FooterActionBar, SectionBlock, UploadPanel
+- MCDS elements: Button, TextButton, Tag, Chips, Tabs, Select, AutoComplete, TextField, TextArea, NumberInput, DatePicker, DateRangePicker, Checkbox, Switch, Radio, MultiSelect, Message, Empty, Stack, Inline, Grid, Divider, Tooltip
+- MCDS icons: IconSearch, IconReset, IconPlus, IconClose, IconCalendar, IconUpload, IconDownload, IconInfoCircle, IconExclamation, IconArrowLeft
+- antd toast: message (message.success('...') after actions)
+
+NOT AVAILABLE — referencing these CRASHES the app. Use the MCDS replacement:
+- Table/Descriptions → RecipeResultsTable / Stack of ReadOnlyField
+- Popconfirm / Modal.confirm() → <ConfirmActionDialog open title description confirmAction cancelAction onClose />
+- Drawer → Modal
+- Form/Form.Item/Input/InputNumber → FormField + TextField/NumberInput
+- Row/Col/Space/Card/Statistic/Badge/Alert/Spin/Skeleton → Grid/Inline/Stack/SectionBlock + design tokens
+- Any @ant-design/icons (PlusOutlined etc.) → MCDS Icon* only
+- Raw HTML <button>/<table>/<input>/<h1>-<h6> → MCDS components
+
+## Screen layout by TYPE (pick ONE template per screen)
+- list      → <AdminListRecipeLayout title search={<RecipeSearchArea/>} results={<RecipeResultsTable/>} />
+- form      → <AdminRegistrationRecipeLayout title variant="basic" sections={<RecipeAccordionSections/>} stickyActions={<FooterActionBar/>} />
+  (variant allowed values: "basic"|"stepped"|"conditional"|"repeatable" ONLY — "register"/"edit" do NOT exist; 등록/수정 구분은 title·버튼 라벨로)
+- detail    → <AdminDetailReadRecipeLayout title sections={<RecipeAccordionSections/>} stickyActions={<FooterActionBar/>} />
+- dashboard/other → compose with SectionBlock/Grid/Stack + design tokens
+All layouts also accept: description, notice, noticeTone ('info'|'warning'|'neutral'), guide — use notice for policy/result banners.
+Fill layout slots via NAMED PROPS, never via children (children are silently dropped).
+
+## Page Wrapper (padding rules — follow exactly)
+- AdminListRecipeLayout / AdminStatusRecipeLayout / AdminTreeWorkspaceRecipeLayout / custom(dashboard) have NO built-in padding.
+  The screen function's ROOT element MUST be:
+  <div style={{ padding: 'var(--mcds-registration-shell-padding-top) var(--mcds-registration-shell-padding-right) var(--mcds-registration-shell-padding-bottom) var(--mcds-registration-shell-padding-left)' }}>...</div>
+- AdminRegistrationRecipeLayout / AdminDetailReadRecipeLayout / AdminDetailEditableRecipeLayout self-apply that padding — return them DIRECTLY with NO wrapper (padding would double).
+
+## MCDS API facts (real API — antd habits WILL break)
+- RecipeSearchArea: { fields: [{ key, label, control }], leftActions, rightActions, labelWidth? }
+  · BOTH default actions go TOGETHER in leftActions, 검색 first (canonical MCDS-CCD convention):
+    leftActions={<><Button onClick={search}>검색</Button><Button type="secondary" onClick={reset}>초기화</Button></>}
+    (검색 = default type i.e. primary, 초기화 = type="secondary". Do NOT put 검색 in rightActions.)
+  · rightActions = optional slot: 보조 설정 = TextButton type="secondary"; 등록/내보내기 진입 Button도 가능.
+- RecipeResultsTable: { title, actions?, columns: [{ key, headerName }], rows: ReactNode[][], emptyState: { title, description? }, pagination: { current, total, onChange } }
+  · rows = ARRAY of cell-arrays in column order (NOT objects). columns use headerName (NOT label/title/dataIndex).
+  · pagination.total = number of PAGES (not items). Sample data → total: 5. ALWAYS include pagination on list screens.
+  · actions = table-header-level buttons: 다운로드/일괄 처리 = type="secondary" size={36} (disabled when nothing selected), 신규 등록 = default(primary) rightmost.
+  · title = 목록명 + live count from state: title={\`상품 목록 (\${rows.length}건)\`} — derived count, canonical 8/8 screens.
+  · 상세 진입: 식별자 컬럼(품번/명칭)을 <TextButton onClick={...}>{r.name}</TextButton>으로. NAVIGATION TARGETS에 상세 화면이 있으면 navigate('그 id'), 없을 때만 Modal 대체. 행 끝 관리 버튼은 <Button type="secondary" size={32}>.
+- RecipeAccordionSections: { sections: [{ id, title, open, onToggle, body }] } — needs useState per section open
+- FormField: <FormField label="이메일" required><TextField value={v} onChange={setV} /></FormField>
+  · FormField body = ONE input control only. Do NOT put buttons next to the control inside FormField.
+- ReadOnlyField: <ReadOnlyField label="주문번호" value="ORD-001" /> — read-only values use this, NEVER a disabled TextField/Select.
+- Button: type="primary"|"secondary"|"tertiary"|"warning" (NO variant prop; default = primary). Destructive → type="warning". primary = 화면의 주 액션(검색, 등록, 저장). 보조 액션(초기화, 취소) = secondary.
+  · children = plain text label ONLY (e.g. <Button type="secondary">검색</Button>). NEVER place Icon components inside Button children — no <Button><IconSearch />검색</Button>. Decorative icons next to labels are FORBIDDEN; the label alone is the MCDS convention.
+- Tag: <Tag labelText="승인" color="green|red|blue|yellow|gray|purple" /> — children IGNORED, labelText required
+  green=승인/활성/완료, red=반려/오류, blue=진행중/신규, yellow=대기/검토중, gray=중립/보류
+- Tabs: { items: [{ label, value }], value, onChange } — value NOT key/activeKey; renders bar only, caller renders content conditionally
+- TextField/TextArea: onChange receives STRING (not event). errorMessage/helpText exist on TextField ONLY — TextArea has NO errorMessage/helpText (검증 문구는 아래 별도 텍스트로).
+- Select: { options: [{ label, value }], value, onChange } — NO placeholder prop. '전체' 같은 기본 선택지는 options 첫 항목으로 넣고 초기 value로 지정.
+- DatePicker: { value: string, onChange: (s) => void }
+- DateRangePicker: { from, to, onChangeFrom, onChangeTo } — NOT value/onChange
+- Modal: <Modal open title actions={[<Button/>...]} onClose>...</Modal>
+  · actions order: cancel first (type="secondary"), confirm last (type="primary") — [취소, 확인]
+- 확인 다이얼로그 — 본문에 입력/표 없이 단일 메시지 확인(삭제·이탈·실행)이면 ConfirmActionDialog(=Alert, 420px):
+  전체 확인 문구를 title에 문장형으로 넣고 description은 생략(부가 설명이 꼭 필요할 때만).
+  <ConfirmActionDialog open title="선택한 1개의 상품을 삭제하시겠습니까? 삭제된 상품은 복구할 수 없습니다." confirmAction={<Button onClick={del}>삭제</Button>} cancelAction={<Button type="secondary" onClick={close}>취소</Button>} onClose={close} />
+  · confirm 버튼은 기본형(primary/파랑) — 삭제여도 type="warning" 금지. 파괴 신호는 title 문구 + "삭제" 라벨이 전달.
+  · 확인 문구를 description에 넣고 title을 비우지 말 것 (title이 메시지다).
+- Modal은 본문에서 입력·선택·표 조작 등 실제 Task를 할 때만 (폼/picker/워크스페이스). 단순 확인에 Modal 쓰지 말 것.
+- SearchModalField (entity picker trigger — MUST pair with LookupPickerModal):
+  <SearchModalField selectedItems={sel ? [{ value: sel, label: sel }] : []} placeholder="업체를 선택하세요" onClick={() => setOpen(true)} />
+  <LookupPickerModal open={open} title="업체 선택" selectionMode="single" options={[{ label: '업체A', value: 'a' }]} selectedValues={vals} onSelectedValuesChange={setVals} onConfirm={(v) => { setSel(v[0] ?? null); setOpen(false) }} onClose={() => setOpen(false)} />
+  (selectedItems item = { value, label } — NOT {id, primary}. onConfirm은 필수 — 누락 시 확인 클릭에서 크래시.)
+- AutoComplete: { options: [{ label, value }], value, onChange, onSearch?, placeholder?, allowClear? }
+- HierarchySelectField: has its OWN label prop — use standalone, do NOT wrap in FormField (double label).
+- Checkbox/Switch/Radio: { checked, onChange, labelText } (Checkbox in table cells: showLabel={false})
+- Grid: columns is a CSS STRING (default '1fr') — 3열은 columns="repeat(3, 1fr)". columns={3} 같은 숫자는 무효.
+- HelpAlertPanel: tone은 'info'|'warning'|'neutral'만 ('error'/'success' 없음).
+- Chips (적용된 필터 표시용 제거형 칩): { labelText, border?, remove?, onRemove? } — 클릭 토글 아님.
+- UploadPanel: { label(필수), description?, files?, accept?, multiple?, onSelect: (files) => void, onRemove? }
+
+(배치·순서·컴포넌트 선택 컨벤션은 시스템 프롬프트 뒤에 붙는 "MCDS CANONICAL CONVENTIONS" 절이 권위 원천이다 — 충돌 시 그 절을 따른다.)
+
+## Design tokens (custom inline styles — NEVER hardcode raw hex/px)
+- spacing: var(--mcds-spacing-4|8|12|16|20|24|32)
+- font: fontSize var(--mcds-font-size-12|14|16|20|24), fontWeight var(--mcds-font-weight-400|500|600|700)
+- text colors: var(--mcds-color-gray-10) primary, var(--mcds-color-gray-50) secondary, var(--mcds-text-error-subtle) error
+- status colors: var(--mcds-color-green-40) success, var(--mcds-color-red-40) error, var(--mcds-color-yellow-30) warning, var(--mcds-color-blue-40) brand
+- surface: var(--mcds-panel-bg), var(--mcds-color-gray-95) skeleton/placeholder, var(--mcds-color-gray-98) subtle row
+- border: var(--mcds-panel-border), var(--mcds-color-gray-90) divider; radius var(--mcds-radius-4|8|99)
+FORBIDDEN in custom styles: raw hex (#fff, #1677ff...), raw px numbers for gap/padding/fontSize/borderRadius. Use tokens.
 
 Rules:
 - All text Korean
-- Realistic Korean placeholder data: brand/product names, dates "2026-04-15", amounts "₩2,400,000", mixed PRD-defined statuses
-- List type: Table with 3–5 rows, ALL columns filled, no empty cells
+- Realistic Korean placeholder data: brand/product names, dates "2026-04-15", amounts "₩2,400,000", PRD-defined statuses
+- List type: RecipeResultsTable with 3 rows, ALL columns filled via rows cell-arrays
 - Full interactivity — NO dead ends:
-  · Table rows: onClick → open Modal (≤5 detail fields) or Drawer (>5 detail fields) with Descriptions
-  · "생성/추가/등록" actions: open Form Modal with PRD fields, submit → close + add to list + message.success
-  · "수정/편집" actions: open same Form Modal pre-filled, submit → update list + message.success
-  · "삭제" actions: Popconfirm or Modal.confirm → remove from list
+  · 상세 진입: 식별자 컬럼 셀을 <TextButton onClick={...}>{r.name}</TextButton>으로.
+    NAVIGATION TARGETS에 상세 화면이 있으면 navigate('그 id') 우선, 없을 때만 Modal(<Stack>의 ReadOnlyField) 대체.
+  · "생성/추가/등록" actions: NAVIGATION TARGETS에 등록 화면이 있으면 navigate, 없으면 Modal with FormField+controls, submit → close + prepend list + message.success
+  · "수정/편집" actions: same Modal pre-filled, submit → update list + message.success
+  · "삭제" actions: ConfirmActionDialog(Alert) — 확인 문구를 title에, 버튼 [취소 secondary → 삭제 primary] → remove from list + message.success. Modal 쓰지 말 것.
   · Cross-screen navigation: call navigate('targetId')
-- Use useState for: list data, modal/drawer open state, selected item, form visibility
-- Primary action button: type="primary", top-right of content area
+- Use useState for: list data, modal open state, selected item, accordion open state
 - Exact PRD field/column names — do not rename
 - Do NOT add columns/fields not in spec
 
 ## User Requirements (hi-fi level)
-If the prompt includes a USER REQUIREMENTS section, read it and implement relevant items for THIS screen using appropriate Ant Design components:
-- Bulk upload / drag-and-drop / file import → <Upload.Dragger> with drag-and-drop area
-- Time precision / HH:MM / scheduled time → <DatePicker showTime format="YYYY-MM-DD HH:mm">
-- Timeline view / slot calendar / gantt grid → resource × date grid table with colored <Tag> bars; useState for date range
-- Audit log / change history → <Table> columns [수정자, 수정일시, 변경항목] at bottom; realistic mock rows
-- Status filter chips / tag filters → <Space> with <Tag> chips toggling via useState (active: color="blue")
-- Preview / thumbnail / rendering → Card grid of thumbnail placeholders with segment labels
-- KPI / metrics / performance comparison → <Row> of <Col><Statistic> with comparison value in colored text
-- Conditional fields / type-based field switch → <Radio.Group> with useState; conditional rendering {val === 'A' && <Form.Item>}
-- Real-time validation / inline error / URL check → <Input> with onChange; <Alert type="error"> below on invalid state
-- Role-based access / permission gating → disabled <Form.Item> or <Button> with <Tooltip title="권한이 없습니다">
-- Confirmation popup / warning before action → <Popconfirm> or Modal.confirm with warning message
-- Clone / duplicate-then-edit flow → "복제 후 수정" <Button> that opens pre-filled edit modal via useState
-- Alert subscription / event notification → <List> of events each with <Switch>; useState for subscription state
+If the prompt includes a USER REQUIREMENTS section, implement relevant items for THIS screen using MCDS:
+- Bulk upload / drag-and-drop / file import → <UploadPanel label="파일 업로드" description="드래그하거나 클릭해서 업로드" files={files} onSelect={...} onRemove={...} />
+- Time precision / HH:MM → <Inline gap={8}><DatePicker value={d} onChange={setD} /><TextField value={t} onChange={setT} placeholder="HH:MM" /></Inline>
+- Timeline / slot calendar / gantt → <Grid columns="repeat(7, 1fr)"> resource × date cells with <Tag> bars
+- Audit log / change history → RecipeResultsTable columns [수정자, 수정일시, 변경항목] at bottom
+- Status multi-filter → 필터 컨트롤 자체는 <MultiSelect> (검색영역), 적용된 필터 값 나열은 <Inline gap={4}>의 <Chips labelText border remove onRemove /> — Tag 클릭 토글 금지
+- Preview / thumbnail → <Grid columns="repeat(4, 1fr)"> of token-styled placeholder boxes with labels
+- KPI / metrics → <Grid columns="repeat(3, 1fr)"> of <SectionBlock> each with big number (fontSize var(--mcds-font-size-24)) + comparison text
+- Conditional fields → <Radio> group with useState; {val === 'A' && <FormField>...</FormField>}
+- Real-time validation / inline error → <TextField errorMessage={invalid ? '올바른 형식이 아닙니다' : undefined} /> (TextField만 — TextArea엔 errorMessage 없음)
+- Role-based access → <Button disabled> + <Tooltip content="권한이 없습니다">
+- Confirmation before action → ConfirmActionDialog
+- Clone / duplicate-then-edit → "복제 후 수정" Button → pre-filled edit Modal
+- Alert subscription → <Stack> rows each <Inline> label + <Switch checked onChange labelText="" />
 Only apply items relevant to THIS screen. Skip backend-only or cross-system requirements.
 - Do NOT add utility buttons not in spec (새로고침, 내보내기, 인쇄 etc.)
 - Normal flow only — no empty/loading/error state screens`
@@ -209,14 +297,20 @@ Only apply items relevant to THIS screen. Skip backend-only or cross-system requ
 // ============================================================================
 
 function extractCode(output: string): string | null {
-  const fenceMatches = Array.from(output.matchAll(/```(?:jsx?|tsx?)?\n([\s\S]*?)```/g))
+  // 언어 태그는 무엇이든 허용 (typescript, javascript, react 등)
+  const fenceMatches = Array.from(output.matchAll(/```[\w-]*\n([\s\S]*?)```/g))
   if (fenceMatches.length > 0) {
     const longest = fenceMatches.reduce((a, b) => (a[1].length >= b[1].length ? a : b))
     return longest[1].trim()
   }
   const lines = output.split('\n')
   const startIdx = lines.findIndex(l => /^function\s+Screen_/.test(l.trim()))
-  if (startIdx !== -1) return lines.slice(startIdx).join('\n').trim()
+  if (startIdx !== -1) {
+    // 닫는 펜스가 남아있으면 제거 (여는 펜스를 못 찾은 경우 대비)
+    const body = lines.slice(startIdx)
+    while (body.length > 0 && /^`{3,}\s*$/.test(body[body.length - 1].trim())) body.pop()
+    return body.join('\n').trim()
+  }
   return null
 }
 
@@ -246,6 +340,42 @@ function validateJsx(code: string): { message: string; line?: number } | null {
     const e = err as Error & { loc?: { line: number; column: number } }
     return { message: e.message, line: e.loc?.line }
   }
+}
+
+// hifi 화면 코드에서 조립 시 import되지 않는 식별자 사용 검출 (런타임 ReferenceError 예방)
+// LLM이 antd 습관대로 쓰기 쉬운 것들만 블랙리스트로 잡는다.
+const HIFI_UNAVAILABLE = [
+  { re: /<Descriptions[\s>]/, name: 'Descriptions', fix: 'use <Stack> of <ReadOnlyField label value />' },
+  { re: /<Popconfirm[\s>]/, name: 'Popconfirm', fix: 'use <ConfirmActionDialog open title confirmAction cancelAction onClose />' },
+  { re: /Modal\.confirm\(/, name: 'Modal.confirm', fix: 'use <ConfirmActionDialog />' },
+  { re: /<Drawer[\s>]/, name: 'Drawer', fix: 'use <Modal open title actions onClose>' },
+  { re: /<Form[\s>.]/, name: 'Form', fix: 'use <FormField label required> wrapping a control' },
+  { re: /<Input[\s>.]/, name: 'Input', fix: 'use <TextField value onChange(string) />' },
+  { re: /<InputNumber[\s>]/, name: 'InputNumber', fix: 'use <NumberInput />' },
+  { re: /<(Row|Col)[\s>]/, name: 'Row/Col', fix: 'use <Grid columns gap> or <Inline gap>' },
+  { re: /<Space[\s>.]/, name: 'Space', fix: 'use <Inline gap> or <Stack gap>' },
+  { re: /<Card[\s>.]/, name: 'Card', fix: 'use <SectionBlock title> or token-styled div' },
+  { re: /<Statistic[\s>]/, name: 'Statistic', fix: 'use token-styled number text inside SectionBlock' },
+  { re: /<Badge[\s>.]/, name: 'Badge', fix: 'use <Tag labelText color />' },
+  { re: /<Alert[\s>]/, name: 'Alert', fix: 'use <HelpAlertPanel tone title> or <RecipeNotice tone>' },
+  { re: /<(Spin|Skeleton)[\s>]/, name: 'Spin/Skeleton', fix: 'use gray div with var(--mcds-color-gray-95) background' },
+  { re: /<Table[\s>]/, name: 'Table', fix: 'use <RecipeResultsTable columns rows emptyState pagination />' },
+  { re: /\b\w+Outlined\b/, name: '@ant-design/icons', fix: 'use MCDS Icon* (IconSearch, IconPlus, ...)' },
+  { re: /<Upload[\s>.]/, name: 'Upload', fix: 'use <UploadPanel label="파일 업로드" files onSelect onRemove />' },
+  { re: /<Tag\s[^>]*[^/]>/, name: 'Tag with children', fix: 'use <Tag labelText="..." color="..." /> (children ignored)' },
+  { re: /<Button[^>]*>\s*<Icon/, name: 'Icon inside Button children', fix: 'Button children must be plain text label only — remove the Icon component (decorative icons are forbidden by MCDS convention)' },
+  { re: /variant="(register|edit)"/, name: 'invalid registration variant', fix: 'RegistrationVariant is "basic"|"stepped"|"conditional"|"repeatable" only — use variant="basic"' },
+  { re: /selectedItems=\{[\s\S]{0,100}?\b(id|primary):/, name: 'SearchModalField selectedItems shape', fix: 'items are { value, label } — NOT { id, primary }' },
+  { re: /<ConfirmActionDialog[\s\S]{0,600}?type="warning"/, name: 'warning Button inside ConfirmActionDialog', fix: 'ConfirmActionDialog(Alert) confirm 버튼은 기본형(primary) — 삭제여도 type="warning" 금지. 파괴 신호는 title 문구와 "삭제" 라벨로 전달' },
+]
+
+function findUnavailableUsage(code: string): string | null {
+  const msgs = HIFI_UNAVAILABLE.filter(u => u.re.test(code)).map(u => `${u.name} is NOT available/valid — ${u.fix}`)
+  // 다중 속성에 걸친 규칙은 정규식 대신 코드 레벨로 검사
+  if (/<LookupPickerModal/.test(code) && !/onConfirm/.test(code)) {
+    msgs.push('LookupPickerModal REQUIRES onConfirm={(values) => { ...apply; close }} — without it the confirm button throws at runtime')
+  }
+  return msgs.length > 0 ? msgs.join('; ') : null
 }
 
 // ============================================================================
@@ -425,6 +555,16 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
   if (screen.fields.length > 0) lines.push(`FIELDS (all required): ${screen.fields.join(', ')}`)
   if (screen.actions.length > 0) lines.push(`ACTIONS: ${screen.actions.join(', ')}`)
   if (navTargets) lines.push(`NAVIGATION TARGETS: ${navTargets}`)
+  if (type === 'hifi') {
+    const layoutByType: Record<string, string> = {
+      list: 'AdminListRecipeLayout — root MUST be the shell-padding wrapper div',
+      form: 'AdminRegistrationRecipeLayout variant="basic" — return directly, NO wrapper (self-pads)',
+      detail: 'AdminDetailReadRecipeLayout — return directly, NO wrapper (self-pads)',
+      dashboard: 'custom composition (SectionBlock/Grid) — root MUST be the shell-padding wrapper div',
+      other: 'custom composition — root MUST be the shell-padding wrapper div',
+    }
+    lines.push(`LAYOUT: ${layoutByType[screen.type] ?? layoutByType.other}`)
+  }
   if (requirementsText) {
     lines.push(``, `USER REQUIREMENTS (apply relevant items to this screen):`, requirementsText)
   }
@@ -473,6 +613,22 @@ async function generateScreen(
     console.warn(`[mockup] Screen ${screen.id} syntax error: ${err.message} (line ${err.line})`)
     const repaired = await repairScreen(anthropic, code, err.message, screen.id)
     return repaired
+  }
+
+  // hifi: 조립 시 import되지 않는 컴포넌트 사용 감지 → 수리 (런타임 크래시 예방)
+  if (type === 'hifi') {
+    const bad = findUnavailableUsage(code)
+    if (bad) {
+      console.warn(`[mockup] Screen ${screen.id} unavailable identifiers — repairing: ${bad}`)
+      const repaired = await repairScreen(
+        anthropic,
+        code,
+        `The code references components that do NOT exist in this environment (runtime ReferenceError). ${bad}. Rewrite the affected parts using only pre-imported MCDS components. Keep everything else identical.`,
+        screen.id,
+      )
+      // 수리 실패 시 원본 유지 — 해당 화면 렌더 시에만 국소적으로 실패하고 나머지는 동작
+      return repaired ?? code
+    }
   }
 
   return code
@@ -604,7 +760,7 @@ function generateFlowDiagramHifi(spec: MockupSpec, codeFlows: Array<{ from: stri
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>사용자 Flow 다이어그램</Typography.Title>
-        <Button size="small" onClick={() => setFlowKey(k => k + 1)}>↺ 새로고침</Button>
+        <AntButton size="small" onClick={() => setFlowKey(k => k + 1)}>↺ 새로고침</AntButton>
       </div>
       <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>노드를 클릭하면 해당 화면으로 이동합니다.</Typography.Text>
       <div style={{ height: 520, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', background: '#fafafa' }}>
@@ -671,28 +827,28 @@ function generateNotePanelHifi(spec: MockupSpec): string {
     <Card size="small"
       style={{ position: 'fixed', bottom: 16, right: 16, width: 360, maxHeight: '60vh', overflow: 'auto', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
       title={<Typography.Text strong>📋 PRD 검토 노트</Typography.Text>}
-      extra={<Button type="text" size="small" onClick={() => setOpen(v => !v)}>{open ? '닫기' : '열기'}</Button>}
+      extra={<AntButton type="text" size="small" onClick={() => setOpen(v => !v)}>{open ? '닫기' : '열기'}</AntButton>}
     >
       {open && (
         <Space direction="vertical" style={{ width: '100%' }} size={4}>
           {attention.length > 0 && (
-            <Alert type="warning" showIcon banner
+            <AntAlert type="warning" showIcon banner
               message={<><b>⚠️ 주의 영역 (분석 결과)</b>{attention.map((n, i) => <div key={i} style={{ marginTop: 4 }}>{n.item} — {n.reason}</div>)}</>}
             />
           )}
           {missing.length > 0 && (<>
             <Typography.Text type="warning" strong style={{ fontSize: 12 }}>누락 가능 항목</Typography.Text>
-            {missing.map((n, i) => <Alert key={i} type="warning" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
+            {missing.map((n, i) => <AntAlert key={i} type="warning" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
           </>)}
           {ambiguous.length > 0 && (<>
             <Typography.Text type="secondary" strong style={{ fontSize: 12 }}>모호한 항목</Typography.Text>
-            {ambiguous.map((n, i) => <Alert key={i} type="info" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
+            {ambiguous.map((n, i) => <AntAlert key={i} type="info" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
           </>)}
           {omitted.length > 0 && (<>
             <Typography.Text type="danger" strong style={{ fontSize: 12 }}>미구현 항목</Typography.Text>
-            {omitted.map((n, i) => <Alert key={i} type="error" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
+            {omitted.map((n, i) => <AntAlert key={i} type="error" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
           </>)}
-          {!hasAny && <Empty description="PRD 검토 결과 보완 사항 없음" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+          {!hasAny && <AntEmpty description="PRD 검토 결과 보완 사항 없음" image={AntEmpty.PRESENTED_IMAGE_SIMPLE} />}
         </Space>
       )}
     </Card>
@@ -831,17 +987,12 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
     subsByParent.get(screen.parent_id)!.push(screen)
   }
 
-  const menuItems = menuScreens.map(s => {
-    const subs = subsByParent.get(s.id) ?? []
-    const label = s.name.replace(/'/g, "\\'")
-    if (subs.length === 0) {
-      return `  { key: '${s.id}', label: '${label}' }`
-    }
-    const children = subs
-      .map(sub => `    { key: '${sub.id}', label: '${sub.name.replace(/'/g, "\\'")}' }`)
-      .join(',\n')
-    return `  { key: '${s.id}', label: '${label}', children: [\n${children}\n  ] }`
-  }).join(',\n')
+  // MCDS AdminLnbSidebar 용 네비게이션 데이터 (1depth + 2depth)
+  const navData = menuScreens.map(s => ({
+    id: s.id,
+    name: s.name,
+    children: (subsByParent.get(s.id) ?? []).map(c => ({ id: c.id, name: c.name })),
+  }))
 
   const screenFunctions = spec.screens
     .filter(s => screenCodes.has(s.id))
@@ -877,8 +1028,19 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
 import ReactFlow, { Controls, Background } from 'reactflow'
 import 'reactflow/dist/style.css'
 import * as dagre from 'dagre'
-import { Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined, DownloadOutlined } from '@ant-design/icons'
+import { Typography, Card, Space, message, Button as AntButton, Alert as AntAlert, Empty as AntEmpty } from 'antd'
+import {
+  AdminShell, AdminLnbSidebar,
+  AdminListRecipeLayout, AdminStatusRecipeLayout, AdminRegistrationRecipeLayout,
+  AdminDetailReadRecipeLayout, AdminDetailEditableRecipeLayout, AdminTreeWorkspaceRecipeLayout,
+  RecipeSearchArea, RecipeResultsTable, RecipeAccordionSections, RecipeNotice,
+  FormField, ReadOnlyField, SearchModalField, LookupPickerModal, HierarchySelectField,
+  Modal, ConfirmActionDialog, HelpAlertPanel, FooterActionBar, SectionBlock,
+  Button, TextButton, Tag, Tabs, Select, AutoComplete, TextField, TextArea, NumberInput,
+  DatePicker, DateRangePicker, Checkbox, Switch, Radio, MultiSelect, Message, Empty,
+  Stack, Inline, Grid, Divider, Tooltip,
+  IconSearch, IconReset, IconPlus, IconClose, IconCalendar, IconUpload, IconDownload, IconInfoCircle, IconExclamation,
+} from '@musinsa/mcds'
 
 ${generateFlowDiagramHifi(spec, codeFlows)}
 
@@ -886,37 +1048,35 @@ ${screenFunctions}
 
 ${generateNotePanelHifi(spec)}
 
-const MENU_ITEMS = [
-  { key: 'flow', label: '📊 사용자 flow 보기' },
-${menuItems}
-]
+const NAV = ${JSON.stringify(navData)}
 
 export default function App() {
   const [page, setPage] = useState('${firstScreen}')
+  const menus = [{
+    key: 'nav', label: '메뉴', expanded: true, onToggle: () => {},
+    sections: [
+      { items: [{ label: '📊 사용자 flow 보기', state: page === 'flow' ? 'active' : 'default', onClick: () => setPage('flow') }] },
+      ...NAV.map(m => ({
+        title: m.children.length > 0 ? m.name : undefined,
+        items: [
+          { label: m.name, state: page === m.id ? 'active' : 'default', onClick: () => setPage(m.id) },
+          ...m.children.map(c => ({ label: c.name, state: page === c.id ? 'active' : 'default', onClick: () => setPage(c.id) })),
+        ],
+      })),
+    ],
+  }]
   return (
-    <ConfigProvider>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Layout.Sider width={220} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
-          <div style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: '1px solid #f0f0f0' }}>
-            <Typography.Text strong style={{ fontSize: 14 }}>Preflight</Typography.Text>
-          </div>
-          <Menu
-            mode="inline"
-            selectedKeys={[page]}
-            onClick={({ key }) => setPage(key)}
-            style={{ borderRight: 0, marginTop: 4 }}
-            items={MENU_ITEMS}
-          />
-        </Layout.Sider>
-        <Layout>
-          <Layout.Content style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-            {page === 'flow' && <FlowDiagram navigate={setPage} />}
+    <div style={{ fontFamily: 'var(--mcds-font-family)' }}>
+      <AdminShell
+        hideGnb
+        contentPaddingBottom={0}
+        sidebar={<AdminLnbSidebar brandName="Preflight" brandSubLabel="PRD Mockup" platformLabel="MUSINSA" useUtilityMenu menus={menus} />}
+      >
+        {page === 'flow' && <FlowDiagram navigate={setPage} />}
 ${screenRenders}
-          </Layout.Content>
-        </Layout>
-        <NotePanel />
-      </Layout>
-    </ConfigProvider>
+      </AdminShell>
+      <NotePanel />
+    </div>
   )
 }`
 }
@@ -972,7 +1132,7 @@ export async function POST(req: Request): Promise<Response> {
 
     // Step 2: 화면 생성 + flows 추출 병렬 실행
     console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens + flows in parallel`)
-    const systemPrompt = type === 'hifi' ? HIFI_SYSTEM : LOFI_SYSTEM
+    const systemPrompt = type === 'hifi' ? `${HIFI_SYSTEM}\n\n${MCDS_CONVENTIONS}` : LOFI_SYSTEM
 
     const [results, extractedFlows] = await Promise.all([
       Promise.all(
@@ -1033,7 +1193,8 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     console.log(`[mockup v3] Done ✓ type=${type} screens=${screenCodes.size}/${spec.screens.length}`)
-    return Response.json({ files: { '/App.js': appCode } })
+    // hifi는 react-ts 템플릿(/App.tsx + MCDS 주입), lofi는 react 템플릿(/App.js)
+    return Response.json({ files: { [type === 'hifi' ? '/App.tsx' : '/App.js']: appCode } })
 
   } catch (error) {
     console.error('[mockup v3] 오류:', error)
