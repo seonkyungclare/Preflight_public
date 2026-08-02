@@ -21,3 +21,6 @@ out/
 # Claude Code worktrees
 .claude/worktrees/
 tsconfig.tsbuildinfo
+
+# 사내 PRD 원문·측정 결과 — 절대 커밋하지 않는다 (워크스페이스 규칙)
+tmp/
