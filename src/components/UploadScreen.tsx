@@ -226,7 +226,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
 
       <div className="w-full max-w-xl">
         <Tabs defaultValue="confluence">
-          <TabsList className="mb-4 w-full">
+          <TabsList className="w-full">
             <TabsTrigger value="confluence" className="flex-1">Confluence URL</TabsTrigger>
             <TabsTrigger value="file" className="flex-1">파일 업로드</TabsTrigger>
           </TabsList>
@@ -324,7 +324,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
           {/* Confluence URL 탭 */}
           <TabsContent value="confluence" className="space-y-4">
             <Card>
-              <CardContent className="flex flex-col gap-4 py-8 px-6">
+              <CardContent className="flex flex-col gap-4 p-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-primary shrink-0">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
