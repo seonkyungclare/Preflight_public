@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { formatHistoryDate } from '@/lib/analysis-history'
+import { bonusBreakdown, dimensionLabel } from '@/lib/rubric'
 
 interface ResultScreenProps {
   fileName: string
@@ -73,7 +74,9 @@ function isQuestionV2(q: unknown): q is QuestionV2 {
 // ============================================================================
 // CRITERIA_LABELS: v1·v2 키를 모두 지원
 // ============================================================================
-const CRITERIA_LABELS: Record<string, string> = {
+// 현재 항목 라벨은 rubric이 원본이라 여기 적지 않는다 — dimensionLabel()로 조회.
+// 아래는 과거 분석 기록을 열었을 때를 위한 구 키 대응표다.
+const LEGACY_CRITERIA_LABELS: Record<string, string> = {
   // v1
   화면_인벤토리: '화면 인벤토리',
   데이터_상태: '데이터 상태',
@@ -87,6 +90,32 @@ const CRITERIA_LABELS: Record<string, string> = {
   인터랙션_관례: '인터랙션·관례 일관성',
   정보_위계: '정보 위계·의사결정 부하',
   행동_설계: '행동 설계 (Fogg)',
+}
+
+function criteriaLabel(key: string): string {
+  return dimensionLabel(key) ?? LEGACY_CRITERIA_LABELS[key] ?? key
+}
+
+// 이 항목을 누가 채워야 하는가 — PM이 자기 몫 아닌 것까지 떠안지 않게
+function OwnerBadge({ owner }: { owner?: string }) {
+  if (!owner) return null
+  const isNext = owner.includes('다음')
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-md ${isNext ? 'bg-neutral-200 text-neutral-600' : 'bg-violet-100 text-violet-700'}`}>
+      {isNext ? '다음 단계에서 만듦' : 'PM이 쓸 것'}
+    </span>
+  )
+}
+
+// 개발 항목이 화면 쪽인지 서버 쪽인지
+function AreaBadge({ area }: { area?: string }) {
+  if (!area) return null
+  const isFe = area.toUpperCase() === 'FE'
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-md ${isFe ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>
+      {isFe ? '화면' : '서버'}
+    </span>
+  )
 }
 
 function criterionColor(score: number) {
@@ -237,7 +266,7 @@ export default function ResultScreen({
           {/* Score - 2행 span */}
           <Card className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
             <CardContent className="flex items-center justify-center p-4">
-              <ScoreGauge score={result.sufficiency_score} />
+              <ScoreGauge score={result.sufficiency_score} baseScore={result.base_score ?? result.sufficiency_score} />
             </CardContent>
           </Card>
 
@@ -372,6 +401,42 @@ export default function ResultScreen({
 
           {/* 요약 탭 */}
           <TabsContent value="summary" className="space-y-6">
+            {/* 점수에 영향 없는 안내 */}
+            {(result.advisories ?? []).length > 0 && (
+              <Card>
+                <CardContent className="py-3 px-4 space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">참고 — 점수에는 반영되지 않습니다</p>
+                  {(result.advisories ?? []).map((a, i) => (
+                    <p key={i} className="text-xs text-muted-foreground leading-relaxed">· {a}</p>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 가점 내역 — 화면 목록은 의무가 아니라 보너스 */}
+            {result.bonus_signals && (
+              <div>
+                <p className="text-sm text-muted-foreground mb-3">
+                  가점 항목 — 없어도 감점하지 않습니다. 있으면 다음 단계가 빨라져 점수를 더합니다
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {bonusBreakdown(result.bonus_signals).map(b => (
+                    <span
+                      key={b.label}
+                      className={[
+                        'text-xs px-3 py-1.5 rounded-lg border',
+                        b.earned
+                          ? 'bg-violet-100 border-violet-300 text-violet-700'
+                          : 'bg-transparent border-neutral-200 text-neutral-400',
+                      ].join(' ')}
+                    >
+                      {b.earned ? '✓' : '—'} {b.label} +{b.points}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <p className="text-sm text-muted-foreground mb-4">PRD에서 명확하게 정의된 항목들</p>
               <div className="space-y-3">
@@ -410,7 +475,7 @@ export default function ResultScreen({
                     <Card key={key}>
                       <CardContent className="py-4 px-4 space-y-2">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{CRITERIA_LABELS[key] ?? key}</span>
+                          <span className="font-medium">{criteriaLabel(key)}</span>
                           <span className={`font-bold ${text}`}>{val.score}/10</span>
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
@@ -454,6 +519,7 @@ export default function ResultScreen({
                   <CardContent className="pt-5 px-5 pb-5">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
                       <Badge variant="outline" className="text-amber-400 border-amber-400/30">{item.screen}</Badge>
+                      <OwnerBadge owner={item.owner} />
                       {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
                       {v2Item.principle && (
                         <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
@@ -498,6 +564,8 @@ export default function ResultScreen({
                   <CardContent className="pt-5 px-5 pb-5">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
                       <Badge variant="secondary" className="text-blue-400">{item.module}</Badge>
+                      <AreaBadge area={item.area} />
+                      <OwnerBadge owner={item.owner} />
                       {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
                     </div>
                     <p className="text-sm mb-3">

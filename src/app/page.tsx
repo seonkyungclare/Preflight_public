@@ -5,6 +5,7 @@ import UploadScreen from '@/components/UploadScreen'
 import AnalyzingScreen from '@/components/AnalyzingScreen'
 import ResultScreen from '@/components/ResultScreen'
 import { saveEntry, generateId, type HistoryEntry } from '@/lib/analysis-history'
+import type { AnalyzeEnvelope } from '@/lib/analysis'
 
 // ─── 공유 타입 정의 (v1/v2 호환) ──────────────────────────────────────────────
 //
@@ -52,6 +53,8 @@ export interface MissingItem {
   principle?: string
   severity?: 1 | 2 | 3 | 4
   user_impact?: string
+  // v3: 이 항목을 누가 채워야 하는가 — 'PM' | '다음단계'
+  owner?: string
 }
 
 // v1: {module, issue, suggestion}
@@ -62,6 +65,9 @@ export interface DevItem {
   suggestion: string
   risk?: string
   severity?: 1 | 2 | 3 | 4
+  // v3: 화면 쪽(FE) / 서버 쪽(BE) 구분, 그리고 누가 채울 것인가
+  area?: string
+  owner?: string
 }
 
 // v2 critical_question 객체 타입
@@ -106,6 +112,11 @@ export interface SeveritySummary {
 export interface AnalysisResult {
   sufficiency_score: number
   is_sufficient: boolean
+  // v3: 서버가 계산한다. 판정은 base_score(0~90)로만 하고 가점은 표시용.
+  base_score?: number
+  bonus_score?: number
+  bonus_signals?: Record<string, boolean>
+  advisories?: string[]
   validated: string[]
   // criteria는 v1 5개 키 또는 v2 6개 키가 옴 — Record로 완화
   criteria: Record<string, CriterionResult>
@@ -142,6 +153,7 @@ interface AppState {
   historyId: string | null  // 현재 분석 세션의 history 엔트리 ID
   historyCreatedAt: number | null
   requirementsUrl: string  // 사용자 요구사항 Confluence URL (선택)
+  warnings: string[]  // 서버가 응답을 보정한 내역 (결과 화면에 표시)
 }
 
 // ─── 메인 페이지 (스크린 상태 머신) ────────────────────────────────────────────
@@ -163,6 +175,7 @@ export default function Home() {
     historyId: null,
     historyCreatedAt: null,
     requirementsUrl: '',
+    warnings: [],
   })
 
   // PRD 파일 업로드 후 Claude 분석 스트리밍 시작
@@ -186,22 +199,30 @@ export default function Home() {
         body: JSON.stringify({ prdText }),
       })
 
-      if (!res.ok || !res.body) throw new Error('분석 요청 실패')
+      // 서버가 봉투로 응답한다: { ok, analysis, raw, warnings }
+      // 검증·총점 재계산이 서버에서 끝나므로 클라이언트는 분기만 한다.
+      const envelope = await res.json() as AnalyzeEnvelope
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let rawText = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        rawText += decoder.decode(value, { stream: true })
+      if (!envelope.ok || !envelope.analysis) {
+        // 분석을 통째로 버리지 않는다 — 원문이라도 보여준다
+        setState(prev => ({
+          ...prev,
+          screen: 'upload',
+          error: envelope.error ?? '분석 결과를 읽지 못했습니다',
+        }))
+        return
       }
 
-      const analysis = parseAnalysis(rawText)
+      const analysis = envelope.analysis as unknown as AnalysisResult
+      if (envelope.warnings.length > 0) {
+        console.warn('[analyze] 응답 보정:', envelope.warnings)
+      }
       const historyId = generateId()
       const historyCreatedAt = Date.now()
-      setState(prev => ({ ...prev, screen: 'result', analysis, historyId, historyCreatedAt }))
+      setState(prev => ({
+        ...prev, screen: 'result', analysis, historyId, historyCreatedAt,
+        warnings: envelope.warnings,
+      }))
 
       saveEntry({
         id: historyId,
@@ -333,6 +354,7 @@ export default function Home() {
       historyId: entry.id,
       historyCreatedAt: entry.createdAt,
       requirementsUrl: '',
+      warnings: [],  // 저장된 분석에는 보정 내역을 남기지 않는다
     })
   }
 
@@ -381,33 +403,4 @@ export default function Home() {
 
     </>
   )
-}
-
-// ─── 스트리밍된 텍스트에서 JSON 파싱 ──────────────────────────────────────────
-
-function parseAnalysis(raw: string): AnalysisResult {
-  const cleaned = raw
-    .replace(/^```(?:json)?\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim()
-
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start === -1 || end === -1) {
-    throw new Error('응답에서 JSON을 찾지 못했습니다')
-  }
-
-  const parsed = JSON.parse(cleaned.slice(start, end + 1)) as AnalysisResult
-
-  // v1/v2 호환을 위한 최소 방어 로직 — 필수 필드 누락 시 빈 기본값 주입
-  // (렌더링 중 map/length 호출이 깨지지 않도록)
-  return {
-    ...parsed,
-    validated: parsed.validated ?? [],
-    criteria: parsed.criteria ?? {},
-    missing_for_designers: parsed.missing_for_designers ?? [],
-    missing_for_developers: parsed.missing_for_developers ?? [],
-    critical_questions: parsed.critical_questions ?? [],
-    ux_recommendations: parsed.ux_recommendations ?? [],
-  }
 }
