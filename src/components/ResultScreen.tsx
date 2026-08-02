@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { formatHistoryDate } from '@/lib/analysis-history'
-import { bonusBreakdown, dimensionLabel } from '@/lib/rubric'
+import { DEV_READINESS, DIMENSIONS, bonusBreakdown, dimensionLabel, signalOf, verdictOf, type SignalLevel } from '@/lib/rubric'
 
 interface ResultScreenProps {
   fileName: string
@@ -124,6 +124,132 @@ function criterionColor(score: number) {
   return { text: 'text-red-500', hex: '#ef4444' }
 }
 
+// 신호등 3단계 색 — 점수 대신 1차 정보로 쓴다
+const SIGNAL_STYLE: Record<SignalLevel, string> = {
+  '충분': 'bg-green-500',
+  '보완': 'bg-amber-500',
+  '누락': 'bg-red-500',
+}
+
+// ── 1차 정보: 디자인 착수까지 남은 결정 + 항목별 신호등 ──────────────────────
+// 점수를 앞에 두지 않는 이유는 변경 기록 5번 참조.
+function RemainingDecisions({ result }: { result: AnalysisResult }) {
+  const questions = result.critical_questions ?? []
+
+  // 태그별로 나눠 보여준다 — 누가 답해야 하는지가 드러나야 한다
+  const byTag: Record<string, number> = {}
+  for (const q of questions) {
+    const raw = isQuestionV2(q) ? q.tag : parseTagFromString(String(q)).tag
+    const tag = stripBrackets(raw ?? '기타')
+    byTag[tag] = (byTag[tag] ?? 0) + 1
+  }
+  const tagEntries = Object.entries(byTag)
+
+  const scored = DIMENSIONS.map(d => ({
+    label: d.label,
+    score: result.criteria?.[d.key]?.score ?? null,
+  })).filter(x => x.score !== null) as Array<{ label: string; score: number }>
+
+  const done = questions.length === 0
+
+  return (
+    <Card className="mb-4">
+      <CardContent className="p-6 space-y-5">
+        <div>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground">디자인 착수까지</span>
+            <span className={`text-3xl font-bold ${done ? 'text-green-600' : ''}`}>
+              {done ? '남은 결정 없음' : `남은 결정 ${questions.length}건`}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+            {done
+              ? '모르는 채로 진행을 막는 결정이 없습니다. 아래 체크리스트는 참고용입니다.'
+              : '모른 채로는 디자인을 시작할 수 없는 결정입니다. 이걸 없애는 것이 곧 문서 개선입니다.'}
+          </p>
+          {tagEntries.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {tagEntries.map(([tag, n]) => (
+                <Badge key={tag} variant={TAG_VARIANTS[tag] ?? 'secondary'}>
+                  {tag} {n}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 항목별 신호등 */}
+        <div>
+          <p className="text-xs text-muted-foreground mb-2">항목별 상태</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {scored.map(({ label, score }) => {
+              const level = signalOf(score)
+              return (
+                <div key={label} className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${SIGNAL_STYLE[level]}`} />
+                  <span className="text-xs">{label}</span>
+                  <span className="text-[10px] text-muted-foreground">{level}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── 개발 착수 전 확인 (점수 무관) ────────────────────────────────────────────
+// 판정을 "디자인 착수 가능"으로 줄인 것의 짝. 줄인 만큼 눈에 보이게 한다.
+const DEV_STATUS_STYLE: Record<string, { dot: string; text: string; label: string }> = {
+  '있음': { dot: 'bg-green-500', text: 'text-green-600', label: '문서에 있음' },
+  '부분': { dot: 'bg-amber-500', text: 'text-amber-500', label: '일부만 있음' },
+  '없음': { dot: 'bg-red-500', text: 'text-red-500', label: '확인 필요' },
+}
+
+function DevReadiness({ result }: { result: AnalysisResult }) {
+  const dr = result.dev_readiness
+  if (!dr) return null
+  const clear = DEV_READINESS.filter(d => dr[d.key]?.status === '있음').length
+
+  return (
+    <Card className="mb-8">
+      <CardContent className="p-6 space-y-3">
+        <div>
+          <p className="text-sm font-medium">개발 착수 전 확인</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            이 점수는 <strong>디자인 착수</strong> 기준입니다. 아래는 개발이 시작하려면 필요한 것들로,
+            <strong> 점수에는 반영하지 않습니다.</strong> 별도 문서(API 설계서 등)에 이미 있다면 넘어가셔도 됩니다.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {DEV_READINESS.map(d => {
+            const item = dr[d.key]
+            const st = DEV_STATUS_STYLE[item?.status ?? '없음'] ?? DEV_STATUS_STYLE['없음']
+            return (
+              <div key={d.key} className="flex items-start gap-2.5">
+                <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${st.dot}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm">{d.label}</span>
+                    <span className={`text-[10px] ${st.text}`}>{st.label}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    {item?.note || (item?.status === '있음' ? '' : d.why)}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {clear === DEV_READINESS.length && (
+          <p className="text-xs text-green-600">네 가지 모두 문서에서 확인됐습니다.</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ============================================================================
 // criteria notes 정규화: v1 문자열 / v2 객체 모두 요약 텍스트로 변환
 // ============================================================================
@@ -204,6 +330,7 @@ export default function ResultScreen({
   requirementsUrl,
   onRequirementsUrlChange,
 }: ResultScreenProps) {
+  const [showScore, setShowScore] = useState(false)
   const [showMockupModal, setShowMockupModal] = useState(false)
   const [isRegenerate, setIsRegenerate] = useState(false)
   const [mockupProgress, setMockupProgress] = useState(0)
@@ -261,12 +388,41 @@ export default function ResultScreen({
             <span className="text-sm text-muted-foreground">방금 분석됨</span>
           </div>
 
+        {/* ── 1차 정보: 남은 결정 + 항목별 신호등 ──
+            점수를 앞에 두면 "점수를 올린다"가 목표가 되어 문구만 다듬게 된다.
+            "질문을 없앤다"가 목표가 되면 그게 곧 문서 개선이다. (변경 기록 5번) */}
+        <RemainingDecisions result={result} />
+
         {/* 점수 + 사용자 요구사항 + 목업 카드 */}
         <div className="grid grid-cols-3 gap-2 mb-8">
-          {/* Score - 2행 span */}
-          <Card className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
-            <CardContent className="flex items-center justify-center p-4">
-              <ScoreGauge score={result.sufficiency_score} baseScore={result.base_score ?? result.sufficiency_score} />
+          {/* 점수 상세 — 접어서 보조 정보로 (2행 span) */}
+          <Card className="row-span-2 max-h-[200px] overflow-hidden">
+            <CardContent className="p-3 h-full flex flex-col">
+              <button
+                onClick={() => setShowScore(v => !v)}
+                className="flex items-center justify-between w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span>점수 상세</span>
+                <span className="text-[10px]">{showScore ? '접기 ▲' : '펼치기 ▼'}</span>
+              </button>
+              {showScore ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <ScoreGauge score={result.sufficiency_score} baseScore={result.base_score ?? result.sufficiency_score} />
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-1">
+                  <span className="text-2xl font-bold">{result.sufficiency_score}</span>
+                  <span
+                    className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                    style={{
+                      backgroundColor: verdictOf(result.base_score ?? result.sufficiency_score).color + '22',
+                      color: verdictOf(result.base_score ?? result.sufficiency_score).color,
+                    }}
+                  >
+                    {verdictOf(result.base_score ?? result.sufficiency_score).label}
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -389,6 +545,9 @@ export default function ResultScreen({
           </Card>
         </div>
 
+        {/* 개발 착수 전 확인 — 판정 라벨 축소의 짝 (점수 무관) */}
+        <DevReadiness result={result} />
+
         {/* 탭 */}
         <Tabs defaultValue="recommendations">
           <TabsList className="mb-6 w-full h-auto flex-wrap gap-1">
@@ -396,7 +555,7 @@ export default function ResultScreen({
             <TabsTrigger value="summary" className="flex-1 min-w-fit">요약</TabsTrigger>
             <TabsTrigger value="missing" className="flex-1 min-w-fit">디자이너 체크리스트 ({result.missing_for_designers.length})</TabsTrigger>
             <TabsTrigger value="dev" className="flex-1 min-w-fit">개발자 체크리스트 ({devItems.length})</TabsTrigger>
-            <TabsTrigger value="questions" className="flex-1 min-w-fit">PO 확인 필요 ({result.critical_questions.length})</TabsTrigger>
+            <TabsTrigger value="questions" className="flex-1 min-w-fit">PM 확인 필요 ({result.critical_questions.length})</TabsTrigger>
           </TabsList>
 
           {/* 요약 탭 */}
@@ -498,6 +657,14 @@ export default function ResultScreen({
                   )
                 })}
               </div>
+
+              {/* 채점에 실제로 쓴 모델 — 요청값이 아니라 응답이 돌려준 값.
+                  모델이 바뀌면 점수도 바뀌므로, 나중에 결과를 비교할 때
+                  "무엇으로 잰 숫자인지"를 알 수 있어야 한다. (변경 기록 21번) */}
+              <p className="mt-4 text-[10px] text-muted-foreground">
+                채점 모델: {result.model ?? '확인되지 않음'}
+                {result.analyzed_at && ` · ${formatHistoryDate(new Date(result.analyzed_at).getTime())}`}
+              </p>
             </div>
           </TabsContent>
 
@@ -589,7 +756,7 @@ export default function ResultScreen({
             })}
           </TabsContent>
 
-          {/* PO 확인 필요 탭 */}
+          {/* PM 확인 필요 탭 (사내 표현은 PO가 아니라 PM) */}
           <TabsContent value="questions" className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
               개발 착수 전 PO가 답변해야 할 핵심 질문들

@@ -2,13 +2,16 @@ import {
   AI_SCALE,
   BONUSES,
   DEFAULT_PROJECT_TYPE,
+  DEV_READINESS,
   DIMENSIONS,
+  isDevReadinessStatus,
   READY_MIN,
   bonusTotal,
   buildAdvisories,
   computeBase,
   isProjectType,
   weightsFor,
+  type DevReadinessStatus,
   type ProjectType,
 } from './rubric'
 
@@ -74,11 +77,24 @@ export interface SeveritySummary {
   cosmetic: number
 }
 
+// 개발 착수 전 확인 — 점수에 반영하지 않는다
+export interface DevReadinessItem {
+  status: DevReadinessStatus
+  note?: string
+}
+
 export interface AnalysisResult {
+  // 실제로 채점한 모델 — 요청값이 아니라 API 응답이 돌려준 값이다.
+  // ⚠️ 이 필드가 없어서 "코드에는 sonnet-5인데 환경변수가 이겨 4-6으로 돌던" 사고를
+  //    한동안 아무도 몰랐다(변경 기록 21번). 요청값만 믿지 말고 응답을 기록한다.
+  //    CLI 폴백 경로는 응답에서 모델을 확인할 수 없으므로 null이다.
+  model?: string | null
+  analyzed_at?: string // ISO 문자열 — 언제 잰 결과인지
   sufficiency_score: number // 표시 총점 = 기본 + 가점 (0~100)
   base_score: number // 기본 점수 (0~90) — 판정은 이 값으로만
   bonus_score: number // 가점 합 (0~10) — 표시용
   bonus_signals: Record<string, boolean>
+  dev_readiness: Record<string, DevReadinessItem> // 점수 무관, 표시만
   advisories: string[] // 점수에 영향 없는 안내
   is_sufficient: boolean
   project_type: ProjectType
@@ -101,6 +117,10 @@ export interface AnalyzeEnvelope {
   raw: string | null
   warnings: string[]
   error?: string
+  // 실제로 응답한 모델(요청값이 아님). 실패했을 때도 남긴다 —
+  // "무슨 모델로 돌다 실패했나"를 사후에 알 수 있어야 한다.
+  model?: string | null
+  requested_model?: string
 }
 
 // ─── 원문에서 JSON 추출 ───────────────────────────────────────────────────────
@@ -259,6 +279,23 @@ export function validateAndNormalize(candidate: unknown): ValidationOutcome {
     warnings.push('bonus_signals 누락 — 가점 없음으로 처리했습니다')
   }
 
+  // 3-1) 개발 착수 전 확인 — 없으면 "확인 필요"로 둔다.
+  // 점수에 반영하지 않으므로 누락돼도 실패시키지 않는다.
+  const rawDev = candidate.dev_readiness
+  const devReadiness: Record<string, DevReadinessItem> = {}
+  for (const d of DEV_READINESS) {
+    const entry = isRecord(rawDev) ? rawDev[d.key] : undefined
+    devReadiness[d.key] = isRecord(entry) && isDevReadinessStatus(entry.status)
+      ? {
+          status: entry.status,
+          note: typeof entry.note === 'string' ? entry.note : undefined,
+        }
+      : { status: '없음' }
+  }
+  if (!isRecord(rawDev)) {
+    warnings.push('dev_readiness 누락 — 전부 "없음"으로 처리했습니다')
+  }
+
   // 4) 목록들
   const validated = normalizeStringArray(candidate.validated, 'validated', warnings)
   const criticalQuestions = normalizeMixedArray(candidate.critical_questions, 'critical_questions', warnings)
@@ -301,6 +338,7 @@ export function validateAndNormalize(candidate: unknown): ValidationOutcome {
       base_score: baseScore,
       bonus_score: bonusScore,
       bonus_signals: signals,
+      dev_readiness: devReadiness,
       advisories: buildAdvisories(signals),
       is_sufficient: isSufficient,
       project_type: projectType,

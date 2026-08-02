@@ -14,10 +14,66 @@ export const maxDuration = 300
 
 // 조립된 채점 지시문을 그대로 확인하는 통로 — 프롬프트 튜닝·검증용
 // 확인: curl http://localhost:3000/api/analyze
-export async function GET(): Promise<Response> {
+//
+// ?probe=model — 실제로 어떤 모델이 응답하는지 미리 확인하는 통로.
+// 채점 한 번(2~3분)을 돌리기 전에 몇 초 만에 확인할 수 있다.
+// 확인: curl 'http://localhost:3000/api/analyze?probe=model'
+export async function GET(req: Request): Promise<Response> {
+  const url = new URL(req.url)
+  if (url.searchParams.get('probe') === 'model') {
+    return Response.json(await probeModel())
+  }
   return new Response(buildSystemPrompt(), {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   })
+}
+
+// 실제 응답 모델 확인 — 채점과 같은 파라미터로 아주 짧게 한 번 호출한다.
+//
+// ⚠️ 왜 코드만 보고 판단하면 안 되는가: 코드의 기본값(claude-sonnet-5)보다
+// 환경변수 ANTHROPIC_MODEL이 우선한다. 코드만 읽으면 sonnet-5로 보이지만
+// 실제로는 환경변수의 모델이 돈다. 실측으로 이 사고가 확인됐다(변경 기록 21번).
+// 그래서 '요청값'과 '응답값'을 함께 돌려준다.
+async function probeModel(): Promise<{
+  requested: string
+  actual: string | null
+  source: 'api' | 'cli'
+  matched: boolean
+  note?: string
+}> {
+  if (!hasAnthropicApiKey()) {
+    return {
+      requested: CLI_MODEL,
+      actual: null,
+      source: 'cli',
+      matched: false,
+      note: 'API 키가 없어 CLI 경로로 실행됩니다 — 응답에서 실제 모델을 확인할 수 없습니다',
+    }
+  }
+  try {
+    const anthropic = getAnthropicClient()
+    // 채점과 같은 파라미터 조합을 쓴다 — 파라미터가 거부되는 경우도 함께 잡기 위함
+    const res = (await anthropic.messages.create({
+      model: ANALYZE_MODEL,
+      max_tokens: 1024,
+      output_config: { effort: 'medium' },
+      messages: [{ role: 'user', content: '1+1?' }],
+    } as never)) as Anthropic.Messages.Message
+    return {
+      requested: ANALYZE_MODEL,
+      actual: res.model,
+      source: 'api',
+      matched: typeof res.model === 'string' && res.model.startsWith(ANALYZE_MODEL),
+    }
+  } catch (error) {
+    return {
+      requested: ANALYZE_MODEL,
+      actual: null,
+      source: 'api',
+      matched: false,
+      note: `모델 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
 }
 
 function hasAnthropicApiKey(): boolean {
@@ -160,8 +216,14 @@ async function createMessage(
   })) as Anthropic.Messages.Message
 }
 
-// 한 번 호출 — 실패는 예외로 던진다
-async function callClaude(systemPrompt: string, userPrompt: string): Promise<string> {
+// 한 번 호출 — 실패는 예외로 던진다.
+// 응답 원문과 함께 **실제로 응답한 모델**을 돌려준다(요청값이 아니라 응답값).
+interface ClaudeCall {
+  text: string
+  model: string | null // CLI 경로는 응답에서 확인 불가라 null
+}
+
+async function callClaude(systemPrompt: string, userPrompt: string): Promise<ClaudeCall> {
   if (hasAnthropicApiKey()) {
     const anthropic = getAnthropicClient()
     const result = await createMessage(anthropic, {
@@ -183,15 +245,19 @@ async function callClaude(systemPrompt: string, userPrompt: string): Promise<str
       ],
       messages: [{ role: 'user', content: userPrompt }],
     } as never)
-    console.log(`[analyze] 모델=${ANALYZE_MODEL} stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
+    // 요청값(ANALYZE_MODEL)과 응답값(result.model)을 둘 다 남긴다 — 다르면 여기서 보인다
+    console.log(
+      `[analyze] 요청모델=${ANALYZE_MODEL} 응답모델=${result.model} ` +
+      `stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`
+    )
     if (result.stop_reason === 'max_tokens') {
       throw new Error('분석 결과가 max_tokens에 도달해 잘렸습니다. 다시 시도해주세요.')
     }
-    return extractText(result.content)
+    return { text: extractText(result.content), model: result.model ?? null }
   }
   const output = await runClaude(systemPrompt, userPrompt)
-  console.log(`[analyze] CLI 응답 길이: ${output.length}`)
-  return output
+  console.log(`[analyze] CLI 요청모델=${CLI_MODEL} 응답 길이=${output.length} (응답에서 모델 확인 불가)`)
+  return { text: output, model: null }
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -213,13 +279,15 @@ export async function POST(req: Request): Promise<Response> {
 
   // 파싱 실패 시 재시도는 서버에서 한다 — 클라이언트가 다시 요청하면 분석 비용이 2배
   const MAX_ATTEMPTS = 2
+  const requestedModel = hasAnthropicApiKey() ? ANALYZE_MODEL : CLI_MODEL
   let lastRaw: string | null = null
   let lastReason = ''
+  let lastModel: string | null = null
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    let output: string
+    let call: ClaudeCall
     try {
-      output = await callClaude(systemPrompt, userPrompt)
+      call = await callClaude(systemPrompt, userPrompt)
     } catch (error) {
       console.error('[analyze] Claude 호출 오류:', error)
       const detail = error instanceof Error ? error.message : String(error)
@@ -228,23 +296,35 @@ export async function POST(req: Request): Promise<Response> {
         raw: null,
         warnings: [],
         error: `분석 중 오류가 발생했습니다: ${detail}`,
+        model: null,
+        requested_model: requestedModel,
       }
       return Response.json(envelope, { status: 500 })
     }
 
-    lastRaw = output
-    const parsed = extractJson(output)
+    lastRaw = call.text
+    lastModel = call.model
+    const parsed = extractJson(call.text)
     const outcome =
       parsed === null
         ? ({ ok: false, reason: '응답에서 JSON을 찾지 못했습니다' } as const)
         : validateAndNormalize(parsed)
 
     if (outcome.ok) {
+      // 실제 모델을 결과 안에도 심는다 — 저장·내보내기·기록에 따라다니게 하기 위함.
+      // 봉투에만 두면 화면에 저장되는 순간 사라져 사후 확인이 안 된다.
+      const analysis = { ...outcome.analysis, model: call.model, analyzed_at: new Date().toISOString() }
+      const warnings = [...outcome.warnings]
+      if (call.model === null) {
+        warnings.push('실제 채점 모델을 확인하지 못했습니다 (CLI 경로) — 이 결과는 모델 비교에 쓰지 마세요')
+      }
       const envelope: AnalyzeEnvelope = {
         ok: true,
-        analysis: outcome.analysis,
-        raw: output,
-        warnings: outcome.warnings,
+        analysis,
+        raw: call.text,
+        warnings,
+        model: call.model,
+        requested_model: requestedModel,
       }
       return Response.json(envelope)
     }
@@ -259,6 +339,8 @@ export async function POST(req: Request): Promise<Response> {
     raw: lastRaw,
     warnings: [],
     error: `분석 결과를 읽지 못했습니다 (${lastReason}). 아래 원문을 확인해주세요.`,
+    model: lastModel,
+    requested_model: requestedModel,
   }
   return Response.json(envelope, { status: 200 })
 }

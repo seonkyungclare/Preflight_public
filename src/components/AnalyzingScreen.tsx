@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { Progress } from '@/components/ui/progress'
 
+// 실제 채점 항목과 말이 맞아야 한다 — 채점하지 않는 것을 "분석 중"이라 쓰면
+// 사용자가 그걸 요구받는다고 오해한다. 항목 구성은 src/lib/rubric.ts가 원본.
 const STEPS = [
   '파일 텍스트 추출 중',
-  '화면 인벤토리 분석 중',
-  '엣지케이스 탐지 중',
-  '비즈니스 로직 검증 중',
+  '문서 유형 판별 중',
+  '기능·정책 해상도 확인 중',
+  '엣지케이스·미결정 확인 중',
   '결과 정리 중',
 ]
 

@@ -1,6 +1,7 @@
 import {
   AI_SCALE,
   BONUSES,
+  DEV_READINESS,
   DIMENSIONS,
   PROJECT_TYPES,
   PROJECT_TYPE_HINTS,
@@ -45,6 +46,12 @@ const bonusSkeleton = [
   ...BONUSES.map(b => `    "${b.key}": <boolean>,`),
   '    "화면_목록_확정표시": <boolean>',
 ].join('\n')
+
+const devReadinessLines = DEV_READINESS.map(d => `- ${d.key}: ${d.focus}`).join('\n')
+
+const devReadinessSkeleton = DEV_READINESS.map(
+  d => `    "${d.key}": { "status": "<있음|부분|없음>", "note": "<한국어: 무엇이 있고 무엇이 빠졌는지 한 문장>" }`
+).join(',\n')
 
 const SYSTEM_PROMPT = `당신은 PRD를 검토하는 시니어 프로덕트 엔지니어이자 UX 전문가입니다.
 아래 규칙을 정확히 따르고, 유효한 JSON 객체 하나만 반환하세요 — 마크다운 펜스도, 다른 설명도 붙이지 마세요.
@@ -110,6 +117,26 @@ ${bonusLines}
 
 ---
 
+## 3-1. 개발 착수 전 확인 (dev_readiness) — 점수에 반영하지 않습니다
+
+아래 네 가지가 PRD에 있는지 **세 단계로** 판정하고, 한 문장 설명을 붙이세요.
+
+${devReadinessLines}
+
+**판정 기준 — "일부라도 있으면 있음"으로 하지 마세요.**
+
+- \`있음\`: 개발자가 이 문서만 보고 결정할 수 있을 만큼 갖춰짐
+- \`부분\`: 일부는 있으나 개발자가 여전히 물어봐야 하는 것이 남음 (가장 흔한 경우입니다)
+- \`없음\`: 언급 자체가 없음
+
+\`부분\`일 때는 **무엇이 있고 무엇이 빠졌는지**를 설명에 함께 쓰세요.
+예: "최대 5,000건은 명시됐으나 동시 사용자 수와 응답 시간 기대치는 없음"
+
+**⚠️ 이건 채점이 아닙니다.** 없다고 점수를 깎지 마세요. 이 정보들은 링크된 별도 문서(API 설계서 등)에
+정당하게 있을 수 있습니다. 여기서는 **"이 문서만 봐서는 안 보인다"**를 알리는 것이 목적입니다.
+
+---
+
 ## 4. 심각도 (Nielsen)
 
 - 1 — 사소함: 시간 날 때 수정
@@ -171,6 +198,9 @@ ${criteriaSkeleton}
   },
   "bonus_signals": {
 ${bonusSkeleton}
+  },
+  "dev_readiness": {
+${devReadinessSkeleton}
   },
   "severity_summary": {
     "catastrophic": <integer>,
@@ -243,7 +273,8 @@ ${bonusSkeleton}
 5. 개발자 항목에 FE와 BE가 각각 1개 이상 있는가
 6. 모든 체크리스트 항목에 owner가 있는가
 7. validated 항목이 전부 PRD 문장으로 확인 가능한가
-8. 총점(sufficiency_score)이나 가중치를 출력하지 않았는가 — 시스템이 계산합니다
+8. dev_readiness를 채점에 반영하지 않았는가 — 없어도 점수를 깎지 않습니다
+9. 총점(sufficiency_score)이나 가중치를 출력하지 않았는가 — 시스템이 계산합니다
 9. 유효한 JSON인가 — 중괄호·따옴표 균형
 
 모든 문자열 값은 한국어로 작성하세요. JSON만 반환하세요.`

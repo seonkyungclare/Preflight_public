@@ -110,12 +110,19 @@ export interface SeveritySummary {
 }
 
 export interface AnalysisResult {
+  // 실제로 채점한 모델(요청값이 아니라 API 응답값)과 채점 시각.
+  // 모델이 바뀌면 점수도 바뀌므로 결과에 붙여둔다 — 없으면 나중에
+  // "이 숫자를 무엇으로 쟀는지" 확인할 방법이 사라진다. (변경 기록 21번)
+  model?: string | null
+  analyzed_at?: string
   sufficiency_score: number
   is_sufficient: boolean
   // v3: 서버가 계산한다. 판정은 base_score(0~90)로만 하고 가점은 표시용.
   base_score?: number
   bonus_score?: number
   bonus_signals?: Record<string, boolean>
+  // 개발 착수 전 확인 — 점수에 반영하지 않고 표시만 한다
+  dev_readiness?: Record<string, { status: '있음' | '부분' | '없음'; note?: string }>
   advisories?: string[]
   validated: string[]
   // criteria는 v1 5개 키 또는 v2 6개 키가 옴 — Record로 완화
