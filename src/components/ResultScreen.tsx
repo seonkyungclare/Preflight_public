@@ -759,7 +759,7 @@ export default function ResultScreen({
           {/* PM 확인 필요 탭 (사내 표현은 PO가 아니라 PM) */}
           <TabsContent value="questions" className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
-              개발 착수 전 PO가 답변해야 할 핵심 질문들
+              개발 착수 전 PM이 답변해야 할 핵심 질문들
             </p>
             {result.critical_questions.map((q, i) => {
               // v1: string, v2: object

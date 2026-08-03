@@ -39,6 +39,9 @@ async function probeModel(): Promise<{
   actual: string | null
   source: 'api' | 'cli'
   matched: boolean
+  // 생각 기능 상태도 함께 알린다 — 이 설정에 따라 점수 흔들림이 크게 달라지므로,
+  // 측정 스크립트가 시작 전에 확인하고 결과 파일 이름에도 남길 수 있어야 한다
+  thinking: 'disabled' | 'default'
   note?: string
 }> {
   if (!hasAnthropicApiKey()) {
@@ -47,6 +50,7 @@ async function probeModel(): Promise<{
       actual: null,
       source: 'cli',
       matched: false,
+      thinking: THINKING_DISABLED ? 'disabled' : 'default',
       note: 'API 키가 없어 CLI 경로로 실행됩니다 — 응답에서 실제 모델을 확인할 수 없습니다',
     }
   }
@@ -57,6 +61,7 @@ async function probeModel(): Promise<{
       model: ANALYZE_MODEL,
       max_tokens: 1024,
       output_config: { effort: 'medium' },
+      ...(THINKING_DISABLED ? { thinking: { type: 'disabled' } } : {}),
       messages: [{ role: 'user', content: '1+1?' }],
     } as never)) as Anthropic.Messages.Message
     return {
@@ -64,6 +69,7 @@ async function probeModel(): Promise<{
       actual: res.model,
       source: 'api',
       matched: typeof res.model === 'string' && res.model.startsWith(ANALYZE_MODEL),
+      thinking: THINKING_DISABLED ? 'disabled' : 'default',
     }
   } catch (error) {
     return {
@@ -71,6 +77,7 @@ async function probeModel(): Promise<{
       actual: null,
       source: 'api',
       matched: false,
+      thinking: THINKING_DISABLED ? 'disabled' : 'default',
       note: `모델 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
@@ -197,6 +204,19 @@ function runClaude(systemPrompt: string, userPrompt: string): Promise<string> {
 // 모델을 못 찾으면 폴백하지 말고 실패시켜 사람이 알게 한다.
 const ANALYZE_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
 
+// 생각 기능을 끌지 여부. 기본은 모델의 기본 동작을 그대로 따른다.
+//
+// ⚠️ 이 스위치가 있는 이유: 같은 문서를 세 번 넣었을 때 점수가 얼마나 흔들리는지가
+// 모델에 따라 크게 달랐는데(sonnet-4-6 폭 2~3 vs sonnet-5 폭 5~7), 원인이
+// "생각 기능이 기본으로 켜졌는지"로 의심됐다. 두 모델의 차이가 바로 그것이다.
+//   - sonnet-4-6: thinking을 안 넘기면 생각 없이 답한다
+//   - sonnet-5  : thinking을 안 넘기면 생각을 켠 채로 답하고, 생각한 양이
+//                 회차마다 3배 넘게 차이 난다(1,646~5,889 토큰 실측)
+// 원인을 확인하고 되돌릴 수 있게 코드가 아니라 설정으로 뺀다.
+//
+// ANTHROPIC_THINKING=disabled → 생각 기능 끔
+const THINKING_DISABLED = process.env.ANTHROPIC_THINKING === 'disabled'
+
 function extractText(content: Anthropic.Messages.Message['content']): string {
   return content
     .map(block => (block.type === 'text' ? block.text : ''))
@@ -237,6 +257,8 @@ async function callClaude(systemPrompt: string, userPrompt: string): Promise<Cla
       // ⚠️ Sonnet 5는 thinking을 안 쓰면 '켜짐'이 기본이다(예전 모델은 꺼짐).
       //    생각한 분량도 출력 토큰으로 과금되므로, 실측 후 low로 낮출지 판단한다.
       output_config: { effort: 'medium' },
+      // 설정으로 껐을 때만 넘긴다 — 안 넘기면 모델의 기본 동작을 그대로 쓴다
+      ...(THINKING_DISABLED ? { thinking: { type: 'disabled' } } : {}),
       // 채점 지시문은 문서가 바뀌어도 글자 하나 안 바뀐다 → 캐싱해서 재사용한다.
       // 두 번째 호출부터 이 부분을 1/10 값으로 읽는다.
       // (효과 확인: 응답 usage의 cache_read_input_tokens가 0보다 큰지 본다)
@@ -248,6 +270,7 @@ async function callClaude(systemPrompt: string, userPrompt: string): Promise<Cla
     // 요청값(ANALYZE_MODEL)과 응답값(result.model)을 둘 다 남긴다 — 다르면 여기서 보인다
     console.log(
       `[analyze] 요청모델=${ANALYZE_MODEL} 응답모델=${result.model} ` +
+      `생각=${THINKING_DISABLED ? '끔' : '기본'} ` +
       `stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`
     )
     if (result.stop_reason === 'max_tokens') {
