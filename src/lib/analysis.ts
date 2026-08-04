@@ -28,7 +28,7 @@ export interface CriterionResult {
 
 export interface MissingItem {
   screen: string
-  owner?: string // 'PM' | '다음단계'
+  owner?: string // 'PM' | '담당자결정'
   issue: string
   suggestion: string
   principle?: string
@@ -49,6 +49,8 @@ export interface DevItem {
 export interface CriticalQuestionV2 {
   tag: string
   question: string
+  owner?: string // 'PM' | '담당자결정' — 화면의 "남은 결정 N건"은 PM 몫만 센다
+  dimension?: string // 이 결정이 걸린 채점 항목
   format?: 'binary' | 'multiple' | 'open'
   options?: string[]
   impact?: string

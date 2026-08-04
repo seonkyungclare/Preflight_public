@@ -53,7 +53,7 @@ export interface MissingItem {
   principle?: string
   severity?: 1 | 2 | 3 | 4
   user_impact?: string
-  // v3: 이 항목을 누가 채워야 하는가 — 'PM' | '다음단계'
+  // v3: 이 항목을 누가 채워야 하는가 — 'PM' | '담당자결정'
   owner?: string
 }
 
@@ -74,6 +74,10 @@ export interface DevItem {
 export interface CriticalQuestionV2 {
   tag: string
   question: string
+  // v4: 누가 답해야 하는가 — 'PM' | '담당자결정'. 화면의 "남은 결정 N건"은 PM 몫만 센다
+  owner?: string
+  // v4: 이 결정이 걸린 채점 항목 이름
+  dimension?: string
   format?: 'binary' | 'multiple' | 'open'
   options?: string[]
   impact?: string

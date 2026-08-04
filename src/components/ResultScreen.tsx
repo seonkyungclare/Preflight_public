@@ -98,13 +98,20 @@ function criteriaLabel(key: string): string {
   return dimensionLabel(key) ?? LEGACY_CRITERIA_LABELS[key] ?? key
 }
 
+// owner 표기는 버전에 따라 'PM' / '다음단계' / '담당자결정'이 섞여 들어온다.
+// 값이 없는 옛 결과는 PM 몫으로 본다 — 예전 화면이 전부 PM 몫으로 세던 것과 맞춘다.
+function isPmOwned(owner?: string): boolean {
+  if (!owner) return true
+  return owner.trim().toUpperCase() === 'PM'
+}
+
 // 이 항목을 누가 채워야 하는가 — PM이 자기 몫 아닌 것까지 떠안지 않게
 function OwnerBadge({ owner }: { owner?: string }) {
   if (!owner) return null
-  const isNext = owner.includes('다음')
+  const isNext = !isPmOwned(owner)
   return (
     <span className={`text-xs px-2 py-0.5 rounded-md ${isNext ? 'bg-neutral-200 text-neutral-600' : 'bg-violet-100 text-violet-700'}`}>
-      {isNext ? '다음 단계에서 만듦' : 'PM이 쓸 것'}
+      {isNext ? '담당자 결정' : 'PM이 쓸 것'}
     </span>
   )
 }
@@ -136,7 +143,12 @@ const SIGNAL_STYLE: Record<SignalLevel, string> = {
 // ── 1차 정보: 디자인 착수까지 남은 결정 + 항목별 신호등 ──────────────────────
 // 점수를 앞에 두지 않는 이유는 변경 기록 5번 참조.
 function RemainingDecisions({ result }: { result: AnalysisResult }) {
-  const questions = result.critical_questions ?? []
+  const allQuestions = result.critical_questions ?? []
+
+  // PM이 답해야 끝나는 것만 "남은 결정"으로 센다.
+  // 담당자가 설계하면서 정할 것은 문서를 고쳐도 줄지 않으므로 이 숫자에 넣으면 안 된다.
+  const questions = allQuestions.filter(q => isPmOwned(isQuestionV2(q) ? q.owner : undefined))
+  const nextStepCount = allQuestions.length - questions.length
 
   // 태그별로 나눠 보여준다 — 누가 답해야 하는지가 드러나야 한다
   const byTag: Record<string, number> = {}
@@ -169,6 +181,11 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
               ? '모르는 채로 진행을 막는 결정이 없습니다. 아래 체크리스트는 참고용입니다.'
               : '모른 채로는 디자인을 시작할 수 없는 결정입니다. 이걸 없애는 것이 곧 문서 개선입니다.'}
           </p>
+          {nextStepCount > 0 && (
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              이 밖에 {nextStepCount}건은 담당자가 설계하면서 정할 것이라 여기에 세지 않았습니다.
+            </p>
+          )}
           {tagEntries.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3">
               {tagEntries.map(([tag, n]) => (
@@ -808,13 +825,18 @@ export default function ResultScreen({
               if (isQuestionV2(q)) {
                 const tagText = stripBrackets(q.tag)
                 const variant = TAG_VARIANTS[tagText] ?? 'secondary'
+                const pm = isPmOwned(q.owner)
                 return (
-                  <Card key={i} className="border-destructive/20">
+                  <Card key={i} className={pm ? 'border-destructive/20' : 'border-border bg-muted/30'}>
                     <CardContent className="flex items-start gap-4 py-4 px-5">
-                      <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
+                      <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${pm ? 'text-destructive' : 'text-muted-foreground'}`}>Q{i + 1}</span>
                       <div className="flex flex-col gap-2 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant={variant} className="w-fit">{tagText}</Badge>
+                          <OwnerBadge owner={q.owner ?? 'PM'} />
+                          {q.dimension && (
+                            <span className="text-[10px] text-muted-foreground">{criteriaLabel(q.dimension)}</span>
+                          )}
                           {q.format && (
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
                               {q.format}
