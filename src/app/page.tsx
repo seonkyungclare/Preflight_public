@@ -4,7 +4,7 @@ import { useState, useRef } from 'react'
 import UploadScreen from '@/components/UploadScreen'
 import AnalyzingScreen from '@/components/AnalyzingScreen'
 import ResultScreen from '@/components/ResultScreen'
-import { saveEntry, generateId, type HistoryEntry } from '@/lib/analysis-history'
+import { saveEntry, generateId, findSameContent, type HistoryEntry } from '@/lib/analysis-history'
 import type { AnalyzeEnvelope } from '@/lib/analysis'
 
 // ─── 공유 타입 정의 (v1/v2 호환) ──────────────────────────────────────────────
@@ -161,6 +161,9 @@ interface AppState {
   historyCreatedAt: number | null
   requirementsUrl: string  // 사용자 요구사항 Confluence URL (선택)
   warnings: string[]  // 서버가 응답을 보정한 내역 (결과 화면에 표시)
+  // 내용이 같아 이전 분석 결과를 그대로 쓴 경우, 그 분석 시각.
+  // 사용자가 "왜 다시 안 돌았지"를 알 수 있어야 한다.
+  reusedFrom: number | null
 }
 
 // ─── 메인 페이지 (스크린 상태 머신) ────────────────────────────────────────────
@@ -183,6 +186,7 @@ export default function Home() {
     historyCreatedAt: null,
     requirementsUrl: '',
     warnings: [],
+    reusedFrom: null,
   })
 
   // PRD 파일 업로드 후 Claude 분석 스트리밍 시작
@@ -198,6 +202,27 @@ export default function Home() {
       mockupLowFiAt: null,
       mockupHiFiAt: null,
     }))
+
+    // 내용이 완전히 같은 기록이 있으면 새로 채점하지 않는다.
+    // AI는 같은 글에도 매번 조금씩 다른 점수를 내므로, 안 고치고 다시 올렸는데
+    // 점수가 달라지는 상황을 원천적으로 막는다. (변경 기록 24번)
+    const same = await findSameContent(prdText)
+    if (same) {
+      setState(prev => ({
+        ...prev,
+        screen: 'result',
+        analysis: same.analysis as AnalysisResult,
+        historyId: same.id,
+        historyCreatedAt: same.createdAt,
+        mockupFilesLowFi: same.mockupFilesLowFi,
+        mockupFilesHiFi: same.mockupFilesHiFi,
+        mockupLowFiAt: same.mockupLowFiAt,
+        mockupHiFiAt: same.mockupHiFiAt,
+        warnings: [],
+        reusedFrom: same.createdAt,
+      }))
+      return
+    }
 
     try {
       const res = await fetch('/api/analyze', {
@@ -229,6 +254,7 @@ export default function Home() {
       setState(prev => ({
         ...prev, screen: 'result', analysis, historyId, historyCreatedAt,
         warnings: envelope.warnings,
+        reusedFrom: null,
       }))
 
       saveEntry({
@@ -362,6 +388,8 @@ export default function Home() {
       historyCreatedAt: entry.createdAt,
       requirementsUrl: '',
       warnings: [],  // 저장된 분석에는 보정 내역을 남기지 않는다
+      // 이전 분석 목록에서 직접 연 것이라 "내용이 같아 재사용" 안내는 띄우지 않는다
+      reusedFrom: null,
     })
   }
 
@@ -405,6 +433,7 @@ export default function Home() {
           onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null }))}
           requirementsUrl={state.requirementsUrl}
           onRequirementsUrlChange={url => setState(prev => ({ ...prev, requirementsUrl: url }))}
+          reusedFrom={state.reusedFrom}
         />
       )}
 

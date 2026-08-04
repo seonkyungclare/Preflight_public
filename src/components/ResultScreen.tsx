@@ -24,6 +24,8 @@ interface ResultScreenProps {
   onReupload: () => void
   requirementsUrl: string
   onRequirementsUrlChange: (url: string) => void
+  // 내용이 같아 이전 분석을 그대로 보여주는 경우, 그 분석 시각
+  reusedFrom?: number | null
 }
 
 // ============================================================================
@@ -180,6 +182,13 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
 
         {/* 항목별 신호등 */}
         <div>
+          {/* ⚠️ 이 색은 위의 "남은 결정 N건"만큼 안정적이지 않다.
+              항목 점수가 색 경계(8점·5점) 바로 옆에 있으면 1점 차이로 색이 뒤집힌다.
+              단, 내용이 같으면 저장된 결과를 그대로 쓰므로(findSameContent)
+              사용자가 이 흔들림을 마주치는 건 문서를 고쳐서 다시 넣을 때뿐이다.
+              그래서 화면에 경고 문구를 두지 않는다 — 실제로 겪지 않는 일을
+              미리 알리면 결과 전체의 신뢰만 깎인다. 설명이 필요한 자리는
+              PM 설명 자료의 Q&A다. (변경 기록 24번) */}
           <p className="text-xs text-muted-foreground mb-2">항목별 상태</p>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             {scored.map(({ label, score }) => {
@@ -329,9 +338,15 @@ export default function ResultScreen({
   onReupload,
   requirementsUrl,
   onRequirementsUrlChange,
+  reusedFrom,
 }: ResultScreenProps) {
   const [showScore, setShowScore] = useState(false)
   const [showMockupModal, setShowMockupModal] = useState(false)
+
+  // 화면에 쓰는 점수는 기본 점수다. 가점은 등급 판정에 안 들어가므로(18번)
+  // 합쳐서 보여주면 판정과 무관한 값이 숫자만 흔들게 된다.
+  const baseScore = result.base_score ?? result.sufficiency_score
+  const bonusScore = result.bonus_score ?? 0
   const [isRegenerate, setIsRegenerate] = useState(false)
   const [mockupProgress, setMockupProgress] = useState(0)
 
@@ -385,8 +400,23 @@ export default function ResultScreen({
             </svg>
             <span className="text-sm text-muted-foreground">{fileName}</span>
             <span className="text-muted-foreground">·</span>
-            <span className="text-sm text-muted-foreground">방금 분석됨</span>
+            <span className="text-sm text-muted-foreground">
+              {reusedFrom ? `${formatHistoryDate(reusedFrom)} 분석` : '방금 분석됨'}
+            </span>
           </div>
+
+          {/* 내용이 같아 다시 채점하지 않은 경우 — 왜 기다리지 않았는지 알려준다 */}
+          {reusedFrom && (
+            <div className="mb-6 rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <p className="text-sm">
+                <strong>이전에 분석한 문서와 내용이 같아 그때 결과를 그대로 보여드립니다.</strong>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                같은 문서를 다시 채점하면 점수가 몇 점 달라질 수 있어, 내용이 바뀌지 않았으면
+                다시 채점하지 않습니다. 문서를 고치신 뒤 올리면 새로 채점합니다.
+              </p>
+            </div>
+          )}
 
         {/* ── 1차 정보: 남은 결정 + 항목별 신호등 ──
             점수를 앞에 두면 "점수를 올린다"가 목표가 되어 문구만 다듬게 된다.
@@ -407,20 +437,26 @@ export default function ResultScreen({
               </button>
               {showScore ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <ScoreGauge score={result.sufficiency_score} baseScore={result.base_score ?? result.sufficiency_score} />
+                  <ScoreGauge score={baseScore} baseScore={baseScore} />
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-1">
-                  <span className="text-2xl font-bold">{result.sufficiency_score}</span>
+                  <span className="text-2xl font-bold">{baseScore}</span>
                   <span
                     className="text-xs font-semibold px-2 py-0.5 rounded-full"
                     style={{
-                      backgroundColor: verdictOf(result.base_score ?? result.sufficiency_score).color + '22',
-                      color: verdictOf(result.base_score ?? result.sufficiency_score).color,
+                      backgroundColor: verdictOf(baseScore).color + '22',
+                      color: verdictOf(baseScore).color,
                     }}
                   >
-                    {verdictOf(result.base_score ?? result.sufficiency_score).label}
+                    {verdictOf(baseScore).label}
                   </span>
+                  {/* 가점은 더해서 보여주지 않는다. 판정에 안 쓰는 값인데
+                      합치면 화면 숫자만 흔든다 — 같은 문서 9회에서 가점이
+                      4회만 붙어 총점이 ±3 널뛰었다. (변경 기록 24번) */}
+                  {bonusScore > 0 && (
+                    <span className="text-[10px] text-muted-foreground">가점 +{bonusScore} 별도</span>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -575,8 +611,14 @@ export default function ResultScreen({
             {/* 가점 내역 — 화면 목록은 의무가 아니라 보너스 */}
             {result.bonus_signals && (
               <div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  가점 항목 — 없어도 감점하지 않습니다. 있으면 다음 단계가 빨라져 점수를 더합니다
+                <p className="text-sm text-muted-foreground mb-1.5">
+                  가점 항목 — 없어도 감점하지 않습니다. 등급 판정에도 쓰지 않습니다
+                </p>
+                {/* "우리 판정이 흔들린다"가 아니라 "이렇게 하면 잡힌다"로 쓴다.
+                    가점 인식은 문서 표현에 민감한데(9회 중 4회만 인식된 사례),
+                    사용자에게 필요한 건 그 사실이 아니라 다음 행동이다. */}
+                <p className="text-xs text-muted-foreground mb-3">
+                  해당하는데 안 잡혔다면 문서에 더 분명히 적어보세요.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {bonusBreakdown(result.bonus_signals).map(b => (
