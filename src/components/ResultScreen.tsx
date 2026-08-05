@@ -140,31 +140,25 @@ const SIGNAL_STYLE: Record<SignalLevel, string> = {
   '누락': 'bg-red-500',
 }
 
-// ── 1차 정보: 디자인 착수까지 남은 결정 + 항목별 신호등 ──────────────────────
-// 점수를 앞에 두지 않는 이유는 변경 기록 5번 참조.
+// ── 1차 정보: 보완할 항목 수 + 항목별 신호등 ──────────────────────
+// 원래는 AI가 뽑은 질문 수("남은 결정 N건")를 맨 앞에 뒀다(5번 결정).
+// 그런데 AI가 뽑는 목록은 문서가 어떻든 개수가 비슷하고 0개는 절대 안 나와서,
+// 네 번의 시도(25·26·28·29번) 끝에 항목 점수에서 세는 값으로 바꿨다.
+// 이 값은 문서 품질 순서와 맞고 회차 간 ±1로 안정적이다. (변경 기록 29번)
+const WEAK_THRESHOLD = 7
+
 function RemainingDecisions({ result }: { result: AnalysisResult }) {
   const allQuestions = result.critical_questions ?? []
-
-  // PM이 답해야 끝나는 것만 "남은 결정"으로 센다.
-  // 담당자가 설계하면서 정할 것은 문서를 고쳐도 줄지 않으므로 이 숫자에 넣으면 안 된다.
-  const questions = allQuestions.filter(q => isPmOwned(isQuestionV2(q) ? q.owner : undefined))
-  const nextStepCount = allQuestions.length - questions.length
-
-  // 태그별로 나눠 보여준다 — 누가 답해야 하는지가 드러나야 한다
-  const byTag: Record<string, number> = {}
-  for (const q of questions) {
-    const raw = isQuestionV2(q) ? q.tag : parseTagFromString(String(q)).tag
-    const tag = stripBrackets(raw ?? '기타')
-    byTag[tag] = (byTag[tag] ?? 0) + 1
-  }
-  const tagEntries = Object.entries(byTag)
+  // PM이 답해야 끝나는 질문만 보조 줄에 센다 (28번)
+  const pmCount = allQuestions.filter(q => isPmOwned(isQuestionV2(q) ? q.owner : undefined)).length
 
   const scored = DIMENSIONS.map(d => ({
     label: d.label,
     score: result.criteria?.[d.key]?.score ?? null,
   })).filter(x => x.score !== null) as Array<{ label: string; score: number }>
 
-  const done = questions.length === 0
+  const weak = scored.filter(x => x.score < WEAK_THRESHOLD)
+  const done = weak.length === 0
 
   return (
     <Card className="mb-4">
@@ -173,34 +167,34 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground">디자인 착수까지</span>
             <span className={`text-3xl font-bold ${done ? 'text-green-600' : ''}`}>
-              {done ? '남은 결정 없음' : `남은 결정 ${questions.length}건`}
+              {done ? '보완할 항목 없음' : `보완할 항목 ${weak.length}개`}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
             {done
-              ? '모르는 채로 진행을 막는 결정이 없습니다. 아래 체크리스트는 참고용입니다.'
-              : '모른 채로는 디자인을 시작할 수 없는 결정입니다. 이걸 없애는 것이 곧 문서 개선입니다.'}
+              ? '여섯 항목 모두 이 문서만으로 시작할 수 있는 수준입니다. 아래 체크리스트는 참고용입니다.'
+              : '이 항목들이 지금 문서만으로는 부족하다고 판정됐습니다. 여기를 채우는 것이 곧 문서 개선입니다.'}
           </p>
-          {nextStepCount > 0 && (
-            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              이 밖에 {nextStepCount}건은 담당자가 설계하면서 정할 것이라 여기에 세지 않았습니다.
-            </p>
-          )}
-          {tagEntries.length > 0 && (
+          {!done && (
             <div className="flex flex-wrap gap-1.5 mt-3">
-              {tagEntries.map(([tag, n]) => (
-                <Badge key={tag} variant={TAG_VARIANTS[tag] ?? 'secondary'}>
-                  {tag} {n}
+              {weak.map(({ label, score }) => (
+                <Badge key={label} variant="secondary">
+                  {label} {score}점
                 </Badge>
               ))}
             </div>
+          )}
+          {pmCount > 0 && (
+            <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+              PM 확인 질문 {pmCount}건이 아래 탭에 있습니다 — 위 항목을 채울 때 출발점으로 쓰세요.
+            </p>
           )}
         </div>
 
         {/* 항목별 신호등 */}
         <div>
-          {/* ⚠️ 이 색은 위의 "남은 결정 N건"만큼 안정적이지 않다.
-              항목 점수가 색 경계(8점·5점) 바로 옆에 있으면 1점 차이로 색이 뒤집힌다.
+          {/* ⚠️ 색 경계(8점·5점)는 위 "보완할 항목"의 경계(7점)와 다르다 — 신호등은 3단계 상태,
+              위 숫자는 착수 가능선. 항목 점수가 경계 바로 옆이면 1점 차이로 색이 뒤집힌다.
               단, 내용이 같으면 저장된 결과를 그대로 쓰므로(findSameContent)
               사용자가 이 흔들림을 마주치는 건 문서를 고쳐서 다시 넣을 때뿐이다.
               그래서 화면에 경고 문구를 두지 않는다 — 실제로 겪지 않는 일을
