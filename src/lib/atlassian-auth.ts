@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
+import { gzipSync, gunzipSync } from 'zlib'
 
 const COOKIE_NAME = 'atlassian_session'
 const REFRESH_COOKIE_NAME = 'atlassian_refresh'
@@ -28,11 +29,24 @@ function getSecretKey(): Buffer {
   return scryptSync(secret, 'atlassian-session', 32)
 }
 
+/**
+ * 암호화 전에 gzip으로 줄인다.
+ *
+ * Atlassian 액세스 토큰은 JWT라 계정에 따라 3,000자에 가까워진다. 그대로
+ * 암호화하면 base64url 확장까지 겹쳐 쿠키 값이 4,000자를 넘고, 브라우저는
+ * **이름+값이 4,096바이트를 넘는 쿠키를 오류 없이 그냥 버린다.** 그러면
+ * OAuth는 성공했는데 화면은 로그인 안 된 상태로 돌아와, 원인을 찾을 단서가
+ * 전혀 남지 않는다(실제로 겪었다 — 세션 4,088자 + 이름 17자 = 4,105자).
+ *
+ * JWT는 base64라 6비트/바이트만 쓰는 구조적 중복이 있어 gzip이 잘 듣는다.
+ * 위 사례를 실측하면 4,088자 → 2,288자(44% 감소)로 줄었다.
+ */
 function encrypt(plaintext: string): string {
   const key = getSecretKey()
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', key, iv)
-  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  const compressed = gzipSync(Buffer.from(plaintext, 'utf8'), { level: 9 })
+  const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()])
   const tag = cipher.getAuthTag()
   return Buffer.concat([iv, tag, encrypted]).toString('base64url')
 }
@@ -46,8 +60,14 @@ function decrypt(token: string): string | null {
     const key = getSecretKey()
     const decipher = createDecipheriv('aes-256-gcm', key, iv)
     decipher.setAuthTag(tag)
-    const plaintext = Buffer.concat([decipher.update(encrypted), decipher.final()])
-    return plaintext.toString('utf8')
+    const plain = Buffer.concat([decipher.update(encrypted), decipher.final()])
+
+    // gzip 매직 바이트(1f 8b)가 있으면 압축본, 없으면 압축을 넣기 전에
+    // 발급된 쿠키다. 재로그인을 강제하지 않도록 둘 다 받아준다.
+    if (plain.length >= 2 && plain[0] === 0x1f && plain[1] === 0x8b) {
+      return gunzipSync(plain).toString('utf8')
+    }
+    return plain.toString('utf8')
   } catch {
     return null
   }

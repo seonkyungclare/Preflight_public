@@ -60,7 +60,19 @@ export async function GET(req: Request): Promise<Response> {
     if (tokenRes.refresh_token) {
       cookies().set(ATLASSIAN_REFRESH_COOKIE, encodeRefreshToken(tokenRes.refresh_token), cookieOpts)
     }
-    console.log(`[atlassian callback] session=${sessionCookie.length}자 refresh=${tokenRes.refresh_token ? '있음' : '없음'}`)
+    // 브라우저는 이름+값이 4096바이트를 넘는 쿠키를 오류 없이 버린다.
+    // 그러면 OAuth는 성공했는데 로그인 안 된 화면으로 돌아와 단서가 없다.
+    // 조용히 실패하지 않도록 여기서 크기를 남긴다.
+    const cookieBytes = ATLASSIAN_COOKIE.length + sessionCookie.length
+    console.log(
+      `[atlassian callback] session=${sessionCookie.length}자(쿠키 ${cookieBytes}바이트) refresh=${tokenRes.refresh_token ? '있음' : '없음'}`
+    )
+    if (cookieBytes > 4096) {
+      console.error(
+        `[atlassian callback] ⚠️ 세션 쿠키가 4096바이트를 넘었습니다(${cookieBytes}). ` +
+          `브라우저가 쿠키를 버려 로그인이 안 될 수 있습니다.`
+      )
+    }
     cookies().delete(ATLASSIAN_STATE_COOKIE)
 
     return Response.redirect(`${url.origin}/?atlassian_connected=1`, 302)
