@@ -438,6 +438,7 @@ export default function Home() {
           requirementsUrl={state.requirementsUrl}
           onRequirementsUrlChange={url => setState(prev => ({ ...prev, requirementsUrl: url }))}
           reusedFrom={state.reusedFrom}
+          analyzedAt={state.historyCreatedAt}
         />
       )}
 

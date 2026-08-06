@@ -1,15 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import ScoreGauge from '@/components/ScoreGauge'
 import type { AnalysisResult, MissingItem, DevItem, MockupType } from '@/app/page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { formatHistoryDate } from '@/lib/analysis-history'
-import { DEV_READINESS, DIMENSIONS, bonusBreakdown, dimensionLabel, signalOf, verdictOf, type SignalLevel } from '@/lib/rubric'
+import { formatHistoryDate, formatAbsoluteDateTime } from '@/lib/analysis-history'
+import { DEV_READINESS, DIMENSIONS, bonusBreakdown, dimensionLabel, signalOf, type SignalLevel } from '@/lib/rubric'
 
 interface ResultScreenProps {
   fileName: string
@@ -26,6 +24,8 @@ interface ResultScreenProps {
   onRequirementsUrlChange: (url: string) => void
   // 내용이 같아 이전 분석을 그대로 보여주는 경우, 그 분석 시각
   reusedFrom?: number | null
+  // 이 결과가 채점된 시각. 기록에서 다시 열어도 그때 시각이 그대로 나온다.
+  analyzedAt?: number | null
 }
 
 // ============================================================================
@@ -35,13 +35,31 @@ interface ResultScreenProps {
 // v2: critical_questions[i]는 객체 — {tag, question, format, options, impact, blocks}
 // ============================================================================
 
-type TagVariant = 'default' | 'secondary' | 'outline'
+// 확인 질문의 분류 태그 색 — 구버전 Preflight에서 그대로 가져왔다.
+// shadcn Badge variant로 매핑했을 때는 비즈니스와 UX정책이 둘 다 outline이라
+// 두 태그가 시각적으로 완전히 같았고, 나머지도 무채색이라 분류 구실을 못 했다.
+// 이 앱은 다크 모드 강제(layout.tsx)라 500/20 배경 + 300 글자가 그대로 맞는다.
+const TAG_COLORS: Record<string, string> = {
+  '디자인': 'bg-violet-500/20 text-violet-300',
+  '개발': 'bg-blue-500/20 text-blue-300',
+  '비즈니스': 'bg-amber-500/20 text-amber-300',
+  // 구버전에 없던 네 번째 — 위 셋과 겹치지 않는 색으로 새로 잡는다
+  'UX정책': 'bg-emerald-500/20 text-emerald-300',
+}
 
-const TAG_VARIANTS: Record<string, TagVariant> = {
-  '디자인': 'default',
-  '개발': 'secondary',
-  '비즈니스': 'outline',
-  'UX정책': 'outline',
+const TAG_FALLBACK = 'bg-slate-500/20 text-slate-300'
+
+// 이 화면의 모든 태그가 쓰는 단 하나의 형태. 확인 필요 탭과 체크리스트 탭이
+// 각자 다른 껍데기(shadcn Badge variant, 밝은 배경용 100/700 조합)를 쓰다 보니
+// 같은 성격의 표시가 탭마다 달라 보였다. 색만 갈아 끼우고 형태는 여기서 고정한다.
+const CHIP_BASE = 'text-xs font-semibold px-2 py-0.5 rounded-md w-fit shrink-0'
+
+function Chip({ color, children }: { color: string; children: React.ReactNode }) {
+  return <span className={`${CHIP_BASE} ${color}`}>{children}</span>
+}
+
+function ContextTag({ tag }: { tag: string }) {
+  return <Chip color={TAG_COLORS[tag] ?? TAG_FALLBACK}>{tag}</Chip>
 }
 
 // 태그 문자열에서 대괄호 제거: "[개발]" -> "개발", "개발" -> "개발"
@@ -51,11 +69,10 @@ function stripBrackets(tag: string): string {
 }
 
 // v1 문자열 파싱 (기존 로직 유지)
-function parseTagFromString(q: string): { tag: string | null; variant: TagVariant; rest: string } {
+function parseTagFromString(q: string): { tag: string | null; rest: string } {
   const match = q.match(/^\[([^\]]+)\](.*)/)
-  if (!match) return { tag: null, variant: 'secondary', rest: q }
-  const tag = match[1]
-  return { tag, variant: TAG_VARIANTS[tag] ?? 'secondary', rest: match[2].trim() }
+  if (!match) return { tag: null, rest: q }
+  return { tag: match[1], rest: match[2].trim() }
 }
 
 // v2 객체 대응 — 추후 렌더링에서 활용
@@ -110,9 +127,9 @@ function OwnerBadge({ owner }: { owner?: string }) {
   if (!owner) return null
   const isNext = !isPmOwned(owner)
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-md ${isNext ? 'bg-neutral-200 text-neutral-600' : 'bg-violet-100 text-violet-700'}`}>
-      {isNext ? '담당자 결정' : 'PM이 쓸 것'}
-    </span>
+    <Chip color={isNext ? 'bg-slate-500/20 text-slate-300' : 'bg-rose-500/20 text-rose-300'}>
+      {isNext ? '담당자 결정 필요' : 'PM 결정 필요'}
+    </Chip>
   )
 }
 
@@ -121,9 +138,9 @@ function AreaBadge({ area }: { area?: string }) {
   if (!area) return null
   const isFe = area.toUpperCase() === 'FE'
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-md ${isFe ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>
+    <Chip color={isFe ? 'bg-sky-500/20 text-sky-300' : 'bg-emerald-500/20 text-emerald-300'}>
       {isFe ? '화면' : '서버'}
-    </span>
+    </Chip>
   )
 }
 
@@ -140,84 +157,147 @@ const SIGNAL_STYLE: Record<SignalLevel, string> = {
   '누락': 'bg-red-500',
 }
 
+// 항목 칸의 강조 정도. 바탕은 배경(0.145)보다 한 단계 밝은 card(0.205)로 깔고,
+// 손봐야 하는 항목만 색 테두리와 옅은 틴트로 띄운다.
+const SIGNAL_CELL: Record<SignalLevel, string> = {
+  '충분': 'bg-neutral-950 border-border/60',
+  '보완': 'bg-neutral-950 border-amber-500/40',
+  '누락': 'bg-neutral-950 border-red-500/40',
+}
+
+const SIGNAL_TEXT: Record<SignalLevel, string> = {
+  '충분': 'text-muted-foreground',
+  '보완': 'text-amber-400',
+  '누락': 'text-red-400',
+}
+
 // ── 1차 정보: 보완할 항목 수 + 항목별 신호등 ──────────────────────
 // 원래는 AI가 뽑은 질문 수("남은 결정 N건")를 맨 앞에 뒀다(5번 결정).
 // 그런데 AI가 뽑는 목록은 문서가 어떻든 개수가 비슷하고 0개는 절대 안 나와서,
 // 네 번의 시도(25·26·28·29번) 끝에 항목 점수에서 세는 값으로 바꿨다.
 // 이 값은 문서 품질 순서와 맞고 회차 간 ±1로 안정적이다. (변경 기록 29번)
-const WEAK_THRESHOLD = 7
+// 라인탭 스타일. 공용 Tabs의 알약형 기본값(bg-muted 컨테이너, 활성 시 배경+그림자)을
+// 걷어내고 밑줄만 남긴다. 진입 화면 탭은 기본값을 그대로 쓰므로 여기서만 덮는다.
+const LINE_TABS_LIST =
+  'mb-6 w-full h-auto rounded-none bg-transparent p-0 gap-6 ' +
+  'justify-start border-b border-border flex-wrap'
+
+// 루트의 [&_button]:rounded-md(:388)가 자손 선택자라 그냥 rounded-none으로는
+// 못 이긴다. 밑줄이 둥근 잔상처럼 보이므로 !important로 덮는다.
+const LINE_TAB =
+  '!rounded-none bg-transparent shadow-none px-0 pb-2.5 pt-0 ' +
+  'border-b-2 border-transparent -mb-px ' +
+  'data-[active]:bg-transparent data-[active]:shadow-none ' +
+  'data-[active]:border-foreground data-[active]:text-foreground'
+
+// 칸에 기본으로 보여줄 빠진 내용 개수. 이 수를 넘으면 접어두고 펼치게 한다 —
+// 항목마다 개수가 달라서 그대로 두면 칸 높이가 제각각이 되고 격자가 어긋난다.
+const MISSING_VISIBLE = 1
 
 function RemainingDecisions({ result }: { result: AnalysisResult }) {
-  const allQuestions = result.critical_questions ?? []
-  // PM이 답해야 끝나는 질문만 보조 줄에 센다 (28번)
-  const pmCount = allQuestions.filter(q => isPmOwned(isQuestionV2(q) ? q.owner : undefined)).length
+  // 펼친 항목들. 여러 개를 동시에 열 수 있게 둔다 — 하나만 열리면
+  // 다른 칸을 열 때 먼저 것이 접히면서 화면이 튄다.
+  const [expanded, setExpanded] = useState<string[]>([])
 
   const scored = DIMENSIONS.map(d => ({
     label: d.label,
     score: result.criteria?.[d.key]?.score ?? null,
-  })).filter(x => x.score !== null) as Array<{ label: string; score: number }>
+    missing: result.criteria?.[d.key]?.missing ?? [],
+  })).filter(x => x.score !== null) as Array<{ label: string; score: number; missing: string[] }>
 
-  const weak = scored.filter(x => x.score < WEAK_THRESHOLD)
+  // 신호등과 같은 기준으로 센다. 예전에는 여기만 7점 미만이고 신호등은 8점
+  // 경계여서, 7점짜리 항목이 "보완"으로 표시되면서 개수에는 안 잡혔다
+  // ("보완할 항목 1개"인데 신호등에 보완이 2개). 화면 안에서 같은 말이
+  // 서로 다른 숫자를 가리키면 어느 쪽도 못 믿게 된다.
+  const weak = scored.filter(x => signalOf(x.score) !== '충분')
   const done = weak.length === 0
 
+  // 카드 껍데기(테두리·배경·패딩)를 벗겼다. 안쪽 칸들이 이미 각자 테두리와
+  // 배경을 갖고 있어서 바깥 테두리는 상자 안의 상자로만 보였고, p-6 때문에
+  // 아래 목업 카드들과 좌우 끝이 어긋났다.
   return (
-    <Card className="mb-4">
-      <CardContent className="p-6 space-y-5">
-        <div>
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground">디자인 착수까지</span>
-            <span className={`text-3xl font-bold ${done ? 'text-green-600' : ''}`}>
-              {done ? '보완할 항목 없음' : `보완할 항목 ${weak.length}개`}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-            {done
-              ? '여섯 항목 모두 이 문서만으로 시작할 수 있는 수준입니다. 아래 체크리스트는 참고용입니다.'
-              : '이 항목들이 지금 문서만으로는 부족하다고 판정됐습니다. 여기를 채우는 것이 곧 문서 개선입니다.'}
+    <div className="mb-4">
+        {/* 아래 "문서로 화면 만들어보기"와 같은 영역 제목이므로 크기·굵기·
+            본문까지의 여백을 같게 둔다. 개수만 굵기가 아니라 밝기로 띄운다 —
+            굵기를 쓰면 두 제목의 무게가 달라 보인다. */}
+        <p className="text-sm text-muted-foreground mb-3">
+          디자인 착수까지{' '}
+          <span className={done ? 'text-green-500' : 'text-foreground'}>
+            {done ? '보완할 항목 없음' : `보완할 항목 ${weak.length}개`}
+          </span>
+        </p>
+        {done && (
+          <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+            여섯 항목 모두 이 문서만으로 시작할 수 있는 수준입니다. 아래 체크리스트는 참고용입니다.
           </p>
-          {!done && (
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {weak.map(({ label, score }) => (
-                <Badge key={label} variant="secondary">
-                  {label} {score}점
-                </Badge>
-              ))}
-            </div>
-          )}
-          {pmCount > 0 && (
-            <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-              PM 확인 질문 {pmCount}건이 아래 탭에 있습니다 — 위 항목을 채울 때 출발점으로 쓰세요.
-            </p>
-          )}
-        </div>
+        )}
 
-        {/* 항목별 신호등 */}
-        <div>
-          {/* ⚠️ 색 경계(8점·5점)는 위 "보완할 항목"의 경계(7점)와 다르다 — 신호등은 3단계 상태,
-              위 숫자는 착수 가능선. 항목 점수가 경계 바로 옆이면 1점 차이로 색이 뒤집힌다.
-              단, 내용이 같으면 저장된 결과를 그대로 쓰므로(findSameContent)
-              사용자가 이 흔들림을 마주치는 건 문서를 고쳐서 다시 넣을 때뿐이다.
-              그래서 화면에 경고 문구를 두지 않는다 — 실제로 겪지 않는 일을
-              미리 알리면 결과 전체의 신뢰만 깎인다. 설명이 필요한 자리는
-              PM 설명 자료의 Q&A다. (변경 기록 24번) */}
-          <p className="text-xs text-muted-foreground mb-2">항목별 상태</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {scored.map(({ label, score }) => {
-              const level = signalOf(score)
-              return (
-                <div key={label} className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${SIGNAL_STYLE[level]}`} />
-                  <span className="text-xs">{label}</span>
-                  <span className="text-[10px] text-muted-foreground">{level}</span>
+        {/* 항목 여섯 개를 3열로 놓고, 빠진 내용을 각 칸 안에 담는다.
+            한 줄로 쭉 늘어놓으면 여섯 개가 서로 묻혀 어느 게 문제인지 안 보였고,
+            빠진 내용을 위에 따로 쌓으면 항목이 늘수록 상단이 계속 길어졌다.
+            3열이면 높이가 항목 수가 아니라 행 수(2행)로 묶인다. */}
+        <div className="grid grid-cols-3 gap-2">
+          {scored.map(({ label, score, missing }) => {
+            const level = signalOf(score)
+            const isOpen = expanded.includes(label)
+            const shown = isOpen ? missing : missing.slice(0, MISSING_VISIBLE)
+            const hidden = missing.length - shown.length
+            return (
+              <div
+                key={label}
+                /* 접힌 상태의 최대 높이(제목 + 2줄 + 펼치기 버튼)를 기본 높이로 잡아
+                   내용이 없는 칸까지 같은 크기로 맞춘다. 각 줄이 line-clamp-1로
+                   한 줄 고정이라 이 값을 넘길 일이 없다. */
+                className={`rounded-lg border p-3 min-h-[96px] flex flex-col ${SIGNAL_CELL[level]}`}
+              >
+                <div className="flex items-baseline gap-1.5">
+                  <span className={`w-2 h-2 rounded-full shrink-0 self-center ${SIGNAL_STYLE[level]}`} />
+                  <span className="text-sm font-medium">{label}</span>
+                  <span className={`text-xs ml-auto shrink-0 ${SIGNAL_TEXT[level]}`}>{level}</span>
                 </div>
-              )
-            })}
-          </div>
+                {shown.length > 0 && (
+                  <ul className="mt-2 space-y-0.5">
+                    {shown.map((m, i) => (
+                      <li
+                        key={i}
+                        /* 접힌 상태에서는 한 줄로 자른다. 문구 길이에 따라 칸 높이가
+                           달라지면 격자가 어긋나기 때문이다. 잘린 전문은 펼치면 나온다. */
+                        className={`text-[11px] text-muted-foreground leading-relaxed ${isOpen ? '' : 'line-clamp-1'}`}
+                      >
+                        · {m}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(hidden > 0 || isOpen) && (
+                  <button
+                    onClick={() =>
+                      setExpanded(prev =>
+                        isOpen ? prev.filter(l => l !== label) : [...prev, label]
+                      )
+                    }
+                    className="mt-auto pt-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors text-left w-fit"
+                  >
+                    {isOpen ? '접기' : `+${hidden}개 더`}
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
-      </CardContent>
-    </Card>
+    </div>
   )
 }
+
+// 개발 착수 전 확인 블록을 화면에 띄울지. 지금은 이 화면을 디자이너 관점으로만
+// 보기로 해서 꺼 둔다. 판정 로직과 데이터는 그대로 살아 있으므로 여기만 켜면 된다.
+const SHOW_DEV_READINESS = false
+
+// 사용자 요구사항 URL 입력(Beta)을 띄울지.
+// 이 기능은 2026-06-23에 main에 들어갔지만 프로덕션은 그 뒤로 배포된 적이 없어
+// (7/10에 rollback/v0.7.0으로 배포된 상태) 팀은 한 번도 본 적이 없다.
+// 쓰이지 않는 입력칸이 화면만 차지하므로 꺼 둔다. 배포 경로가 정리되면 켠다.
+const SHOW_REQUIREMENTS_INPUT = false
 
 // ── 개발 착수 전 확인 (점수 무관) ────────────────────────────────────────────
 // 판정을 "디자인 착수 가능"으로 줄인 것의 짝. 줄인 만큼 눈에 보이게 한다.
@@ -233,7 +313,7 @@ function DevReadiness({ result }: { result: AnalysisResult }) {
   const clear = DEV_READINESS.filter(d => dr[d.key]?.status === '있음').length
 
   return (
-    <Card className="mb-8">
+    <Card className="mb-8 !py-0">
       <CardContent className="p-6 space-y-3">
         <div>
           <p className="text-sm font-medium">개발 착수 전 확인</p>
@@ -292,14 +372,16 @@ function extractNotesText(notes: unknown): string {
   return ''
 }
 
-// v2 severity 뱃지 스타일
-function severityBadge(severity?: number): { variant: TagVariant; label: string } | null {
+// v2 severity — 다른 태그와 같은 Chip 형태를 쓰고 심각도만 색으로 구분한다.
+// 예전에는 shadcn Badge variant(outline/secondary/default)를 써서 확인 필요 탭의
+// 태그들과 모양이 아예 달랐다.
+function severityBadge(severity?: number): { color: string; label: string } | null {
   if (severity === undefined || severity === null) return null
-  const map: Record<number, { variant: TagVariant; label: string }> = {
-    1: { variant: 'outline', label: 'Cosmetic' },
-    2: { variant: 'outline', label: 'Minor' },
-    3: { variant: 'secondary', label: 'Major' },
-    4: { variant: 'default', label: 'Catastrophic' },
+  const map: Record<number, { color: string; label: string }> = {
+    1: { color: 'bg-slate-500/20 text-slate-300', label: 'Cosmetic' },
+    2: { color: 'bg-slate-500/20 text-slate-300', label: 'Minor' },
+    3: { color: 'bg-amber-500/20 text-amber-300', label: 'Major' },
+    4: { color: 'bg-red-500/20 text-red-300', label: 'Catastrophic' },
   }
   return map[severity] ?? null
 }
@@ -350,14 +432,9 @@ export default function ResultScreen({
   requirementsUrl,
   onRequirementsUrlChange,
   reusedFrom,
+  analyzedAt,
 }: ResultScreenProps) {
-  const [showScore, setShowScore] = useState(false)
   const [showMockupModal, setShowMockupModal] = useState(false)
-
-  // 화면에 쓰는 점수는 기본 점수다. 가점은 등급 판정에 안 들어가므로(18번)
-  // 합쳐서 보여주면 판정과 무관한 값이 숫자만 흔들게 된다.
-  const baseScore = result.base_score ?? result.sufficiency_score
-  const bonusScore = result.bonus_score ?? 0
   const [isRegenerate, setIsRegenerate] = useState(false)
   const [mockupProgress, setMockupProgress] = useState(0)
 
@@ -379,6 +456,11 @@ export default function ResultScreen({
 
   const devItems: DevItem[] = result.missing_for_developers ?? []
 
+  // 문서에 이미 있어 디자인에 바로 쓸 수 있는 재료 (예전의 "가점 항목")
+  const earnedMaterials = result.bonus_signals
+    ? bonusBreakdown(result.bonus_signals).filter(b => b.earned)
+    : []
+
   // v2의 notes는 객체일 수 있음 — unknown으로 받고 렌더링 시 분기
   const criteriaEntries = Object.entries(result.criteria) as Array<
     [string, { score: number | null; notes?: unknown; evidence?: string; missing?: string[]; applied_principle?: string }]
@@ -399,26 +481,27 @@ export default function ResultScreen({
           </svg>
         </button>
         <span className="font-bold text-lg">Preflight</span>
+        {/* 어떤 문서를 언제 채점한 결과인지는 본문 정보가 아니라 이 화면 전체의
+            식별자다. 본문 맨 위에 두면 첫 카드와 붙어 어디에 속한 줄인지
+            애매해지므로 GNB로 올린다. */}
+        <span className="ml-auto flex items-center gap-2 min-w-0">
+          <span className="text-sm text-muted-foreground truncate">{fileName}</span>
+          {(analyzedAt ?? reusedFrom) && (
+            <>
+              <span className="text-muted-foreground shrink-0">·</span>
+              <span className="text-sm text-muted-foreground shrink-0">
+                분석: {formatAbsoluteDateTime((analyzedAt ?? reusedFrom) as number)}
+              </span>
+            </>
+          )}
+        </span>
       </div>
 
       <div className="overflow-x-auto">
         <div className="max-w-[900px] mx-auto px-6 py-8 min-w-[500px]">
-          {/* 파일 정보 */}
-          <div className="flex items-center gap-2 mb-6">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-              <path d="M14 2v6h6" />
-            </svg>
-            <span className="text-sm text-muted-foreground">{fileName}</span>
-            <span className="text-muted-foreground">·</span>
-            <span className="text-sm text-muted-foreground">
-              {reusedFrom ? `${formatHistoryDate(reusedFrom)} 분석` : '방금 분석됨'}
-            </span>
-          </div>
-
           {/* 내용이 같아 다시 채점하지 않은 경우 — 왜 기다리지 않았는지 알려준다 */}
           {reusedFrom && (
-            <div className="mb-6 rounded-lg border border-border bg-muted/40 px-4 py-3">
+            <div className="mb-6 rounded-lg border border-border bg-card px-4 py-3">
               <p className="text-sm">
                 <strong>이전에 분석한 문서와 내용이 같아 그때 결과를 그대로 보여드립니다.</strong>
               </p>
@@ -434,46 +517,17 @@ export default function ResultScreen({
             "질문을 없앤다"가 목표가 되면 그게 곧 문서 개선이다. (변경 기록 5번) */}
         <RemainingDecisions result={result} />
 
-        {/* 점수 + 사용자 요구사항 + 목업 카드 */}
-        <div className="grid grid-cols-3 gap-2 mb-8">
-          {/* 점수 상세 — 접어서 보조 정보로 (2행 span) */}
-          <Card className="row-span-2 max-h-[200px] overflow-hidden">
-            <CardContent className="p-3 h-full flex flex-col">
-              <button
-                onClick={() => setShowScore(v => !v)}
-                className="flex items-center justify-between w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <span>점수 상세</span>
-                <span className="text-[10px]">{showScore ? '접기 ▲' : '펼치기 ▼'}</span>
-              </button>
-              {showScore ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <ScoreGauge score={baseScore} baseScore={baseScore} />
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center gap-1">
-                  <span className="text-2xl font-bold">{baseScore}</span>
-                  <span
-                    className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                    style={{
-                      backgroundColor: verdictOf(baseScore).color + '22',
-                      color: verdictOf(baseScore).color,
-                    }}
-                  >
-                    {verdictOf(baseScore).label}
-                  </span>
-                  {/* 가점은 더해서 보여주지 않는다. 판정에 안 쓰는 값인데
-                      합치면 화면 숫자만 흔든다 — 같은 문서 9회에서 가점이
-                      4회만 붙어 총점이 ±3 널뛰었다. (변경 기록 24번) */}
-                  {bonusScore > 0 && (
-                    <span className="text-[10px] text-muted-foreground">가점 +{bonusScore} 별도</span>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        {/* 목업 영역
+            점수 카드는 없앴다. 펼치기/접기가 정보를 하나도 더 주지 않았고,
+            "무엇이 부족한가"는 위 헤드라인 카드가 항목별로 답한다. (변경 기록 33번)
 
+            위 6칸과 여기 2칸이 같은 간격·같은 배경이라 한 덩어리로 읽혔다.
+            성격이 다른 영역이므로(위=문서 진단, 여기=산출물 생성) 제목을 붙이고
+            칸 사이를 위아래 여백(16px)만큼 벌려 무리를 나눈다. */}
+        <p className="text-sm text-muted-foreground mb-3">문서로 화면 만들어보기</p>
+        <div className="grid grid-cols-2 gap-4 mb-8">
           {/* 사용자 요구사항 - 2열 span */}
+          {SHOW_REQUIREMENTS_INPUT && (
           <Card className="col-span-2 !py-0">
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-1.5">
@@ -500,14 +554,15 @@ export default function ResultScreen({
               />
             </CardContent>
           </Card>
+          )}
 
           {/* Lo-Fi 카드 */}
-          <Card className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
+          <Card className="max-h-[100px] overflow-hidden !py-0 bg-neutral-950">
             <CardContent className="p-3 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">Lo-Fi</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-border bg-muted text-muted-foreground">
+                  <span className="text-[10px] text-muted-foreground">
                     와이어프레임
                   </span>
                 </div>
@@ -520,7 +575,7 @@ export default function ResultScreen({
               <div className="flex gap-1.5 shrink-0">
                 {mockupGenerating === 'lowfi' ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled>
                       <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
                       {mockupProgress >= 92 ? `마무리 중... ${Math.round(mockupProgress)}%` : `${Math.round(mockupProgress)}%`}
                     </Button>
@@ -530,7 +585,7 @@ export default function ResultScreen({
                   </>
                 ) : hasMockupLowFi ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
                       보기
                     </Button>
                     <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', true)} disabled={mockupGenerating !== null}>
@@ -538,7 +593,7 @@ export default function ResultScreen({
                     </Button>
                   </>
                 ) : (
-                  <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
+                  <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('lowfi', false)} disabled={mockupGenerating !== null}>
                     생성하기
                   </Button>
                 )}
@@ -547,12 +602,12 @@ export default function ResultScreen({
           </Card>
 
           {/* Hi-Fi 카드 */}
-          <Card className={`max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
+          <Card className="max-h-[100px] overflow-hidden !py-0 bg-neutral-950">
             <CardContent className="p-3 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">Hi-Fi</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 bg-primary/10 text-primary">
+                  <span className="text-[10px] text-primary">
                     인터랙티브
                   </span>
                 </div>
@@ -565,7 +620,7 @@ export default function ResultScreen({
               <div className="flex gap-1.5 shrink-0">
                 {mockupGenerating === 'hifi' ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" disabled>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled>
                       <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
                       {mockupProgress >= 92 ? `마무리 중... ${Math.round(mockupProgress)}%` : `${Math.round(mockupProgress)}%`}
                     </Button>
@@ -575,7 +630,7 @@ export default function ResultScreen({
                   </>
                 ) : hasMockupHiFi ? (
                   <>
-                    <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
                       보기
                     </Button>
                     <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', true)} disabled={mockupGenerating !== null}>
@@ -583,7 +638,7 @@ export default function ResultScreen({
                     </Button>
                   </>
                 ) : (
-                  <Button variant="default" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
+                  <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => onGenerateMockup('hifi', false)} disabled={mockupGenerating !== null}>
                     생성하기
                   </Button>
                 )}
@@ -592,25 +647,31 @@ export default function ResultScreen({
           </Card>
         </div>
 
-        {/* 개발 착수 전 확인 — 판정 라벨 축소의 짝 (점수 무관) */}
-        <DevReadiness result={result} />
+        {/* 개발 착수 전 확인 — 지금은 디자이너 관점으로만 보기 위해 감춰둔다.
+            로직과 데이터(DEV_READINESS)는 그대로 두므로 이 값만 켜면 돌아온다. */}
+        {SHOW_DEV_READINESS && <DevReadiness result={result} />}
 
-        {/* 탭 */}
-        <Tabs defaultValue="recommendations">
-          <TabsList className="mb-6 w-full h-auto flex-wrap gap-1">
-            <TabsTrigger value="recommendations" className="flex-1 min-w-fit">UX 제안</TabsTrigger>
-            <TabsTrigger value="summary" className="flex-1 min-w-fit">요약</TabsTrigger>
-            <TabsTrigger value="missing" className="flex-1 min-w-fit">디자이너 체크리스트 ({result.missing_for_designers.length})</TabsTrigger>
-            <TabsTrigger value="dev" className="flex-1 min-w-fit">개발자 체크리스트 ({devItems.length})</TabsTrigger>
-            <TabsTrigger value="questions" className="flex-1 min-w-fit">PM 확인 필요 ({result.critical_questions.length})</TabsTrigger>
+        {/* 탭 — 요약이 맨 앞, 그다음이 확인 필요.
+            "확인 필요"에는 PM 몫과 담당자 몫이 섞여 있다. 카드마다 담당 배지가
+            붙으므로 탭 이름에서 PM을 빼고 개수는 전체를 센다 — 예전에는 탭이
+            "PM 확인 필요 (7)"인데 그중 1건이 담당자 몫이라 숫자가 어긋나 보였다. */}
+        {/* 라인탭 — 공용 Tabs는 알약형(bg-muted 컨테이너 + 활성 배경)이라
+            진입 화면과 공유한다. 여기서만 배경을 걷고 밑줄로 바꾼다. */}
+        <Tabs defaultValue="summary">
+          <TabsList className={LINE_TABS_LIST}>
+            <TabsTrigger value="summary" className={LINE_TAB}>요약</TabsTrigger>
+            <TabsTrigger value="questions" className={LINE_TAB}>확인 필요 ({result.critical_questions.length})</TabsTrigger>
+            <TabsTrigger value="recommendations" className={LINE_TAB}>UX 제안</TabsTrigger>
+            <TabsTrigger value="missing" className={LINE_TAB}>디자이너 체크리스트 ({result.missing_for_designers.length})</TabsTrigger>
+            <TabsTrigger value="dev" className={LINE_TAB}>개발자 체크리스트 ({devItems.length})</TabsTrigger>
           </TabsList>
 
           {/* 요약 탭 */}
           <TabsContent value="summary" className="space-y-6">
             {/* 점수에 영향 없는 안내 */}
             {(result.advisories ?? []).length > 0 && (
-              <Card>
-                <CardContent className="py-3 px-4 space-y-1">
+              <Card className="!py-0">
+                <CardContent className="p-4 space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">참고 — 점수에는 반영되지 않습니다</p>
                   {(result.advisories ?? []).map((a, i) => (
                     <p key={i} className="text-xs text-muted-foreground leading-relaxed">· {a}</p>
@@ -619,30 +680,22 @@ export default function ResultScreen({
               </Card>
             )}
 
-            {/* 가점 내역 — 화면 목록은 의무가 아니라 보너스 */}
-            {result.bonus_signals && (
+            {/* 예전에는 "가점 +5" 형태였다. 점수를 화면에서 뺀 지금은 그 숫자가
+                가리킬 곳이 없어서, 원래 의미인 "디자인에 바로 쓸 수 있는 재료가
+                문서에 있다"로 바꿔 적는다. 못 받은 항목은 아예 그리지 않는다 —
+                없는 것을 나열하면 "이게 감점인가"를 다시 설명해야 한다. */}
+            {earnedMaterials.length > 0 && (
               <div>
-                <p className="text-sm text-muted-foreground mb-1.5">
-                  가점 항목 — 없어도 감점하지 않습니다. 등급 판정에도 쓰지 않습니다
-                </p>
-                {/* "우리 판정이 흔들린다"가 아니라 "이렇게 하면 잡힌다"로 쓴다.
-                    가점 인식은 문서 표현에 민감한데(9회 중 4회만 인식된 사례),
-                    사용자에게 필요한 건 그 사실이 아니라 다음 행동이다. */}
-                <p className="text-xs text-muted-foreground mb-3">
-                  해당하는데 안 잡혔다면 문서에 더 분명히 적어보세요.
+                <p className="text-sm text-muted-foreground mb-3">
+                  문서에 이미 있어 바로 쓸 수 있는 것
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {bonusBreakdown(result.bonus_signals).map(b => (
+                  {earnedMaterials.map(b => (
                     <span
                       key={b.label}
-                      className={[
-                        'text-xs px-3 py-1.5 rounded-lg border',
-                        b.earned
-                          ? 'bg-violet-100 border-violet-300 text-violet-700'
-                          : 'bg-transparent border-neutral-200 text-neutral-400',
-                      ].join(' ')}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-violet-500/20 text-violet-300"
                     >
-                      {b.earned ? '✓' : '—'} {b.label} +{b.points}
+                      ✓ {b.label}
                     </span>
                   ))}
                 </div>
@@ -653,9 +706,11 @@ export default function ResultScreen({
               <p className="text-sm text-muted-foreground mb-4">PRD에서 명확하게 정의된 항목들</p>
               <div className="space-y-3">
                 {result.validated.map((item, i) => (
-                  <Card key={i}>
-                    <CardContent className="flex items-start gap-3 py-3 px-4">
-                      <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Card key={i} className="!py-0">
+                    <CardContent className="flex items-start gap-3 p-4">
+                      {/* 아이콘(20px)과 text-sm의 줄높이(20px)가 같으므로
+                          mt-0.5를 주면 오히려 2px 내려가 어긋난다 */}
+                      <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3">
                           <path d="M5 13l4 4L19 7" />
                         </svg>
@@ -684,8 +739,8 @@ export default function ResultScreen({
                   } : null
 
                   return (
-                    <Card key={key}>
-                      <CardContent className="py-4 px-4 space-y-2">
+                    <Card key={key} className="!py-0">
+                      <CardContent className="p-4 space-y-2">
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium">{criteriaLabel(key)}</span>
                           <span className={`font-bold ${text}`}>{val.score}/10</span>
@@ -735,12 +790,12 @@ export default function ResultScreen({
               }
               const sev = severityBadge(v2Item.severity)
               return (
-                <Card key={i} className="border-amber-800/40">
-                  <CardContent className="pt-5 px-5 pb-5">
+                <Card key={i} className="border-amber-800/40 !py-0">
+                  <CardContent className="p-5">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-amber-400 border-amber-400/30">{item.screen}</Badge>
+                      <Chip color="bg-amber-500/20 text-amber-300">{item.screen}</Chip>
                       <OwnerBadge owner={item.owner} />
-                      {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
+                      {sev && <Chip color={sev.color}>{sev.label}</Chip>}
                       {v2Item.principle && (
                         <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
                       )}
@@ -780,13 +835,13 @@ export default function ResultScreen({
               }
               const sev = severityBadge(v2Item.severity)
               return (
-                <Card key={i} className="border-blue-800/40">
-                  <CardContent className="pt-5 px-5 pb-5">
+                <Card key={i} className="border-blue-800/40 !py-0">
+                  <CardContent className="p-5">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
-                      <Badge variant="secondary" className="text-blue-400">{item.module}</Badge>
+                      <Chip color="bg-blue-500/20 text-blue-300">{item.module}</Chip>
                       <AreaBadge area={item.area} />
                       <OwnerBadge owner={item.owner} />
-                      {sev && <Badge variant={sev.variant}>{sev.label}</Badge>}
+                      {sev && <Chip color={sev.color}>{sev.label}</Chip>}
                     </div>
                     <p className="text-sm mb-3">
                       <span className="text-blue-400 font-medium">문제: </span>
@@ -818,16 +873,16 @@ export default function ResultScreen({
               // v1: string, v2: object
               if (isQuestionV2(q)) {
                 const tagText = stripBrackets(q.tag)
-                const variant = TAG_VARIANTS[tagText] ?? 'secondary'
                 const pm = isPmOwned(q.owner)
                 return (
-                  <Card key={i} className={pm ? 'border-destructive/20' : 'border-border bg-muted/30'}>
-                    <CardContent className="flex items-start gap-4 py-4 px-5">
+                  <Card key={i} className={`!py-0 ${pm ? 'border-destructive/20' : 'border-border'}`}>
+                    <CardContent className="flex items-start gap-4 p-5">
                       <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${pm ? 'text-destructive' : 'text-muted-foreground'}`}>Q{i + 1}</span>
                       <div className="flex flex-col gap-2 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant={variant} className="w-fit">{tagText}</Badge>
+                          {/* 누가 정할 일인지 먼저, 어느 영역인지 그다음 */}
                           <OwnerBadge owner={q.owner ?? 'PM'} />
+                          <ContextTag tag={tagText} />
                           {q.dimension && (
                             <span className="text-[10px] text-muted-foreground">{criteriaLabel(q.dimension)}</span>
                           )}
@@ -840,14 +895,23 @@ export default function ResultScreen({
                         <span className="text-sm">{q.question}</span>
                         {q.options && q.options.length > 0 && (
                           <div className="flex flex-col gap-1 mt-1">
-                            {q.options.map((opt, idx) => (
-                              <div key={idx} className="text-xs bg-muted rounded-md px-3 py-1.5 border border-border">
-                                <span className="font-mono text-muted-foreground mr-2">
-                                  {String.fromCharCode(65 + idx)}.
-                                </span>
-                                {opt}
-                              </div>
-                            ))}
+                            {q.options.map((opt, idx) => {
+                              // 선택지가 하나뿐이면(format: open → ["논의 필요"])
+                              // "A."를 붙일 이유가 없다. 고를 게 없는데 고르라는 표시가 된다.
+                              // multiple의 마지막에 오는 "논의 필요"는 접두를 유지해야 하므로
+                              // 문자열이 아니라 개수·format으로 판단한다.
+                              const single = q.options!.length === 1 || q.format === 'open'
+                              return (
+                                <div key={idx} className="text-xs bg-muted rounded-md px-3 py-1.5 border border-border">
+                                  {!single && (
+                                    <span className="font-mono text-muted-foreground mr-2">
+                                      {String.fromCharCode(65 + idx)}.
+                                    </span>
+                                  )}
+                                  {opt}
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                         {q.impact && (
@@ -866,13 +930,13 @@ export default function ResultScreen({
                 )
               }
               // v1 fallback — 문자열 기반
-              const { tag, variant, rest } = parseTagFromString(q as string)
+              const { tag, rest } = parseTagFromString(q as string)
               return (
-                <Card key={i} className="border-destructive/20">
-                  <CardContent className="flex items-start gap-4 py-4 px-5">
+                <Card key={i} className="border-destructive/20 !py-0">
+                  <CardContent className="flex items-start gap-4 p-5">
                     <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
                     <div className="flex flex-col gap-1.5">
-                      {tag && <Badge variant={variant} className="w-fit">{tag}</Badge>}
+                      {tag && <ContextTag tag={tag} />}
                       <span className="text-sm">{rest}</span>
                     </div>
                   </CardContent>
@@ -890,15 +954,15 @@ export default function ResultScreen({
               const n = normalizeRec(rec)
               const hasV2Meta = n.principle || n.perspective || n.effort || n.expected_impact
               return (
-                <Card key={i}>
-                  <CardContent className="flex items-start gap-4 py-4 px-5">
+                <Card key={i} className="!py-0">
+                  <CardContent className="flex items-start gap-4 p-5">
                     <span className="flex-shrink-0 mt-0.5">💡</span>
                     <div className="flex flex-col gap-2 flex-1">
                       <span className="text-sm">{n.text}</span>
                       {hasV2Meta && (
                         <div className="flex items-center gap-2 flex-wrap">
-                          {n.principle && <Badge variant="outline" className="text-[10px]">{n.principle}</Badge>}
-                          {n.perspective && <Badge variant="secondary" className="text-[10px]">{n.perspective}</Badge>}
+                          {n.principle && <Chip color="bg-slate-500/20 text-slate-300">{n.principle}</Chip>}
+                          {n.perspective && <Chip color="bg-violet-500/20 text-violet-300">{n.perspective}</Chip>}
                           {n.effort && <span className="text-[10px] text-muted-foreground">효과 난이도: {n.effort}</span>}
                         </div>
                       )}

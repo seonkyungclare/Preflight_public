@@ -140,6 +140,20 @@ export function formatHistoryDate(timestamp: number): string {
   return `${yyyy}-${mo}-${dd} ${hh}:${mm}`
 }
 
+/**
+ * 절대 시각 표기 — "2026년 8월 5일 16:20".
+ *
+ * formatHistoryDate는 "오늘/어제"로 적는다. 기록 목록에서는 그게 읽기 편하지만,
+ * 결과 화면 상단처럼 "이 채점이 언제 것인가"를 밝히는 자리에서는 여는 날짜에 따라
+ * 같은 결과가 다른 문구로 보여서 시점 정보 구실을 못 한다. 그래서 따로 둔다.
+ */
+export function formatAbsoluteDateTime(timestamp: number): string {
+  const d = new Date(timestamp)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${hh}:${mm}`
+}
+
 export function generateId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID()
