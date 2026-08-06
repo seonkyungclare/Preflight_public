@@ -379,13 +379,19 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
                 )}
 
                 {atlassianConnected && (
-                  <input
-                    type="url"
-                    value={confluenceUrl}
-                    onChange={(e) => { setConfluenceUrl(e.target.value); setLocalError('') }}
-                    placeholder="https://wiki.team.musinsa.com/wiki/spaces/.../pages/123456789/..."
-                    className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground"
-                  />
+                  <div className="flex flex-col gap-1.5">
+                    <input
+                      type="url"
+                      value={confluenceUrl}
+                      onChange={(e) => { setConfluenceUrl(e.target.value); setLocalError('') }}
+                      placeholder="https://wiki.team.musinsa.com/wiki/spaces/.../pages/123456789/..."
+                      className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      페이지를 연 뒤 <span className="text-foreground">브라우저 주소창의 전체 URL</span>을 복사해 붙여넣으세요.
+                      공유(Share) 버튼의 단축 링크(/wiki/x/…)는 인식하지 못할 수 있습니다.
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
