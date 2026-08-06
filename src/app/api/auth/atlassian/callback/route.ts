@@ -33,7 +33,11 @@ export async function GET(req: Request): Promise<Response> {
   try {
     const callbackUri = buildCallbackUri(req)
     const tokenRes = await exchangeCodeForToken(code, callbackUri)
+    // getAccessibleResource는 접근 가능한 사이트 중 첫 번째만 고른다.
+    // 계정이 여러 사이트에 붙어 있으면 엉뚱한 사이트가 잡혀도 화면에는
+    // "페이지에 접근할 수 없습니다"로만 보이므로, 어떤 사이트가 선택됐는지 남긴다.
     const resource = await getAccessibleResource(tokenRes.access_token)
+    console.log(`[atlassian callback] 선택된 사이트: ${resource?.url ?? '없음'}`)
 
     if (!resource) {
       return Response.redirect(`${url.origin}/?atlassian_error=no_resource`, 302)

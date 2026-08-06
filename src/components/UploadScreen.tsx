@@ -23,6 +23,18 @@ interface UploadScreenProps {
 
 const MAX_FILES = 3
 
+// 콜백/로그인 라우트가 ?atlassian_error=<코드> 로 되돌려보내는 값들.
+// 대상 사용자가 PM·디자이너라 영문 식별자를 그대로 노출하지 않는다.
+const ATLASSIAN_ERROR_MESSAGES: Record<string, string> = {
+  not_configured:
+    '이 환경에는 Atlassian 연동 설정이 없습니다. .env.local에 ATLASSIAN_CLIENT_ID / ATLASSIAN_CLIENT_SECRET / ATLASSIAN_SESSION_SECRET을 넣고 서버를 다시 시작하세요. (파일 업로드 탭은 설정 없이도 쓸 수 있습니다)',
+  invalid_callback: '연결 절차가 중간에 끊겼습니다. 다시 시도해 주세요.',
+  state_mismatch: '연결 확인 시간이 지났거나 다른 탭에서 다시 시도했습니다. 처음부터 다시 연결해 주세요.',
+  no_resource: '이 계정에서 접근할 수 있는 Confluence 사이트를 찾지 못했습니다. 위키 접근 권한이 있는 계정인지 확인해 주세요.',
+  token_exchange_failed: 'Atlassian 인증을 마치지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  access_denied: '권한 요청이 거부되었습니다. 동의 화면에서 "수락"을 눌러야 연결됩니다.',
+}
+
 export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: UploadScreenProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -32,6 +44,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   const [showBuildInfo, setShowBuildInfo] = useState(false)
   const [confluenceUrl, setConfluenceUrl] = useState('')
   const [atlassianConnected, setAtlassianConnected] = useState<boolean | null>(null)
+  const [atlassianConfigured, setAtlassianConfigured] = useState(true)
   const [atlassianCloudUrl, setAtlassianCloudUrl] = useState<string | undefined>(undefined)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -69,9 +82,10 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
     let cancelled = false
     fetch('/api/auth/atlassian/status')
       .then(r => r.json())
-      .then((d: { connected: boolean; cloudUrl?: string }) => {
+      .then((d: { connected: boolean; configured?: boolean; cloudUrl?: string }) => {
         if (!cancelled) {
           setAtlassianConnected(d.connected)
+          setAtlassianConfigured(d.configured !== false)
           setAtlassianCloudUrl(d.cloudUrl)
         }
       })
@@ -80,7 +94,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
     const url = new URL(window.location.href)
     const err = url.searchParams.get('atlassian_error')
     if (err) {
-      setLocalError(`Atlassian 연결 실패: ${err}`)
+      setLocalError(ATLASSIAN_ERROR_MESSAGES[err] ?? `Atlassian 연결에 실패했습니다. (${err})`)
       url.searchParams.delete('atlassian_error')
       window.history.replaceState(null, '', url.toString())
     } else if (url.searchParams.get('atlassian_connected')) {
@@ -323,8 +337,8 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
 
           {/* Confluence URL 탭 */}
           <TabsContent value="confluence" className="space-y-4">
-            <Card>
-              <CardContent className="flex flex-col gap-4 p-6">
+            <Card className="py-6">
+              <CardContent className="flex flex-col gap-4 px-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-primary shrink-0">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -335,9 +349,13 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
                   <div className="flex-1">
                     <p className="font-medium text-sm">Confluence 페이지 URL</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {atlassianConnected
-                        ? (atlassianCloudUrl ?? 'Atlassian 연결됨')
-                        : '먼저 Atlassian 계정 연결이 필요합니다'}
+                      {atlassianConnected === null
+                        ? '연결 상태 확인 중…'
+                        : atlassianConnected
+                          ? (atlassianCloudUrl ?? 'Atlassian 연결됨')
+                          : atlassianConfigured
+                            ? '먼저 Atlassian 계정 연결이 필요합니다'
+                            : '이 환경에는 Atlassian 연동 설정이 없습니다'}
                     </p>
                   </div>
                   {atlassianConnected && (
