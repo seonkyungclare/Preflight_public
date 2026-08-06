@@ -11,13 +11,7 @@ import {
   refreshAccessToken,
   type SessionData,
 } from '@/lib/atlassian-auth'
-
-interface PageResponse {
-  id: string
-  title: string
-  body?: { storage?: { value: string }; atlas_doc_format?: { value: string } }
-  _links?: { tinyui?: string; webui?: string; base?: string }
-}
+import { resolveConfluencePage, type PageResolution } from '@/lib/confluence-page'
 
 function hostOf(url: string | undefined): string | null {
   if (!url) return null
@@ -157,10 +151,56 @@ async function ensureValidAccessToken(session: SessionData): Promise<SessionData
     refreshToken: refreshed.refresh_token ?? session.refreshToken,
     cloudId: session.cloudId,
     cloudUrl: session.cloudUrl,
+    sites: session.sites,
     expiresAt: Date.now() + refreshed.expires_in * 1000,
   }
   setSessionCookie(newSession)
   return newSession
+}
+
+/**
+ * 사이트 판별 실패를 사용자에게 보일 문구로 옮긴다.
+ * 이 응답의 error는 화면이 그대로 출력하므로(UploadScreen의
+ * ATLASSIAN_ERROR_MESSAGES 맵은 OAuth 콜백의 ?atlassian_error= 코드 전용이라
+ * 여기엔 관여하지 않는다) 한국어 완성 문장으로 만든다.
+ */
+function describeResolutionFailure(
+  r: Exclude<PageResolution, { kind: 'ok' }>
+): { error: string; status: number } {
+  switch (r.kind) {
+    case 'expired':
+      return { error: 'Atlassian 세션이 만료되었습니다. 다시 연결해주세요.', status: 401 }
+    case 'site-mismatch':
+      return {
+        error:
+          `연결된 계정(${r.connectedHosts.join(', ')})과 입력한 위키(${r.inputHost})가 다릅니다. ` +
+          `해당 위키에 접근할 수 있는 계정으로 다시 연결하거나, 연결된 사이트의 페이지 URL을 넣어주세요.`,
+        status: 403,
+      }
+    case 'ambiguous':
+      return {
+        error:
+          `이 페이지 번호가 연결된 사이트 여러 곳(${r.hosts.join(', ')})에 모두 있어 ` +
+          `어느 문서인지 가리지 못했습니다. 엉뚱한 문서를 채점하지 않도록 중단했습니다. ` +
+          `페이지 제목이 포함된 전체 URL을 붙여넣어 주세요.`,
+        status: 409,
+      }
+    case 'forbidden':
+      return { error: '페이지에 접근할 수 없습니다. 권한이 있는지 확인하세요.', status: 403 }
+    case 'unresolved':
+      // 권한 문제인지 계정이 다른 건지 서버가 가릴 수 없는 경우.
+      // 한쪽으로 단정하면 둘 중 하나는 반드시 오진이라 둘 다 적는다.
+      return {
+        error:
+          `입력한 위키(${r.inputHost})에서 이 페이지를 읽지 못했습니다. ` +
+          `두 가지 가능성이 있습니다 — ① 이 페이지에 대한 접근 권한이 없거나, ` +
+          `② 연결된 계정(${r.connectedHosts.join(', ')})이 이 위키의 계정이 아닙니다. ` +
+          `브라우저에서 그 페이지가 본인에게 보이는지 먼저 확인하고, 보인다면 다른 계정으로 다시 연결해 주세요.`,
+        status: 403,
+      }
+    case 'api-error':
+      return { error: `Confluence API 응답 오류 (${r.status})`, status: 502 }
+  }
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -201,39 +241,19 @@ export async function POST(req: Request): Promise<Response> {
   const { pageId, tinyCode } = parsed
 
   try {
-    const apiUrl = `https://api.atlassian.com/ex/confluence/${session.cloudId}/wiki/api/v2/pages/${pageId}?body-format=storage`
-    const res = await fetch(apiUrl, {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        Accept: 'application/json',
-      },
-    })
+    const resolved = await resolveConfluencePage(url, pageId, session)
 
-    if (!res.ok) {
-      const errBody = await res.text()
-      console.error(`[confluence] ${res.status}: ${errBody.slice(0, 300)}`)
-      if (res.status === 401) {
-        return Response.json(
-          { error: 'Atlassian 세션이 만료되었습니다. 다시 연결해주세요.' },
-          { status: 401 }
-        )
-      }
-      if (res.status === 403 || res.status === 404) {
-        return Response.json(
-          { error: '페이지에 접근할 수 없습니다. 권한이 있는지 확인하세요.' },
-          { status: 403 }
-        )
-      }
-      return Response.json(
-        { error: `Confluence API 응답 오류 (${res.status})` },
-        { status: 502 }
-      )
+    if (resolved.kind !== 'ok') {
+      const { error, status } = describeResolutionFailure(resolved)
+      return Response.json({ error }, { status })
     }
 
-    const data = (await res.json()) as PageResponse
+    const data = resolved.page
 
     // 단축 링크로 들어온 경우, 로컬 디코딩 결과가 맞는지 응답의 tinyui와 대조한다.
     // 알고리즘이 어긋나 엉뚱한 페이지를 가져오는 상황을 조용히 넘기지 않기 위함.
+    // 사이트 판별(resolveConfluencePage)과 별개 검사다 — 사이트가 맞아도
+    // 페이지 번호를 잘못 디코딩했을 수 있다.
     if (tinyCode) {
       const returned = data._links?.tinyui?.match(/\/x\/([A-Za-z0-9_-]+)/)?.[1]
       if (returned && returned !== tinyCode) {

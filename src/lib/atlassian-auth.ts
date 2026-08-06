@@ -8,11 +8,20 @@ const SCOPES = ['read:page:confluence', 'read:space:confluence', 'offline_access
 
 export const ATLASSIAN_SESSION_MAX_AGE = 60 * 60 * 24 * 7 // 7일
 
+/** 토큰 하나로 접근 가능한 Atlassian 사이트 한 곳. */
+export interface AtlassianSite {
+  id: string
+  url: string
+}
+
 export interface SessionData {
   accessToken: string
   refreshToken?: string
+  /** 기본 사이트. sites가 없는 옛 쿠키와의 호환을 위해 계속 둔다. */
   cloudId?: string
   cloudUrl?: string
+  /** 접근 가능한 사이트 전체. 옛 쿠키에는 없으므로 optional. */
+  sites?: AtlassianSite[]
   expiresAt: number
 }
 
@@ -20,6 +29,7 @@ interface SessionCore {
   accessToken: string
   cloudId?: string
   cloudUrl?: string
+  sites?: AtlassianSite[]
   expiresAt: number
 }
 
@@ -149,27 +159,123 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   }
 }
 
-export async function getAccessibleResource(accessToken: string): Promise<{
-  id: string
-  url: string
-  name: string
-} | null> {
+/**
+ * 세션 쿠키에 담을 사이트 수 상한.
+ * 쿠키 한 개의 한계는 4KB인데 access token(JWT)만으로 이미 1KB 안팎을 쓴다.
+ * 넘치면 브라우저가 쿠키를 통째로 버려 연결 자체가 깨지므로 개수를 자른다.
+ */
+const MAX_SESSION_SITES = 10
+
+/**
+ * 토큰으로 접근 가능한 사이트를 **전부** 돌려준다.
+ *
+ * 예전에는 여기서 arr[0]만 골라 세션에 박았는데, 계정이 여러 사이트에
+ * 붙어 있으면(개인 *.atlassian.net, 다른 조직, 샌드박스) 엉뚱한 사이트가
+ * 잡혀도 화면에는 "페이지에 접근할 수 없습니다"로만 보였다.
+ * 고르는 일은 실제로 페이지를 읽는 쪽(fetch-confluence)에 맡긴다.
+ */
+export async function getAccessibleResources(accessToken: string): Promise<AtlassianSite[]> {
   const res = await fetch('https://api.atlassian.com/oauth/token/accessible-resources', {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
   })
-  if (!res.ok) return null
-  const arr = (await res.json()) as Array<{ id: string; url: string; name: string }>
-  return arr[0] ?? null
+  if (!res.ok) return []
+  const arr: unknown = await res.json()
+  if (!Array.isArray(arr)) return []
+  return arr
+    .filter(
+      (r): r is { id: string; url: string } =>
+        typeof r?.id === 'string' && typeof r?.url === 'string'
+    )
+    .map((r) => ({ id: r.id, url: r.url }))
+    .slice(0, MAX_SESSION_SITES)
 }
 
-export function encodeSessionCore(session: SessionData): string {
-  const core: SessionCore = {
-    accessToken: session.accessToken,
-    cloudId: session.cloudId,
-    cloudUrl: session.cloudUrl,
-    expiresAt: session.expiresAt,
+/** URL에서 호스트만 소문자로 뽑는다. 파싱 실패하면 null. */
+export function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host.toLowerCase()
+  } catch {
+    return null
   }
-  return encrypt(JSON.stringify(core))
+}
+
+/**
+ * 세션이 아는 사이트 목록. 옛 쿠키(sites 없음)는 기본 사이트 하나로 취급해
+ * 기존과 똑같이 동작하게 한다.
+ */
+export function sessionSites(session: SessionData): AtlassianSite[] {
+  if (session.sites?.length) return session.sites
+  if (session.cloudId) return [{ id: session.cloudId, url: session.cloudUrl ?? '' }]
+  return []
+}
+
+/**
+ * 붙여넣은 URL이 이 사이트의 것인지 호스트로 판단한다.
+ * 호스트를 비교하는 곳은 여기 하나로 모은다 — 같은 판단이 여러 군데
+ * 따로 구현되면 한쪽만 고쳐졌을 때 조용히 어긋난다.
+ *
+ * ⚠️ **참(true)일 때만 믿을 수 있다.** 거짓이라고 해서 남의 호스트라는 뜻이
+ * 아니다. 사내 위키(wiki.team.musinsa.com)처럼 커스텀 도메인을 쓰는
+ * Atlassian Cloud는 accessible-resources가 *.atlassian.net 형태를 돌려주므로
+ * 정상적인 사내 URL도 여기서 거짓이 된다.
+ *
+ * 따라서 **이 함수만으로 "토큰을 보내도 되는 호스트인지"를 판정하면 안 된다.**
+ * 그렇게 쓰면 사내 위키가 통째로 차단된다. 그런 허용목록이 필요하면
+ * 별도 기준(설정값 등)을 두고, 이 함수는 보조 신호로만 쓴다.
+ */
+export function matchesSite(inputUrl: string, site: AtlassianSite): boolean {
+  const a = hostOf(inputUrl)
+  const b = hostOf(site.url)
+  return a !== null && b !== null && a === b
+}
+
+/**
+ * 쿠키 값의 상한. 브라우저 한계는 이름·속성까지 합쳐 4096바이트이고,
+ * 넘으면 오류 없이 **통째로 버려져** 연결이 끊긴 것처럼 보인다.
+ * 이름과 속성 몫으로 300바이트 정도를 남겨둔다.
+ */
+const MAX_COOKIE_BYTES = 3800
+
+/**
+ * 세션을 암호화해 쿠키 값으로 만든다.
+ *
+ * access token 길이는 계정마다 다르고 sites까지 담으면 한계를 넘을 수 있다.
+ * 넘치면 사이트 목록을 뒤에서부터 덜어낸다 — 사이트 목록을 잃으면
+ * 사이트 자동 판별만 못 하게 되지만(기존 동작으로 후퇴), 쿠키가 버려지면
+ * 로그인 자체가 안 된다.
+ */
+export function encodeSessionCore(session: SessionData): string {
+  const build = (sites: AtlassianSite[] | undefined): string =>
+    encrypt(
+      JSON.stringify({
+        accessToken: session.accessToken,
+        cloudId: session.cloudId,
+        cloudUrl: session.cloudUrl,
+        sites,
+        expiresAt: session.expiresAt,
+      } satisfies SessionCore)
+    )
+
+  let sites = session.sites
+  let encoded = build(sites)
+
+  while (encoded.length > MAX_COOKIE_BYTES && sites && sites.length > 0) {
+    sites = sites.slice(0, -1)
+    encoded = build(sites.length > 0 ? sites : undefined)
+    console.warn(
+      `[atlassian] 세션 쿠키가 너무 커서 사이트 목록을 ${sites.length}곳으로 줄였습니다`
+    )
+  }
+
+  if (encoded.length > MAX_COOKIE_BYTES) {
+    // 사이트를 다 덜어내도 넘치는 경우 — access token 자체가 긴 계정이다.
+    // 여기까지 오면 쿠키가 버려져 연결이 안 되므로 원인을 남긴다.
+    console.error(
+      `[atlassian] 세션 쿠키가 한계를 넘었습니다 (${encoded.length}바이트). 브라우저가 쿠키를 버려 연결이 실패할 수 있습니다`
+    )
+  }
+
+  return encoded
 }
 
 export function encodeRefreshToken(refreshToken: string): string {
