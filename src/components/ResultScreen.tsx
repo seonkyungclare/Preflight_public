@@ -157,12 +157,16 @@ const SIGNAL_STYLE: Record<SignalLevel, string> = {
   '누락': 'bg-red-500',
 }
 
-// 항목 칸의 강조 정도. 바탕은 배경(0.145)보다 한 단계 밝은 card(0.205)로 깔고,
-// 손봐야 하는 항목만 색 테두리와 옅은 틴트로 띄운다.
+// 항목 칸의 강조 정도.
+//
+// 바탕은 페이지 배경(#0a0a0a)보다 한 단계 밝은 neutral-900(#171717)이다.
+// 이 화면은 위아래로 층을 나눈다 — 상단(진단 결과)은 면으로 떠 있고,
+// 탭 안 카드들은 배경과 같은 neutral-950으로 가라앉혀 테두리로만 구분한다.
+// 손봐야 하는 항목만 색 테두리로 추가로 띄운다.
 const SIGNAL_CELL: Record<SignalLevel, string> = {
-  '충분': 'bg-neutral-950 border-border/60',
-  '보완': 'bg-neutral-950 border-amber-500/40',
-  '누락': 'bg-neutral-950 border-red-500/40',
+  '충분': 'bg-neutral-900 border-border/60',
+  '보완': 'bg-neutral-900 border-amber-500/40',
+  '누락': 'bg-neutral-900 border-red-500/40',
 }
 
 const SIGNAL_TEXT: Record<SignalLevel, string> = {
@@ -216,7 +220,10 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
   // 배경을 갖고 있어서 바깥 테두리는 상자 안의 상자로만 보였고, p-6 때문에
   // 아래 목업 카드들과 좌우 끝이 어긋났다.
   return (
-    <div className="mb-4">
+    // 아래 "문서로 화면 만들어보기"와 32px 띄운다 — 진단 결과와 산출물 생성은
+    // 성격이 다른 영역이라, 항목 칸 사이(8px)나 제목-본문 사이(12px)와
+    // 확연히 다른 간격으로 무리를 가른다.
+    <div className="mb-8">
         {/* 아래 "문서로 화면 만들어보기"와 같은 영역 제목이므로 크기·굵기·
             본문까지의 여백을 같게 둔다. 개수만 굵기가 아니라 밝기로 띄운다 —
             굵기를 쓰면 두 제목의 무게가 달라 보인다. */}
@@ -248,7 +255,7 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
                 /* 접힌 상태의 최대 높이(제목 + 2줄 + 펼치기 버튼)를 기본 높이로 잡아
                    내용이 없는 칸까지 같은 크기로 맞춘다. 각 줄이 line-clamp-1로
                    한 줄 고정이라 이 값을 넘길 일이 없다. */
-                className={`rounded-lg border p-3 min-h-[96px] flex flex-col ${SIGNAL_CELL[level]}`}
+                className={`rounded-lg border p-4 min-h-[104px] flex flex-col ${SIGNAL_CELL[level]}`}
               >
                 <div className="flex items-baseline gap-1.5">
                   <span className={`w-2 h-2 rounded-full shrink-0 self-center ${SIGNAL_STYLE[level]}`} />
@@ -501,7 +508,7 @@ export default function ResultScreen({
         <div className="max-w-[900px] mx-auto px-6 py-8 min-w-[500px]">
           {/* 내용이 같아 다시 채점하지 않은 경우 — 왜 기다리지 않았는지 알려준다 */}
           {reusedFrom && (
-            <div className="mb-6 rounded-lg border border-border bg-card px-4 py-3">
+            <div className="mb-6 rounded-lg border border-border bg-card p-4">
               <p className="text-sm">
                 <strong>이전에 분석한 문서와 내용이 같아 그때 결과를 그대로 보여드립니다.</strong>
               </p>
@@ -529,7 +536,7 @@ export default function ResultScreen({
           {/* 사용자 요구사항 - 2열 span */}
           {SHOW_REQUIREMENTS_INPUT && (
           <Card className="col-span-2 !py-0">
-            <CardContent className="p-3">
+            <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-sm font-medium">사용자 요구사항 추가</span>
                 <span className="text-[10px] text-blue-500">Beta</span>
@@ -557,8 +564,8 @@ export default function ResultScreen({
           )}
 
           {/* Lo-Fi 카드 */}
-          <Card className="max-h-[100px] overflow-hidden !py-0 bg-neutral-950">
-            <CardContent className="p-3 h-full flex items-center justify-between gap-3">
+          <Card className="max-h-[100px] overflow-hidden !py-0 bg-neutral-900">
+            <CardContent className="p-4 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">Lo-Fi</span>
@@ -602,8 +609,8 @@ export default function ResultScreen({
           </Card>
 
           {/* Hi-Fi 카드 */}
-          <Card className="max-h-[100px] overflow-hidden !py-0 bg-neutral-950">
-            <CardContent className="p-3 h-full flex items-center justify-between gap-3">
+          <Card className="max-h-[100px] overflow-hidden !py-0 bg-neutral-900">
+            <CardContent className="p-4 h-full flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">Hi-Fi</span>
@@ -670,7 +677,7 @@ export default function ResultScreen({
           <TabsContent value="summary" className="space-y-6">
             {/* 점수에 영향 없는 안내 */}
             {(result.advisories ?? []).length > 0 && (
-              <Card className="!py-0">
+              <Card className="!py-0 bg-neutral-950">
                 <CardContent className="p-4 space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">참고 — 점수에는 반영되지 않습니다</p>
                   {(result.advisories ?? []).map((a, i) => (
@@ -706,7 +713,7 @@ export default function ResultScreen({
               <p className="text-sm text-muted-foreground mb-4">PRD에서 명확하게 정의된 항목들</p>
               <div className="space-y-3">
                 {result.validated.map((item, i) => (
-                  <Card key={i} className="!py-0">
+                  <Card key={i} className="!py-0 bg-neutral-950">
                     <CardContent className="flex items-start gap-3 p-4">
                       {/* 아이콘(20px)과 text-sm의 줄높이(20px)가 같으므로
                           mt-0.5를 주면 오히려 2px 내려가 어긋난다 */}
@@ -739,7 +746,7 @@ export default function ResultScreen({
                   } : null
 
                   return (
-                    <Card key={key} className="!py-0">
+                    <Card key={key} className="!py-0 bg-neutral-950">
                       <CardContent className="p-4 space-y-2">
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium">{criteriaLabel(key)}</span>
@@ -790,8 +797,8 @@ export default function ResultScreen({
               }
               const sev = severityBadge(v2Item.severity)
               return (
-                <Card key={i} className="border-amber-800/40 !py-0">
-                  <CardContent className="p-5">
+                <Card key={i} className="border-amber-800/40 !py-0 bg-neutral-950">
+                  <CardContent className="p-4">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
                       <Chip color="bg-amber-500/20 text-amber-300">{item.screen}</Chip>
                       <OwnerBadge owner={item.owner} />
@@ -835,8 +842,8 @@ export default function ResultScreen({
               }
               const sev = severityBadge(v2Item.severity)
               return (
-                <Card key={i} className="border-blue-800/40 !py-0">
-                  <CardContent className="p-5">
+                <Card key={i} className="border-blue-800/40 !py-0 bg-neutral-950">
+                  <CardContent className="p-4">
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
                       <Chip color="bg-blue-500/20 text-blue-300">{item.module}</Chip>
                       <AreaBadge area={item.area} />
@@ -875,8 +882,8 @@ export default function ResultScreen({
                 const tagText = stripBrackets(q.tag)
                 const pm = isPmOwned(q.owner)
                 return (
-                  <Card key={i} className={`!py-0 ${pm ? 'border-destructive/20' : 'border-border'}`}>
-                    <CardContent className="flex items-start gap-4 p-5">
+                  <Card key={i} className={`!py-0 bg-neutral-950 ${pm ? 'border-destructive/20' : 'border-border'}`}>
+                    <CardContent className="flex items-start gap-4 p-4">
                       <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${pm ? 'text-destructive' : 'text-muted-foreground'}`}>Q{i + 1}</span>
                       <div className="flex flex-col gap-2 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -932,8 +939,8 @@ export default function ResultScreen({
               // v1 fallback — 문자열 기반
               const { tag, rest } = parseTagFromString(q as string)
               return (
-                <Card key={i} className="border-destructive/20 !py-0">
-                  <CardContent className="flex items-start gap-4 p-5">
+                <Card key={i} className="border-destructive/20 !py-0 bg-neutral-950">
+                  <CardContent className="flex items-start gap-4 p-4">
                     <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
                     <div className="flex flex-col gap-1.5">
                       {tag && <ContextTag tag={tag} />}
@@ -954,8 +961,8 @@ export default function ResultScreen({
               const n = normalizeRec(rec)
               const hasV2Meta = n.principle || n.perspective || n.effort || n.expected_impact
               return (
-                <Card key={i} className="!py-0">
-                  <CardContent className="flex items-start gap-4 p-5">
+                <Card key={i} className="!py-0 bg-neutral-950">
+                  <CardContent className="flex items-start gap-4 p-4">
                     <span className="flex-shrink-0 mt-0.5">💡</span>
                     <div className="flex flex-col gap-2 flex-1">
                       <span className="text-sm">{n.text}</span>
