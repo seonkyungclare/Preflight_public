@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/check-mcds.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sync:mcds": "node scripts/sync-mcds.mjs",
+    "check:mcds": "node scripts/check-mcds.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

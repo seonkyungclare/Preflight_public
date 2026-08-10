@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { parse as babelParse } from '@babel/parser'
+import { MCDS_CSS } from '@/lib/mcds-css'
 
 export const maxDuration = 300 // Vercel 최대 실행 시간 300초 (Pro plan)
 
@@ -144,40 +145,63 @@ Rules:
 - Actions without clear navigation target: render as visual-only (no onClick)
 - Do NOT add elements not in the screen spec`
 
-const HIFI_SYSTEM = `You generate high-fidelity Ant Design React component functions for interactive prototypes.
+const HIFI_SYSTEM = `You generate high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes for interactive prototypes.
 
 Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
 - No imports. No export. No other functions or code outside the one function.
+- Use MCDS CSS CLASSES via className. NO component library (no antd) — only plain HTML elements + MCDS classes. The MCDS stylesheet is already loaded globally.
+- Inline style ONLY for one-off spacing/layout a class doesn't cover (e.g. a flex header row). Never hardcode colors — MCDS classes/tokens carry all color.
+
+Pre-imported (DO NOT re-import): React, useState (from 'react').
 
 Code style (COMPACT — token budget is limited):
 - No comments, no JSDoc, no blank lines between JSX elements
-- Mock data arrays: maximum 3 items
-- Do not repeat similar JSX blocks — use .map() instead
-- Keep variable names short but readable (e.g. open not isModalVisible)
+- Mock data arrays: maximum 3 items; always use .map(), never repeat similar JSX blocks
+- Short readable var names (open, sel, toast)
 
-Pre-imported (DO NOT re-import):
-- React, useState (from 'react')
-- antd: Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider
-- @ant-design/icons: PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined, DownloadOutlined
+SCREEN SHAPE: return page content only (the app shell already provides the LNB + page padding).
+Start with <h1 className="page-title">화면명</h1>, then one or more <section className="section"> blocks.
+Section header with an action button on the right:
+  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div className="section__title">목록</div><button className="btn btn--primary btn--36" onClick={()=>setOpen(true)}>+ 생성</button></div>
 
-Rules:
-- All text Korean
-- Realistic Korean placeholder data: brand/product names, dates "2026-04-15", amounts "₩2,400,000", mixed PRD-defined statuses
-- List type: Table with 3 rows, ALL columns filled, no empty cells
-- Full interactivity — NO dead ends:
-  · Table rows: onClick → open Modal (≤5 detail fields) or Drawer (>5 detail fields) with Descriptions
-  · "생성/추가/등록" actions: open Form Modal with PRD fields, submit → close + add to list + message.success
-  · "수정/편집" actions: open same Form Modal pre-filled, submit → update list + message.success
-  · "삭제" actions: Popconfirm or Modal.confirm → remove from list
-  · Cross-screen navigation: call navigate('targetId') — 반드시 프롬프트의 NAVIGATION TARGETS에 나열된 정확한 id로만. 목록에 없으면 다른 화면으로 이동시키지 말 것(임의 id 생성 금지).
-- Use useState for: list data, modal/drawer open state, selected item, form visibility
-- Primary action button: type="primary", top-right of content area
-- Exact PRD field/column names — do not rename
-- Do NOT add columns/fields not in spec
+MCDS COMPONENT CLASSES:
+- Button: <button className="btn btn--primary">저장</button> — types primary(solid)/secondary(line)/tertiary(accent line)/warning(red line); sizes btn--32/--36/--40(default)/--48; icon-only add btn--icon; disabled → add disabled attr.
+- Table (list type):
+  <div className="mcds-table-wrap"><table className="mcds-table"><thead><tr><th>컬럼명</th>…</tr></thead><tbody>{rows.map(r=><tr key={r.id} onClick={()=>{setSel(r);setOpen(true)}}><td><span className="mcds-table__link">{r.name}</span></td><td className="mcds-table__num">₩2,400,000</td><td><span className="chip chip--accent">진행중</span></td></tr>)}</tbody></table></div>
+  · right-align numbers: td className="mcds-table__num" · selected row: <tr className="is-selected"> · status cell: use chip.
+  · Pagination: <div className="pagination"><button className="pagination__item">‹</button><button className="pagination__item pagination__item--current">1</button><button className="pagination__item">2</button><button className="pagination__item">›</button></div>
+- Status/Tag: <span className="chip chip--accent">진행중</span> (accent=강조, low=보조, 기본=중립); small: add chip--24.
+- TextField: <div className="textfield"><div className="textfield__box"><input className="textfield__input" placeholder="입력"/></div></div>
+- Select: <select className="mcds-select"><option>전체</option><option>진행중</option></select>
+- DatePicker: <div className="datepicker"><input className="datepicker__input" placeholder="YYYY-MM-DD"/></div> · range: <div className="date-range">…<span className="date-range__tilde">~</span>…</div>
+- Radio group: <div className="radio-group">{opts.map(o=><button key={o} className="radio" onClick={()=>setSel(o)}><span className="radio__dot" data-on={sel===o||undefined}/><span className="radio__label">{o}</span></button>)}</div>
+- Checkbox: <button className="checkbox" aria-checked={on} onClick={()=>setOn(v=>!v)}><span className="checkbox__box"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#fff" strokeWidth="2" fill="none"/></svg></span><span className="checkbox__label">동의</span></button>
+- Descriptions (detail key-value): <div className="mcds-desc"><div className="mcds-desc__label">이름</div><div className="mcds-desc__value">…</div>…</div>
+- Card / metric: <div className="mcds-card"><div className="mcds-card__title">제목</div>…</div> · stat: <div className="mcds-stat"><span className="mcds-stat__label">노출수</span><span className="mcds-stat__value">12,400</span></div>
+- Tabs: <div className="mcds-tabs">{tabs.map(t=><button key={t} className={"mcds-tab"+(tab===t?" mcds-tab--active":"")} onClick={()=>setTab(t)}>{t}</button>)}</div>
+- Alert: <div className="mcds-alert mcds-alert--info">안내 문구</div> (info/error/success)
+- Empty: <div className="mcds-empty"><div className="mcds-empty__title">데이터가 없습니다</div></div>
+- Form rows: <div className="form"><div className="row"><div className="row__label"><span>라벨<span className="req">*</span></span></div><div className="row__field">…field…</div></div>…</div>
 
-- Do NOT add utility buttons not in spec (새로고침, 내보내기, 인쇄 etc.)
-- Normal flow only — no empty/loading/error state screens`
+INTERACTION PATTERNS (NO dead ends — every control does something; use useState for list data, open state, selected item, active tab, toast):
+- Modal (detail ≤5 fields, or create/edit form) — official MCDS .overlay/.modal (default width 540; wider form: add modal--660 or modal--780 on the .modal div):
+  {open && <div className="overlay" onClick={()=>setOpen(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal__header"><div className="modal__title">제목</div><button className="modal__close" onClick={()=>setOpen(false)}>✕</button></div><div className="modal__body"><div className="form">…rows…</div></div><div className="modal__footer"><button className="btn btn--secondary" onClick={()=>setOpen(false)}>취소</button><button className="btn btn--primary" onClick={()=>{setOpen(false);setToast('저장되었습니다')}}>저장</button></div></div></div>}
+  (detail view: put <div className="mcds-desc">…</div> in modal__body instead of a form.)
+- Drawer (detail >5 fields): className "overlay overlay--right", inner "mcds-drawer" with mcds-drawer__header/__title/__close/__body/__footer.
+- Toast (success feedback): call setToast('저장되었습니다') ONLY inside event handlers (never during render). Render at the end of the return:
+  {toast && <div className="mcds-toast-wrap"><div className="mcds-toast mcds-toast--success">{toast}</div></div>}
+- Delete confirm — official MCDS .alert dialog (compact, no header/close):
+  {del && <div className="overlay" onClick={()=>setDel(false)}><div className="alert" onClick={e=>e.stopPropagation()}><div className="alert__text"><div className="alert__title">삭제하시겠습니까?</div><div className="alert__desc">이 작업은 되돌릴 수 없습니다.</div></div><div className="alert__actions"><button className="btn btn--secondary" onClick={()=>setDel(false)}>취소</button><button className="btn btn--warning" onClick={()=>{setDel(false);setToast('삭제되었습니다')}}>삭제</button></div></div></div>}
+- Create/edit: form Modal submit → setOpen(false) + update list useState + toast. Edit opens the same Modal pre-filled from the selected row.
+- Navigation: navigate('targetId') — ONLY to ids in NAVIGATION TARGETS; never invent an id, never navigate when the list is empty.
+
+DATA:
+- All text Korean. Realistic mock: brand/product names, dates "2026-04-15", amounts "₩2,400,000", PRD-defined status values mixed.
+- List: 3 rows, ALL columns filled (no empty cells); status column uses chip.
+- Exact PRD field/column names — do not rename or add columns/fields not in spec.
+- Do NOT add utility buttons not in spec (새로고침/내보내기/인쇄 etc.).
+- Normal flow only — no empty/loading/error state screens unless specified.`
 
 // ============================================================================
 // CODE UTILITIES
@@ -611,35 +635,24 @@ function generateNotePanelHifi(spec: MockupSpec): string {
   const ambiguous = ${JSON.stringify(ambiguous)}
   const omitted = ${JSON.stringify(omitted)}
   const hasAny = attention.length > 0 || missing.length > 0 || ambiguous.length > 0 || omitted.length > 0
+  const sSection = { fontWeight: 600, fontSize: 11, color: 'var(--fg-muted)', margin: '8px 0 4px', textTransform: 'uppercase' }
+  const note = (n, i, cls) => <div key={i} className={'mcds-alert ' + cls}><div><b>{n.item}</b> — {n.reason}</div></div>
   return (
-    <Card size="small"
-      style={{ position: 'fixed', bottom: 16, right: 16, width: 360, maxHeight: '60vh', overflow: 'auto', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
-      title={<Typography.Text strong>📋 PRD 검토 노트</Typography.Text>}
-      extra={<Button type="text" size="small" onClick={() => setOpen(v => !v)}>{open ? '닫기' : '열기'}</Button>}
-    >
+    <div style={{ position: 'fixed', bottom: 16, right: 16, width: 360, maxHeight: '60vh', overflow: 'auto', background: 'var(--fill-light)', border: '1px solid var(--border)', borderRadius: 'var(--r-8)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--fg-default)' }}>📋 PRD 검토 노트</span>
+        <button className="btn btn--secondary btn--32" onClick={() => setOpen(v => !v)}>{open ? '닫기' : '열기'}</button>
+      </div>
       {open && (
-        <Space direction="vertical" style={{ width: '100%' }} size={4}>
-          {attention.length > 0 && (
-            <Alert type="warning" showIcon banner
-              message={<><b>⚠️ 주의 영역 (분석 결과)</b>{attention.map((n, i) => <div key={i} style={{ marginTop: 4 }}>{n.item} — {n.reason}</div>)}</>}
-            />
-          )}
-          {missing.length > 0 && (<>
-            <Typography.Text type="warning" strong style={{ fontSize: 12 }}>누락 가능 항목</Typography.Text>
-            {missing.map((n, i) => <Alert key={i} type="warning" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
-          </>)}
-          {ambiguous.length > 0 && (<>
-            <Typography.Text type="secondary" strong style={{ fontSize: 12 }}>모호한 항목</Typography.Text>
-            {ambiguous.map((n, i) => <Alert key={i} type="info" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
-          </>)}
-          {omitted.length > 0 && (<>
-            <Typography.Text type="danger" strong style={{ fontSize: 12 }}>미구현 항목</Typography.Text>
-            {omitted.map((n, i) => <Alert key={i} type="error" showIcon message={n.item} description={n.reason} style={{ marginBottom: 4 }} />)}
-          </>)}
-          {!hasAny && <Empty description="PRD 검토 결과 보완 사항 없음" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
-        </Space>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {attention.length > 0 && (<><div style={sSection}>⚠️ 주의 영역 (분석 결과)</div>{attention.map((n, i) => note(n, i, 'mcds-alert--info'))}</>)}
+          {missing.length > 0 && (<><div style={sSection}>누락 가능 항목</div>{missing.map((n, i) => note(n, i, 'mcds-alert--info'))}</>)}
+          {ambiguous.length > 0 && (<><div style={sSection}>모호한 항목</div>{ambiguous.map((n, i) => note(n, i, 'mcds-alert--info'))}</>)}
+          {omitted.length > 0 && (<><div style={sSection}>미구현 항목</div>{omitted.map((n, i) => note(n, i, 'mcds-alert--error'))}</>)}
+          {!hasAny && <div className="mcds-empty"><div className="mcds-empty__title">PRD 검토 결과 보완 사항 없음</div></div>}
+        </div>
       )}
-    </Card>
+    </div>
   )
 }`
 }
@@ -864,39 +877,26 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
     subsByParent.get(screen.parent_id)!.push(screen)
   }
 
-  const menuItemArr = menuScreens.map(s => {
-    const subs = subsByParent.get(s.id) ?? []
-    const label = s.name.replace(/'/g, "\\'")
-    if (subs.length === 0) {
-      return `  { key: '${s.id}', label: '${label}' }`
-    }
-    // antd SubMenu 제목은 펼침/접기 토글만 되고 onClick(navigate)이 안 걸린다.
-    // → 부모 화면 자체를 첫 자식(leaf)으로 넣어 클릭 가능하게 하고, SubMenu key는 페이지가 아닌 합성 키(grp_)로 둔다.
-    const childItems = [
-      `    { key: '${s.id}', label: '${label}' }`,
-      ...subs.map(sub => `    { key: '${sub.id}', label: '${sub.name.replace(/'/g, "\\'")}' }`),
-    ].join(',\n')
-    return `  { key: 'grp_${s.id}', label: '${label}', children: [\n${childItems}\n  ] }`
-  })
-
-  // 하위가 있는 메뉴는 기본으로 펼쳐 Lo-Fi처럼 모든 항목이 바로 보이게 한다.
-  const openKeys = menuScreens
-    .filter(s => (subsByParent.get(s.id) ?? []).length > 0)
-    .map(s => `'grp_${s.id}'`)
-    .join(', ')
-
-  // 메뉴(1-depth + 그 하위 2-depth)에 이미 포함된 화면 집합
-  const coveredInMenu = new Set<string>()
+  // LNB 항목: 1-depth 메뉴 바로 아래에 그 하위 2-depth를 들여쓰기(depth)로 flat 배치.
+  // MCDS LNB는 antd Menu의 SubMenu 대신 nav-item(+nav-item--sub)로 렌더하므로 grp_ 합성키가 불필요하다.
+  type MenuEntry = { id: string; label: string; depth: 1 | 2 }
+  const menuEntries: MenuEntry[] = []
   for (const s of menuScreens) {
-    coveredInMenu.add(s.id)
-    for (const sub of subsByParent.get(s.id) ?? []) coveredInMenu.add(sub.id)
+    menuEntries.push({ id: s.id, label: s.name, depth: 1 })
+    for (const sub of subsByParent.get(s.id) ?? []) menuEntries.push({ id: sub.id, label: sub.name, depth: 2 })
   }
-  // 코드가 생성됐지만 메뉴에 안 걸린 화면(고아)도 LNB 최상위 진입점으로 노출 (첫 화면 누락 방지)
-  const orphanItemArr = spec.screens
-    .filter(s => codedIds.has(s.id) && !coveredInMenu.has(s.id))
-    .map(s => `  { key: '${s.id}', label: '${s.name.replace(/'/g, "\\'")}' }`)
+  // 코드가 생성됐지만 메뉴에 안 걸린 화면(고아)도 LNB 진입점으로 노출 (첫 화면 누락 방지)
+  const coveredInMenu = new Set(menuEntries.map(e => e.id))
+  for (const s of spec.screens) {
+    if (codedIds.has(s.id) && !coveredInMenu.has(s.id)) {
+      menuEntries.push({ id: s.id, label: s.name, depth: s.parent_id ? 2 : 1 })
+      coveredInMenu.add(s.id)
+    }
+  }
 
-  const menuItems = [...menuItemArr, ...orphanItemArr].join(',\n')
+  const menuItems = menuEntries
+    .map(e => `  { id: '${e.id}', label: '${e.label.replace(/'/g, "\\'")}', depth: ${e.depth} }`)
+    .join(',\n')
 
   const screenFunctions = spec.screens
     .filter(s => screenCodes.has(s.id))
@@ -929,11 +929,10 @@ function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): st
   }
 
   return `import React, { useState, useEffect } from 'react'
+import './mcds.css'
 import ReactFlow, { Controls, Background } from 'reactflow'
 import 'reactflow/dist/style.css'
 import * as dagre from 'dagre'
-import { Layout, Menu, Table, Form, Input, Button, Modal, Drawer, Select, DatePicker, Typography, Space, Tag, Descriptions, message, Empty, Alert, Card, Tabs, InputNumber, Radio, Checkbox, Switch, Badge, Divider, Tooltip, Popconfirm, Row, Col, Statistic, Upload, ConfigProvider } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined, DownloadOutlined } from '@ant-design/icons'
 
 ${generateFlowDiagramHifi(spec, codeFlows, codedIds)}
 
@@ -950,8 +949,8 @@ class ScreenErrorBoundary extends React.Component {
       const msg = this.state.err && this.state.err.message ? this.state.err.message : String(this.state.err)
       return (
         <div style={{ padding: 24 }}>
-          <Alert type="error" showIcon message="이 화면을 표시하는 중 오류가 발생했습니다" description={msg} style={{ marginBottom: 12 }} />
-          <Button onClick={this.props.onReset}>← 처음으로</Button>
+          <div className="mcds-alert mcds-alert--error" style={{ marginBottom: 12 }}>이 화면을 표시하는 중 오류가 발생했습니다: {msg}</div>
+          <button className="btn btn--secondary" onClick={this.props.onReset}>← 처음으로</button>
         </div>
       )
     }
@@ -960,7 +959,7 @@ class ScreenErrorBoundary extends React.Component {
 }
 
 const MENU_ITEMS = [
-  { key: 'flow', label: '📊 사용자 flow 보기' },
+  { id: 'flow', label: '🗺 화면 목록', depth: 1 },
 ${menuItems}
 ]
 const RENDERED_IDS = ${JSON.stringify(renderedIds)}
@@ -968,33 +967,29 @@ const RENDERED_IDS = ${JSON.stringify(renderedIds)}
 export default function App() {
   const [page, setPage] = useState('${firstScreen}')
   return (
-    <ConfigProvider>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Layout.Sider width={220} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
-          <div style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: '1px solid #f0f0f0' }}>
-            <Typography.Text strong style={{ fontSize: 14 }}>Preflight</Typography.Text>
-          </div>
-          <Menu
-            mode="inline"
-            selectedKeys={[page]}
-            defaultOpenKeys={[${openKeys}]}
-            onClick={({ key }) => setPage(key)}
-            style={{ borderRight: 0, marginTop: 4 }}
-            items={MENU_ITEMS}
-          />
-        </Layout.Sider>
-        <Layout>
-          <Layout.Content style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-            <ScreenErrorBoundary pageKey={page} onReset={() => setPage('flow')}>
-            {page === 'flow' && <FlowDiagram navigate={setPage} />}
+    <div className="layout" style={{ minHeight: '100vh', background: 'var(--fill-subtle)' }}>
+      <div className="lnb" style={{ top: 0, minHeight: '100vh' }}>
+        <div className="lnb__partner"><span className="lnb__partner-name">Preflight</span></div>
+        <div className="lnb__list">
+          {MENU_ITEMS.map(item => (
+            <div key={item.id} onClick={() => setPage(item.id)}
+              className={'nav-item' + (item.depth === 2 ? ' nav-item--sub' : '') + (page === item.id ? ' nav-item--active' : '')}>
+              <span className="nav-item__label">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="main" style={{ minHeight: '100vh' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '32px 32px 80px' }}>
+          <ScreenErrorBoundary pageKey={page} onReset={() => setPage('flow')}>
+          {page === 'flow' && <FlowDiagram navigate={setPage} />}
 ${screenRenders}
-            {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
-            </ScreenErrorBoundary>
-          </Layout.Content>
-        </Layout>
-        <NotePanel />
-      </Layout>
-    </ConfigProvider>
+          {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
+          </ScreenErrorBoundary>
+        </div>
+      </div>
+      <NotePanel />
+    </div>
   )
 }`
 }
@@ -1161,8 +1156,11 @@ export async function POST(req: Request): Promise<Response> {
 
         console.log(`[mockup v3] Done ✓ screens=${screenCodes.size}/${spec.screens.length}`)
         emit({ type: 'progress', progress: 100, message: '완료' })
+        // Hi-Fi는 MCDS 스타일시트를 Sandpack 정적 파일로 함께 주입한다(App.js가 import './mcds.css').
+        const files: Record<string, string> =
+          type === 'hifi' ? { '/App.js': appCode, '/mcds.css': MCDS_CSS } : { '/App.js': appCode }
         // spec을 함께 반환 → 클라이언트가 보관했다가 재생성 시 재사용(동일 화면 집합 유지)
-        emit({ type: 'done', files: { '/App.js': appCode }, spec })
+        emit({ type: 'done', files, spec })
         finish()
       } catch (error) {
         console.error('[mockup v3] 오류:', error)

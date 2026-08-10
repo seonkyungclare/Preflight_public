@@ -160,7 +160,9 @@ export default function MockupScreen({ files, type, onBack }: MockupScreenProps)
               dependencies: {
                 react: '^18',
                 'react-dom': '^18',
-                ...(type === 'hifi' && { antd: '^5', '@ant-design/icons': '^5', reactflow: '^11', dagre: '^0.8.5' }),
+                // Hi-Fi는 MCDS 클래스 기반이라 antd 불필요. reactflow(사용자 flow)·dagre(레이아웃)만 주입.
+                // MCDS 스타일시트는 API가 files['/mcds.css']로 함께 내려주며 App.js가 import 한다.
+                ...(type === 'hifi' && { reactflow: '^11', dagre: '^0.8.5' }),
               },
             }}
           >
