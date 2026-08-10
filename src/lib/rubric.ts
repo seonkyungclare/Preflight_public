@@ -47,10 +47,20 @@ export interface RubricDimension {
   weights: Record<ProjectType, number>
 }
 
+// ⚠️ label은 프롬프트에 들어가지 않는다(prompt.ts는 key·principle·focus·bands만 쓴다).
+// 표시 문구를 고쳐도 채점 결과와 과거 기록의 비교가 흔들리지 않는다.
+//
+// 라벨은 PM이 문서를 열자마자 읽는 말이라 업계어를 쓰지 않는다. "해상도"(은유),
+// "엣지케이스·롤백"(외래어+개발어), "미결정 명시성"(방향이 안 보임)은 무슨 항목인지
+// 되묻게 만들었다. 되묻지 않을 라벨을 고르는 것이 먼저이고, 설명을 덧붙이는 것은
+// 그다음이다 — 카드에 설명 한 줄을 상시로 두는 안과 ⓘ hover 안을 둘 다 만들어
+// 봤지만, 라벨을 고치고 나니 둘 다 필요 없어 뺐다. 라벨만으로 안 읽히는 항목이
+// 다시 생기면 그때는 설명이 아니라 라벨을 의심할 것.
+
 export const DIMENSIONS: RubricDimension[] = [
   {
     key: '기능_정책_해상도',
-    label: '기능·정책 해상도',
+    label: '기능·정책 구체성',
     principle: '구현 가능성 — 규칙이 해석 없이 읽히는가',
     focus:
       '무엇을 만드는지와 어떤 규칙으로 동작하는지가 구현 가능한 수준으로 적혔는가. ' +
@@ -66,7 +76,7 @@ export const DIMENSIONS: RubricDimension[] = [
   },
   {
     key: '상태_분기_조건',
-    label: '상태 분기 조건',
+    label: '조건별 동작 차이',
     principle: 'NN#1 시스템 상태 가시성 — 단, PRD 단계에서는 조건 자체를 본다',
     focus:
       '"언제 무엇이 달라지는가"가 정의되었는가. 조건별 동작 차이, 권한·상태별 차이, ' +
@@ -83,7 +93,7 @@ export const DIMENSIONS: RubricDimension[] = [
   },
   {
     key: '엣지케이스_롤백',
-    label: '엣지케이스·롤백',
+    label: '예외·실패 대응',
     principle: 'NN#5 오류 예방, NN#9 오류 복구',
     focus:
       '극단값과 실패 상황, 되돌리기 정책이 다뤄졌는가. ' +
@@ -115,7 +125,7 @@ export const DIMENSIONS: RubricDimension[] = [
   },
   {
     key: '미결정_명시성',
-    label: '미결정 명시성',
+    label: '미정 항목 표기',
     principle: '정직성 — 모르는 것을 지어내지 않았는가',
     focus:
       '아직 정하지 못한 것을 "정하지 못했다"고 정직하게 밝혔는가. 밝힌 미결정은 침묵(공백인데 언급조차 없음)보다 항상 높다.\n' +
@@ -134,7 +144,7 @@ export const DIMENSIONS: RubricDimension[] = [
   },
   {
     key: '핵심_과업_명확성',
-    label: '핵심 과업 명확성',
+    label: '목적과 성공 기준',
     principle: 'Fogg 행동 모델 — 무엇을 완수하게 할 것인가',
     focus:
       '사용자가 이 기능으로 무엇을 완수하는지, 그게 왜 필요한지가 분명한가. ' +
@@ -358,11 +368,21 @@ export function criterionColor(score: number): { text: string; bar: string } {
 }
 
 // 표시 전환용 — 점수 대신 신호등을 1차 정보로 올릴 때 쓴다.
-export type SignalLevel = '충분' | '보완' | '누락'
+//
+// 위쪽 라벨을 '충분'이라고 불렀더니 "충분한데 왜 빠진 게 나열되나"로 읽혔다.
+// 점수(얼마나 갖췄나)와 missing(무엇이 덜 갖춰졌나)은 다른 값이라, 8점짜리
+// 항목에도 남은 흠 2점어치는 그대로 나온다. '충분'은 완결로 들리지만 이 문턱이
+// 뜻하는 것은 "이 정도면 디자인을 시작할 수 있다"이므로 그렇게 부른다.
+//
+// 0.8 문턱은 총점 판정과 맞물려 있다 — 가중치 합과 BASE_POINTS가 둘 다 90이라
+// 여섯 항목이 모두 8점이면 총점이 정확히 72, VERDICTS의 '디자인 착수 가능'
+// 경계와 같은 자리다. 두 표시가 같은 문턱을 가리키므로 말도 같이 간다.
+// 어느 한쪽 숫자를 바꾸면 다른 쪽도 함께 봐야 한다.
+export type SignalLevel = '착수 가능' | '보완' | '누락'
 
 export function signalOf(score: number): SignalLevel {
   const ratio = score / AI_SCALE
-  if (ratio >= 0.8) return '충분'
+  if (ratio >= 0.8) return '착수 가능'
   if (ratio >= 0.5) return '보완'
   return '누락'
 }

@@ -13,7 +13,9 @@ import {
   weightsFor,
   type DevReadinessStatus,
   type ProjectType,
-} from './rubric'
+  // 확장자를 붙인다 — 이 파일을 node --test로 돌리기 위해서다(tsconfig의
+  // allowImportingTsExtensions 주석 참고). confluence-page.ts도 같은 규약을 쓴다.
+} from './rubric.ts'
 
 // ─── 분석 결과의 공유 타입 ────────────────────────────────────────────────────
 // 서버(route)와 화면(page·ResultScreen·MockupScreen)이 같은 타입을 쓴다.
@@ -245,9 +247,20 @@ export function validateAndNormalize(candidate: unknown): ValidationOutcome {
     } else {
       return { ok: false, reason: `criteria.${d.key}의 score가 숫자도 null도 아닙니다` }
     }
+    // 지시문은 모든 점수에 PRD 인용을 요구한다(prompt.ts의 원칙 3). 없이 와도 채점을
+    // 버리지 않는다 — 점수 자체는 유효하다. 다만 조용히 넘기면 몇 번이나 그랬는지
+    // 알 수 없어서, 다른 필드와 같이 세어 둔다. 화면에는 이 항목이 "분석 결과에서
+    // 근거 문장을 불러오는 데 실패했습니다"로 뜬다.
+    // 빈 문자열도 없는 것으로 본다 — 화면도 그렇게 처리한다.
+    // 점수가 null(해당 없음)인 항목은 애초에 근거를 요구하지 않으므로 뺀다.
+    const evidence = typeof entry.evidence === 'string' ? entry.evidence.trim() : ''
+    if (score !== null && !evidence) {
+      warnings.push(`criteria.${d.key}에 근거(evidence)가 없습니다 — 점수는 그대로 사용`)
+    }
+
     criteria[d.key] = {
       score,
-      evidence: typeof entry.evidence === 'string' ? entry.evidence : undefined,
+      evidence: evidence || undefined,
       missing: Array.isArray(entry.missing)
         ? entry.missing.filter((m): m is string => typeof m === 'string')
         : undefined,

@@ -79,6 +79,8 @@ function parseTagFromString(q: string): { tag: string | null; rest: string } {
 interface QuestionV2 {
   tag: string
   question: string
+  owner?: string
+  dimension?: string
   format?: 'binary' | 'multiple' | 'open'
   options?: string[]
   impact?: string
@@ -117,21 +119,29 @@ function criteriaLabel(key: string): string {
 
 // owner 표기는 버전에 따라 'PM' / '다음단계' / '담당자결정'이 섞여 들어온다.
 // 값이 없는 옛 결과는 PM 몫으로 본다 — 예전 화면이 전부 PM 몫으로 세던 것과 맞춘다.
-function isPmOwned(owner?: string): boolean {
-  if (!owner) return true
-  return owner.trim().toUpperCase() === 'PM'
+// 'pm'      — PM이 답해야 하는 것
+// 'maker'   — 만드는 사람(디자이너·개발자)이 정할 수 있는 것
+// 'unknown' — owner가 없는 옛 결과. 원래 있던 탭(디자이너/개발자 목록)에 그대로 둔다.
+//             전부 PM으로 몰면 기록에서 옛 결과를 열었을 때 직군 탭이 통째로 비어
+//             "이 문서에는 디자인 확인 사항이 없다"는 거짓 신호가 된다.
+type Owner = 'pm' | 'maker' | 'unknown'
+
+function ownerOf(owner?: string): Owner {
+  if (!owner || !owner.trim()) return 'unknown'
+  // 모델이 'PM' 대신 'PM 결정', 'PM/디자이너'처럼 흘려 쓸 수 있다. 정확히 일치할
+  // 때만 PM으로 보면 그런 값이 조용히 담당자 탭으로 새므로 포함 여부로 본다.
+  return /\bPM\b/i.test(owner) ? 'pm' : 'maker'
 }
 
-// 이 항목을 누가 채워야 하는가 — PM이 자기 몫 아닌 것까지 떠안지 않게
-function OwnerBadge({ owner }: { owner?: string }) {
-  if (!owner) return null
-  const isNext = !isPmOwned(owner)
-  return (
-    <Chip color={isNext ? 'bg-slate-500/20 text-slate-300' : 'bg-rose-500/20 text-rose-300'}>
-      {isNext ? '담당자 결정 필요' : 'PM 결정 필요'}
-    </Chip>
-  )
+function isPmOwned(owner?: string): boolean {
+  return ownerOf(owner) !== 'maker'
 }
+
+// owner 배지는 없앴다. 예전에는 카드마다 "PM 결정 필요 / 담당자 결정 필요"를
+// 붙였는데, 같은 공백이 확인 필요 탭과 체크리스트 탭에 동시에 나오면서 배지만
+// 다르게 붙는 일이 잦았다(본문은 "PM이 먼저 정의 필요"인데 배지는 담당자 결정 등).
+// 지금은 owner가 곧 탭이다 — PM 몫은 PM 탭, 담당자 몫은 디자인/개발 탭.
+// 판정이 한 곳으로 모이므로 카드 안에서 같은 말을 반복할 필요가 없다.
 
 // 개발 항목이 화면 쪽인지 서버 쪽인지
 function AreaBadge({ area }: { area?: string }) {
@@ -152,7 +162,7 @@ function criterionColor(score: number) {
 
 // 신호등 3단계 색 — 점수 대신 1차 정보로 쓴다
 const SIGNAL_STYLE: Record<SignalLevel, string> = {
-  '충분': 'bg-green-500',
+  '착수 가능': 'bg-green-500',
   '보완': 'bg-amber-500',
   '누락': 'bg-red-500',
 }
@@ -164,13 +174,13 @@ const SIGNAL_STYLE: Record<SignalLevel, string> = {
 // 탭 안 카드들은 배경과 같은 neutral-950으로 가라앉혀 테두리로만 구분한다.
 // 손봐야 하는 항목만 색 테두리로 추가로 띄운다.
 const SIGNAL_CELL: Record<SignalLevel, string> = {
-  '충분': 'bg-neutral-900 border-border/60',
+  '착수 가능': 'bg-neutral-900 border-border/60',
   '보완': 'bg-neutral-900 border-amber-500/40',
   '누락': 'bg-neutral-900 border-red-500/40',
 }
 
 const SIGNAL_TEXT: Record<SignalLevel, string> = {
-  '충분': 'text-muted-foreground',
+  '착수 가능': 'text-muted-foreground',
   '보완': 'text-amber-400',
   '누락': 'text-red-400',
 }
@@ -207,13 +217,17 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
     label: d.label,
     score: result.criteria?.[d.key]?.score ?? null,
     missing: result.criteria?.[d.key]?.missing ?? [],
-  })).filter(x => x.score !== null) as Array<{ label: string; score: number; missing: string[] }>
+  })).filter(x => x.score !== null) as Array<{
+    label: string
+    score: number
+    missing: string[]
+  }>
 
   // 신호등과 같은 기준으로 센다. 예전에는 여기만 7점 미만이고 신호등은 8점
   // 경계여서, 7점짜리 항목이 "보완"으로 표시되면서 개수에는 안 잡혔다
   // ("보완할 항목 1개"인데 신호등에 보완이 2개). 화면 안에서 같은 말이
   // 서로 다른 숫자를 가리키면 어느 쪽도 못 믿게 된다.
-  const weak = scored.filter(x => signalOf(x.score) !== '충분')
+  const weak = scored.filter(x => signalOf(x.score) !== '착수 가능')
   const done = weak.length === 0
 
   // 카드 껍데기(테두리·배경·패딩)를 벗겼다. 안쪽 칸들이 이미 각자 테두리와
@@ -235,7 +249,7 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
         </p>
         {done && (
           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-            여섯 항목 모두 이 문서만으로 시작할 수 있는 수준입니다. 아래 체크리스트는 참고용입니다.
+            여섯 항목 모두 이 문서만으로 시작할 수 있는 수준입니다. 아래 확인 항목은 참고용입니다.
           </p>
         )}
 
@@ -252,13 +266,19 @@ function RemainingDecisions({ result }: { result: AnalysisResult }) {
             return (
               <div
                 key={label}
-                /* 접힌 상태의 최대 높이(제목 + 2줄 + 펼치기 버튼)를 기본 높이로 잡아
-                   내용이 없는 칸까지 같은 크기로 맞춘다. 각 줄이 line-clamp-1로
-                   한 줄 고정이라 이 값을 넘길 일이 없다. */
+                /* 접힌 상태의 최대 높이(제목 + 빠진 내용 1줄 + 펼치기 버튼)를 기본
+                   높이로 잡아 내용이 없는 칸까지 같은 크기로 맞춘다.
+                   각 줄이 line-clamp-1로 한 줄 고정이라 이 값을 넘길 일이 없다.
+                   ⚠️ 칸 안에 줄을 더하거나 뺄 때는 이 값도 같이 재야 한다 —
+                   안 그러면 아래쪽이 그만큼 빈 채로 남는다(실측: 가장 꽉 찬 칸 102px). */
                 className={`rounded-lg border p-4 min-h-[104px] flex flex-col ${SIGNAL_CELL[level]}`}
               >
                 <div className="flex items-baseline gap-1.5">
                   <span className={`w-2 h-2 rounded-full shrink-0 self-center ${SIGNAL_STYLE[level]}`} />
+                  {/* 항목 설명은 따로 붙이지 않는다. 라벨 자체를 평이한 말로 다시 써서
+                      (예: "엣지케이스·롤백" → "예외·실패 대응") 되묻지 않게 만든 게
+                      먼저다. 상시 한 줄도 hover 아이콘도 결국 라벨이 못 한 몫을
+                      대신 지는 장치라, 라벨이 읽히면 둘 다 필요 없다. */}
                   <span className="text-sm font-medium">{label}</span>
                   <span className={`text-xs ml-auto shrink-0 ${SIGNAL_TEXT[level]}`}>{level}</span>
                 </div>
@@ -357,28 +377,6 @@ function DevReadiness({ result }: { result: AnalysisResult }) {
   )
 }
 
-// ============================================================================
-// criteria notes 정규화: v1 문자열 / v2 객체 모두 요약 텍스트로 변환
-// ============================================================================
-function extractNotesText(notes: unknown): string {
-  if (typeof notes === 'string') return notes
-  if (typeof notes === 'object' && notes !== null) {
-    const n = notes as {
-      evidence?: string
-      missing?: string[]
-      applied_principle?: string
-    }
-    const parts: string[] = []
-    if (n.evidence) parts.push(n.evidence)
-    if (n.missing && n.missing.length > 0) {
-      parts.push(`누락: ${n.missing.join(', ')}`)
-    }
-    if (n.applied_principle) parts.push(`적용 원칙: ${n.applied_principle}`)
-    return parts.join(' · ')
-  }
-  return ''
-}
-
 // v2 severity — 다른 태그와 같은 Chip 형태를 쓰고 심각도만 색으로 구분한다.
 // 예전에는 shadcn Badge variant(outline/secondary/default)를 써서 확인 필요 탭의
 // 태그들과 모양이 아예 달랐다.
@@ -425,6 +423,172 @@ function normalizeRec(rec: unknown): NormalizedRec {
   return { text: String(rec) }
 }
 
+// ============================================================================
+// 확인 항목 카드 — PM 탭과 디자인/개발 탭이 같은 카드를 나눠 쓴다
+// ----------------------------------------------------------------------------
+// 항목이 어느 탭에 놓이는지는 owner가 정하고, 어떤 모양으로 보이는지는 출처
+// (디자이너 항목 / 개발 항목 / 확인 질문)가 정한다. 두 축을 분리해 두어야
+// "PM 탭에 개발 항목이 있다"가 자연스럽게 표현된다.
+// ============================================================================
+
+function DesignerCard({ item }: { item: MissingItem }) {
+  const v2Item = item as MissingItem & {
+    principle?: string
+    severity?: number
+    user_impact?: string
+  }
+  const sev = severityBadge(v2Item.severity)
+  return (
+    <Card className="border-amber-800/40 !py-0 bg-neutral-950">
+      <CardContent className="p-4">
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          <Chip color="bg-amber-500/20 text-amber-300">{item.screen}</Chip>
+          {sev && <Chip color={sev.color}>{sev.label}</Chip>}
+          {v2Item.principle && (
+            <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
+          )}
+        </div>
+        <p className="text-sm mb-3">
+          <span className="text-amber-400 font-medium">문제: </span>
+          {item.issue}
+        </p>
+        {v2Item.user_impact && (
+          <p className="text-xs text-muted-foreground mb-3">
+            <span className="font-medium">영향: </span>{v2Item.user_impact}
+          </p>
+        )}
+        <SuggestionBox text={item.suggestion} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function DevCard({ item }: { item: DevItem }) {
+  const v2Item = item as DevItem & { risk?: string; severity?: number }
+  const sev = severityBadge(v2Item.severity)
+  return (
+    <Card className="border-blue-800/40 !py-0 bg-neutral-950">
+      <CardContent className="p-4">
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          <Chip color="bg-blue-500/20 text-blue-300">{item.module}</Chip>
+          <AreaBadge area={item.area} />
+          {sev && <Chip color={sev.color}>{sev.label}</Chip>}
+        </div>
+        <p className="text-sm mb-3">
+          <span className="text-blue-400 font-medium">문제: </span>
+          {item.issue}
+        </p>
+        {v2Item.risk && (
+          <p className="text-xs text-muted-foreground mb-3">
+            <span className="font-medium">리스크: </span>{v2Item.risk}
+          </p>
+        )}
+        <SuggestionBox text={item.suggestion} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function SuggestionBox({ text }: { text: string }) {
+  return (
+    <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
+        <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
+      </svg>
+      <p className="text-xs text-muted-foreground">{text}</p>
+    </div>
+  )
+}
+
+// marker: 왼쪽에 붙는 번호. PM 탭에서만 "Q1, Q2…"를 쓴다 — PM에게 그대로 전달하는
+// 목록이라 번호가 곧 참조 번호가 된다. 직군 탭에서도 번호를 매기면 "Q1"이 탭마다
+// 다른 질문을 가리키게 되므로 그쪽은 번호 없이 둔다.
+function QuestionCard({ q, index, accent, marker }: { q: unknown; index: number; accent: boolean; marker?: string }) {
+  // v1: string, v2: object
+  if (!isQuestionV2(q)) {
+    const { tag, rest } = parseTagFromString(q as string)
+    return (
+      <Card className="border-destructive/20 !py-0 bg-neutral-950">
+        <CardContent className="flex items-start gap-4 p-4">
+          <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{index + 1}</span>
+          <div className="flex flex-col gap-1.5">
+            {tag && <ContextTag tag={tag} />}
+            <span className="text-sm">{rest}</span>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const tagText = stripBrackets(q.tag)
+  return (
+    <Card className={`!py-0 bg-neutral-950 ${accent ? 'border-destructive/20' : 'border-border'}`}>
+      <CardContent className="flex items-start gap-4 p-4">
+        {marker && (
+          <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${accent ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {marker}
+          </span>
+        )}
+        <div className="flex flex-col gap-2 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <ContextTag tag={tagText} />
+            {q.dimension && (
+              <span className="text-[10px] text-muted-foreground">{criteriaLabel(q.dimension)}</span>
+            )}
+            {q.format && (
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{q.format}</span>
+            )}
+          </div>
+          <span className="text-sm">{q.question}</span>
+          {q.options && q.options.length > 0 && (
+            <div className="flex flex-col gap-1 mt-1">
+              {q.options.map((opt, idx) => {
+                // 선택지가 하나뿐이면(format: open → ["논의 필요"])
+                // "A."를 붙일 이유가 없다. 고를 게 없는데 고르라는 표시가 된다.
+                // multiple의 마지막에 오는 "논의 필요"는 접두를 유지해야 하므로
+                // 문자열이 아니라 개수·format으로 판단한다.
+                const single = q.options!.length === 1 || q.format === 'open'
+                return (
+                  <div key={idx} className="text-xs bg-muted rounded-md px-3 py-1.5 border border-border">
+                    {!single && (
+                      <span className="font-mono text-muted-foreground mr-2">
+                        {String.fromCharCode(65 + idx)}.
+                      </span>
+                    )}
+                    {opt}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {q.impact && (
+            <p className="text-xs text-muted-foreground mt-1">
+              <span className="font-medium">영향: </span>{q.impact}
+            </p>
+          )}
+          {q.blocks && q.blocks.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {/* prompt.ts의 정의가 "이 답이 없으면 막히는 작업"이다.
+                  "차단 중"은 상태로 읽혀 방향이 반대로 전달됐다 —
+                  조건과 결과를 둘 다 적어야 뜻이 통한다. */}
+              <span className="font-medium">이 답이 없으면 막히는 작업: </span>{q.blocks.join(', ')}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// 탭 안에서 출처가 다른 카드 묶음을 구분하는 소제목
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs font-medium text-muted-foreground pt-2">{children}</p>
+}
+
+function EmptyTab({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>
+}
+
 export default function ResultScreen({
   fileName,
   result,
@@ -462,6 +626,41 @@ export default function ResultScreen({
   }, [mockupGenerating])
 
   const devItems: DevItem[] = result.missing_for_developers ?? []
+  const designItems: MissingItem[] = result.missing_for_designers ?? []
+
+  // ── 탭 = owner ────────────────────────────────────────────────────────────
+  // 예전에는 "확인 질문 / 디자이너 체크리스트 / 개발자 체크리스트"로 나눴는데,
+  // 셋 다 "PRD에 없어서 막히는 것"이라는 같은 모집단에서 나오다 보니 같은 공백이
+  // 두세 탭에 중복으로 나왔다. 축을 "누가 답해야 하는가" 하나로 바꾼다.
+  //   · PM 확인 필요  — owner가 PM인 것 전부 (질문 + 디자인 항목 + 개발 항목)
+  //   · 디자인 확인 필요 / 개발 확인 필요 — 만들면서 정할 수 있는 것만
+  // 이렇게 하면 한 항목이 정확히 한 탭에만 놓이므로 중복이 구조적으로 불가능하다.
+  const isPmQuestion = (q: unknown) => (isQuestionV2(q) ? isPmOwned(q.owner) : true)
+
+  const pmQuestions = result.critical_questions.filter(isPmQuestion)
+  const ownerQuestions = result.critical_questions.filter(q => !isPmQuestion(q))
+
+  // 담당자 몫 질문은 태그로 갈라 보낸다 — [개발]만 개발 쪽, 나머지는 디자인 쪽.
+  // ([디자인]·[UX정책]은 물론 [비즈니스]도 담당자 몫이면 화면에서 풀리는 경우다)
+  const isDevQuestion = (q: unknown) =>
+    isQuestionV2(q) && stripBrackets(q.tag) === '개발'
+  const ownerDevQuestions = ownerQuestions.filter(isDevQuestion)
+  const ownerDesignQuestions = ownerQuestions.filter(q => !isDevQuestion(q))
+
+  // 항목은 owner가 'pm'일 때만 PM 탭으로 올린다 — 'unknown'(옛 결과)은 원래 탭에.
+  const pmDesignItems = designItems.filter(i => ownerOf(i.owner) === 'pm')
+  const ownerDesignItems = designItems.filter(i => ownerOf(i.owner) !== 'pm')
+  const pmDevItems = devItems.filter(i => ownerOf(i.owner) === 'pm')
+  const ownerDevItems = devItems.filter(i => ownerOf(i.owner) !== 'pm')
+
+  // 심각도가 높은 것이 위로. 예전에는 질문이 먼저 오고 그 아래 항목이 붙어서,
+  // Catastrophic 항목이 Minor 질문 세 개 아래에 묻히는 일이 생겼다.
+  const bySeverity = <T extends { severity?: number }>(a: T, b: T) =>
+    (b.severity ?? 0) - (a.severity ?? 0)
+
+  const pmCount = pmQuestions.length + pmDesignItems.length + pmDevItems.length
+  const designCount = ownerDesignItems.length + ownerDesignQuestions.length
+  const devCount = ownerDevItems.length + ownerDevQuestions.length
 
   // 문서에 이미 있어 디자인에 바로 쓸 수 있는 재료 (예전의 "가점 항목")
   const earnedMaterials = result.bonus_signals
@@ -658,19 +857,18 @@ export default function ResultScreen({
             로직과 데이터(DEV_READINESS)는 그대로 두므로 이 값만 켜면 돌아온다. */}
         {SHOW_DEV_READINESS && <DevReadiness result={result} />}
 
-        {/* 탭 — 요약이 맨 앞, 그다음이 확인 필요.
-            "확인 필요"에는 PM 몫과 담당자 몫이 섞여 있다. 카드마다 담당 배지가
-            붙으므로 탭 이름에서 PM을 빼고 개수는 전체를 센다 — 예전에는 탭이
-            "PM 확인 필요 (7)"인데 그중 1건이 담당자 몫이라 숫자가 어긋나 보였다. */}
+        {/* 탭 — 요약 다음은 "누가 답해야 하는가" 순서다.
+            PM 확인 필요 → 디자인 확인 필요 → 개발 확인 필요 → UX 제안.
+            탭 이름이 곧 담당이라 카드 안에 담당 배지를 따로 붙이지 않는다. */}
         {/* 라인탭 — 공용 Tabs는 알약형(bg-muted 컨테이너 + 활성 배경)이라
             진입 화면과 공유한다. 여기서만 배경을 걷고 밑줄로 바꾼다. */}
         <Tabs defaultValue="summary">
           <TabsList className={LINE_TABS_LIST}>
             <TabsTrigger value="summary" className={LINE_TAB}>요약</TabsTrigger>
-            <TabsTrigger value="questions" className={LINE_TAB}>확인 필요 ({result.critical_questions.length})</TabsTrigger>
+            <TabsTrigger value="questions" className={LINE_TAB}>PM 확인 필요 ({pmCount})</TabsTrigger>
+            <TabsTrigger value="missing" className={LINE_TAB}>디자인 확인 필요 ({designCount})</TabsTrigger>
+            <TabsTrigger value="dev" className={LINE_TAB}>개발 확인 필요 ({devCount})</TabsTrigger>
             <TabsTrigger value="recommendations" className={LINE_TAB}>UX 제안</TabsTrigger>
-            <TabsTrigger value="missing" className={LINE_TAB}>디자이너 체크리스트 ({result.missing_for_designers.length})</TabsTrigger>
-            <TabsTrigger value="dev" className={LINE_TAB}>개발자 체크리스트 ({devItems.length})</TabsTrigger>
           </TabsList>
 
           {/* 요약 탭 */}
@@ -737,13 +935,18 @@ export default function ResultScreen({
                   if (val.score === null || val.score === undefined) return null
 
                   const { text, hex } = criterionColor(val.score)
-                  const notesText = extractNotesText(val.notes ?? val)
-                  // v2 전용 필드 직접 활용 (있을 때만)
-                  const v2Notes = typeof val.notes === 'object' && val.notes !== null ? val.notes as {
-                    evidence?: string
-                    missing?: string[]
-                    applied_principle?: string
-                  } : null
+
+                  // ⚠️ 근거·누락은 criteria 항목에 바로 들어 있다(analysis.ts가 그렇게
+                  // 정규화한다). 예전에는 val.notes 안을 봤는데 그런 응답이 온 적이
+                  // 없어서, 구조화해 보여주는 분기가 통째로 죽어 있었고 전부 한 문단에
+                  // ·로 이어 붙은 채 나왔다. notes는 옛 기록에만 있는 모양이라 뒤로 뺀다.
+                  const legacy =
+                    typeof val.notes === 'object' && val.notes !== null
+                      ? (val.notes as { evidence?: string; missing?: string[] })
+                      : null
+                  const evidence = val.evidence ?? legacy?.evidence
+                  const missing = val.missing ?? legacy?.missing ?? []
+                  const legacyText = typeof val.notes === 'string' ? val.notes : ''
 
                   return (
                     <Card key={key} className="!py-0 bg-neutral-950">
@@ -755,17 +958,61 @@ export default function ResultScreen({
                         <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                           <div className="h-full rounded-full transition-all" style={{ width: `${val.score * 10}%`, backgroundColor: hex }} />
                         </div>
-                        {/* v2: evidence/missing/applied_principle을 구조화해서 표시. v1: 기존 notes 문자열 */}
-                        {v2Notes ? (
-                          <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
-                            {v2Notes.evidence && <p><span className="font-medium">근거:</span> {v2Notes.evidence}</p>}
-                            {v2Notes.missing && v2Notes.missing.length > 0 && (
-                              <p><span className="font-medium">누락:</span> {v2Notes.missing.join(', ')}</p>
-                            )}
-                            {v2Notes.applied_principle && <p className="text-[10px] opacity-70">원칙: {v2Notes.applied_principle}</p>}
-                          </div>
+                        {/* PRD에서 따온 문장과 이 도구의 지적은 성격이 다르다. 한 문단에
+                            이어 붙이면 어디까지가 인용인지 안 보여서 둘 다 안 읽힌다.
+                            인용은 세로선으로 묶고, 누락은 항목마다 줄을 나눈다 —
+                            쉼표로 이으면 세 건짜리 목록이 한 문장으로 읽힌다.
+                            적용 원칙은 뺐다. 채점 기준(rubric의 principle)을 그대로
+                            되돌려받는 값이라 항목마다 늘 같은 문구이고, 줄에서 가장
+                            긴 자리를 차지하면서 정보는 없었다. */}
+                        {!evidence && missing.length === 0 && legacyText ? (
+                          <p className="text-xs text-muted-foreground leading-relaxed">{legacyText}</p>
                         ) : (
-                          <p className="text-xs text-muted-foreground leading-relaxed">{notesText}</p>
+                          <div className="space-y-2.5 pt-1">
+                            <div>
+                              <p className="text-[10px] text-muted-foreground/50 mb-1">PRD에서</p>
+                              {evidence ? (
+                                <p className="border-l-2 border-border pl-2.5 text-xs text-muted-foreground leading-relaxed">
+                                  {evidence}
+                                </p>
+                              ) : (
+                                /* ⚠️ 이건 문서가 아니라 채점의 흠이다. 지시문은 모든 점수에
+                                   PRD 인용을 붙이라고 요구하는데(prompt.ts:63) 안 붙여서 온
+                                   경우다. "문서에 그 내용이 없다"는 뜻으로 읽히면 안 된다 —
+                                   문서에 없다는 것은 아래 "빠진 것"과 점수가 말한다.
+                                   ⚠️ 문구는 "불러오는 데 실패"로 쓴다. 세 번 고쳐 여기까지
+                                   왔다 — ①"…뜻은 아닙니다"는 부정문이 겹쳐 더 헷갈렸고,
+                                   ②"채점이 안 남겼습니다"는 '채점'이 누구인지 안 보여 와닿지
+                                   않았으며, ③"빠졌습니다"는 그래서 뭘 하라는 건지가 없었다.
+                                   "실패"는 읽는 사람이 아는 말이고 다시 시도하면 된다는 행동까지
+                                   같이 전달한다. 문서 탓으로 읽힐 여지도 없다.
+                                   "분석 결과에서"인 이유: 분석은 끝났고(점수는 나왔다) 그
+                                   결과물 안에 문장이 없는 것이다. "분석에서"라고 하면 분석하다
+                                   중간에 실패한 것처럼 읽힌다.
+                                   (엄밀히는 불러오다 실패한 게 아니라 응답에 처음부터 값이 없는
+                                   것이지만, 사용자가 할 일은 어느 쪽이든 다시 분석이라 이 표현이
+                                   맞다. 정확한 기술 표현을 화면에 쓰려 들지 말 것.)
+                                   색은 주황을 쓰지 않는다 — 이 화면에서 주황은 "보완 필요"라
+                                   9/10짜리 항목에 붙으면 거짓 경고가 된다. 점선으로 빈 자리만
+                                   표시한다. */
+                                <p className="border-l-2 border-dashed border-border pl-2.5 text-xs text-muted-foreground/50 leading-relaxed">
+                                  분석 결과에서 근거 문장을 불러오는 데 실패했습니다
+                                </p>
+                              )}
+                            </div>
+                            {missing.length > 0 && (
+                              <div>
+                                <p className="text-[10px] text-muted-foreground/50 mb-1">빠진 것</p>
+                                <ul className="space-y-0.5">
+                                  {missing.map((m, i) => (
+                                    <li key={i} className="text-xs text-muted-foreground leading-relaxed">
+                                      · {m}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </CardContent>
                     </Card>
@@ -783,173 +1030,82 @@ export default function ResultScreen({
             </div>
           </TabsContent>
 
-          {/* 디자이너 체크리스트 탭 */}
-          <TabsContent value="missing" className="space-y-4">
-            <p className="text-sm text-muted-foreground mb-4">
-              디자이너가 작업을 시작하기 전에 확인이 필요한 항목들
-            </p>
-            {result.missing_for_designers.map((item: MissingItem, i: number) => {
-              // v2 optional fields
-              const v2Item = item as MissingItem & {
-                principle?: string
-                severity?: number
-                user_impact?: string
-              }
-              const sev = severityBadge(v2Item.severity)
-              return (
-                <Card key={i} className="border-amber-800/40 !py-0 bg-neutral-950">
-                  <CardContent className="p-4">
-                    <div className="mb-3 flex items-center gap-2 flex-wrap">
-                      <Chip color="bg-amber-500/20 text-amber-300">{item.screen}</Chip>
-                      <OwnerBadge owner={item.owner} />
-                      {sev && <Chip color={sev.color}>{sev.label}</Chip>}
-                      {v2Item.principle && (
-                        <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
-                      )}
-                    </div>
-                    <p className="text-sm mb-3">
-                      <span className="text-amber-400 font-medium">문제: </span>
-                      {item.issue}
-                    </p>
-                    {v2Item.user_impact && (
-                      <p className="text-xs text-muted-foreground mb-3">
-                        <span className="font-medium">영향: </span>{v2Item.user_impact}
-                      </p>
-                    )}
-                    <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
-                        <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
-                      </svg>
-                      <p className="text-xs text-muted-foreground">{item.suggestion}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </TabsContent>
-
-          {/* 개발자 체크리스트 탭 */}
-          <TabsContent value="dev" className="space-y-4">
-            <p className="text-sm text-muted-foreground mb-4">
-              개발 착수 전 시스템·데이터 로직 관점에서 확인이 필요한 항목들
-            </p>
-            {devItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground">항목이 없습니다.</p>
-            ) : devItems.map((item: DevItem, i: number) => {
-              const v2Item = item as DevItem & {
-                risk?: string
-                severity?: number
-              }
-              const sev = severityBadge(v2Item.severity)
-              return (
-                <Card key={i} className="border-blue-800/40 !py-0 bg-neutral-950">
-                  <CardContent className="p-4">
-                    <div className="mb-3 flex items-center gap-2 flex-wrap">
-                      <Chip color="bg-blue-500/20 text-blue-300">{item.module}</Chip>
-                      <AreaBadge area={item.area} />
-                      <OwnerBadge owner={item.owner} />
-                      {sev && <Chip color={sev.color}>{sev.label}</Chip>}
-                    </div>
-                    <p className="text-sm mb-3">
-                      <span className="text-blue-400 font-medium">문제: </span>
-                      {item.issue}
-                    </p>
-                    {v2Item.risk && (
-                      <p className="text-xs text-muted-foreground mb-3">
-                        <span className="font-medium">리스크: </span>{v2Item.risk}
-                      </p>
-                    )}
-                    <div className="flex items-start gap-2 bg-muted rounded-xl p-3">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2" className="mt-0.5 flex-shrink-0">
-                        <path d="M12 2a10 10 0 100 20A10 10 0 0012 2zM12 8v4M12 16h.01" />
-                      </svg>
-                      <p className="text-xs text-muted-foreground">{item.suggestion}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </TabsContent>
-
-          {/* PM 확인 필요 탭 (사내 표현은 PO가 아니라 PM) */}
+          {/* PM 확인 필요 탭 — owner가 PM인 것 전부.
+              질문·디자인 항목·개발 항목이 함께 오므로 출처별로 묶어 보여준다.
+              (사내 표현은 PO가 아니라 PM) */}
           <TabsContent value="questions" className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
-              개발 착수 전 PM이 답변해야 할 핵심 질문들
+              PM이 정해주지 않으면 디자이너·개발자가 결정할 수 없는 항목들
             </p>
-            {result.critical_questions.map((q, i) => {
-              // v1: string, v2: object
-              if (isQuestionV2(q)) {
-                const tagText = stripBrackets(q.tag)
-                const pm = isPmOwned(q.owner)
-                return (
-                  <Card key={i} className={`!py-0 bg-neutral-950 ${pm ? 'border-destructive/20' : 'border-border'}`}>
-                    <CardContent className="flex items-start gap-4 p-4">
-                      <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${pm ? 'text-destructive' : 'text-muted-foreground'}`}>Q{i + 1}</span>
-                      <div className="flex flex-col gap-2 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {/* 누가 정할 일인지 먼저, 어느 영역인지 그다음 */}
-                          <OwnerBadge owner={q.owner ?? 'PM'} />
-                          <ContextTag tag={tagText} />
-                          {q.dimension && (
-                            <span className="text-[10px] text-muted-foreground">{criteriaLabel(q.dimension)}</span>
-                          )}
-                          {q.format && (
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                              {q.format}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-sm">{q.question}</span>
-                        {q.options && q.options.length > 0 && (
-                          <div className="flex flex-col gap-1 mt-1">
-                            {q.options.map((opt, idx) => {
-                              // 선택지가 하나뿐이면(format: open → ["논의 필요"])
-                              // "A."를 붙일 이유가 없다. 고를 게 없는데 고르라는 표시가 된다.
-                              // multiple의 마지막에 오는 "논의 필요"는 접두를 유지해야 하므로
-                              // 문자열이 아니라 개수·format으로 판단한다.
-                              const single = q.options!.length === 1 || q.format === 'open'
-                              return (
-                                <div key={idx} className="text-xs bg-muted rounded-md px-3 py-1.5 border border-border">
-                                  {!single && (
-                                    <span className="font-mono text-muted-foreground mr-2">
-                                      {String.fromCharCode(65 + idx)}.
-                                    </span>
-                                  )}
-                                  {opt}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {q.impact && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            <span className="font-medium">영향: </span>{q.impact}
-                          </p>
-                        )}
-                        {q.blocks && q.blocks.length > 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            <span className="font-medium">차단 중: </span>{q.blocks.join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              }
-              // v1 fallback — 문자열 기반
-              const { tag, rest } = parseTagFromString(q as string)
-              return (
-                <Card key={i} className="border-destructive/20 !py-0 bg-neutral-950">
-                  <CardContent className="flex items-start gap-4 p-4">
-                    <span className="text-sm font-bold text-destructive flex-shrink-0 mt-0.5">Q{i + 1}</span>
-                    <div className="flex flex-col gap-1.5">
-                      {tag && <ContextTag tag={tag} />}
-                      <span className="text-sm">{rest}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
+            {pmCount === 0 ? (
+              <EmptyTab>PM이 답해야 할 항목이 없습니다. 담당자가 설계하면서 정할 수 있는 것만 남았습니다.</EmptyTab>
+            ) : (
+              <>
+                {pmQuestions.map((q, i) => (
+                  <QuestionCard key={`q${i}`} q={q} index={i} accent marker={`Q${i + 1}`} />
+                ))}
+                {pmDesignItems.length > 0 && (
+                  <>
+                    <GroupLabel>디자인 착수를 막는 것</GroupLabel>
+                    {[...pmDesignItems].sort(bySeverity).map((item, i) => (
+                      <DesignerCard key={`pd${i}`} item={item} />
+                    ))}
+                  </>
+                )}
+                {pmDevItems.length > 0 && (
+                  <>
+                    <GroupLabel>개발 착수를 막는 것</GroupLabel>
+                    {[...pmDevItems].sort(bySeverity).map((item, i) => (
+                      <DevCard key={`pv${i}`} item={item} />
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </TabsContent>
+
+          {/* 디자인 확인 필요 탭 — PM에게 묻지 않고 디자이너가 정할 수 있는 것 */}
+          <TabsContent value="missing" className="space-y-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              디자이너가 화면을 설계하면서 정할 항목들 — PM 답변을 기다리지 않아도 됩니다
+            </p>
+            {designCount === 0 ? (
+              <EmptyTab>
+                이 문서에서 디자이너가 스스로 정할 수 있는 항목은 없습니다 —
+                화면에 걸린 공백이 모두 PM 답변을 기다리는 상태입니다. PM 확인 필요 탭을 보세요.
+              </EmptyTab>
+            ) : (
+              <>
+                {[...ownerDesignItems].sort(bySeverity).map((item, i) => (
+                  <DesignerCard key={`d${i}`} item={item} />
+                ))}
+                {ownerDesignQuestions.map((q, i) => (
+                  <QuestionCard key={`dq${i}`} q={q} index={i} accent={false} />
+                ))}
+              </>
+            )}
+          </TabsContent>
+
+          {/* 개발 확인 필요 탭 — API 설계서 등 다음 산출물에서 정해지는 것 */}
+          <TabsContent value="dev" className="space-y-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              개발자가 설계하면서 정할 항목들 — API 설계서 등 다음 산출물에서 결정됩니다
+            </p>
+            {devCount === 0 ? (
+              <EmptyTab>
+                이 문서에서 개발자가 스스로 정할 수 있는 항목은 없습니다 —
+                구현에 걸린 공백이 모두 PM 답변을 기다리는 상태입니다. PM 확인 필요 탭을 보세요.
+              </EmptyTab>
+            ) : (
+              <>
+                {[...ownerDevItems].sort(bySeverity).map((item, i) => (
+                  <DevCard key={`v${i}`} item={item} />
+                ))}
+                {ownerDevQuestions.map((q, i) => (
+                  <QuestionCard key={`vq${i}`} q={q} index={i} accent={false} />
+                ))}
+              </>
+            )}
           </TabsContent>
 
           {/* UX 제안 탭 */}
