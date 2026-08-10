@@ -585,6 +585,33 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-xs font-medium text-muted-foreground pt-2">{children}</p>
 }
 
+// 직군 탭의 두 구역("지금 정할 수 있는 것" / "PM 답변을 기다리는 것") 머리말.
+// 개수를 함께 적는다 — 아래 카드가 몇 장인지 보이지 않으면 두 구역의 경계가
+// 스크롤 중에 사라진다. count가 0이면 카드 대신 emptyText를 그 자리에 놓는다.
+function SectionHeading({
+  title,
+  note,
+  count,
+  emptyText,
+}: {
+  title: string
+  note: string
+  count: number
+  emptyText?: string
+}) {
+  return (
+    <div className="pt-2 first:pt-0">
+      <p className="text-sm font-medium">
+        {title} <span className="text-muted-foreground font-normal">{count}건</span>
+      </p>
+      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{note}</p>
+      {count === 0 && emptyText && (
+        <p className="text-xs text-muted-foreground/70 mt-3 leading-relaxed">{emptyText}</p>
+      )}
+    </div>
+  )
+}
+
 function EmptyTab({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>
 }
@@ -628,30 +655,47 @@ export default function ResultScreen({
   const devItems: DevItem[] = result.missing_for_developers ?? []
   const designItems: MissingItem[] = result.missing_for_designers ?? []
 
-  // ── 탭 = owner ────────────────────────────────────────────────────────────
-  // 예전에는 "확인 질문 / 디자이너 체크리스트 / 개발자 체크리스트"로 나눴는데,
-  // 셋 다 "PRD에 없어서 막히는 것"이라는 같은 모집단에서 나오다 보니 같은 공백이
-  // 두세 탭에 중복으로 나왔다. 축을 "누가 답해야 하는가" 하나로 바꾼다.
-  //   · PM 확인 필요  — owner가 PM인 것 전부 (질문 + 디자인 항목 + 개발 항목)
-  //   · 디자인 확인 필요 / 개발 확인 필요 — 만들면서 정할 수 있는 것만
-  // 이렇게 하면 한 항목이 정확히 한 탭에만 놓이므로 중복이 구조적으로 불가능하다.
+  // ── 탭 구성 ───────────────────────────────────────────────────────────────
+  // 두 축을 쓴다. 헷갈리기 쉬우니 무엇이 무엇인지 적어 둔다.
+  //
+  //   owner  = 누가 답해야 하는가 (PM / 담당자)
+  //   직군   = 누구의 작업에 걸리는가 (디자인 / 개발)
+  //
+  //   · PM 확인 필요   — owner가 PM인 것 전부. **PM에게 그대로 보내는 목록**이다.
+  //   · 디자인/개발 확인 필요 — 그 직군 작업에 걸린 것 전부. 위쪽은 지금 정할 수
+  //     있는 것, 아래쪽은 PM 답을 기다리는 것으로 나눈다. **직군의 작업 전체 뷰**다.
+  //
+  // PM 몫 항목은 PM 탭과 직군 탭에 함께 나온다. 이건 중복이 아니라 쓰임이 다른
+  // 두 뷰다 — 예전 구조는 "질문이냐 체크리스트냐"라는 출처로 갈라서 같은 공백이
+  // 아무 의미 없이 두 번 나왔지만, 여기서는 PM 탭은 보낼 목록, 직군 탭은
+  // "내 화면(모듈)에 걸린 게 전부 뭔가"를 보는 곳이다.
+  //
+  // 실측(사내 PRD 3건 × 2회)에서 항목의 89%가 PM 몫으로 나왔다. 담당자 몫만
+  // 직군 탭에 두면 그 탭이 늘 0~1건이라 볼 이유가 없어진다.
   const isPmQuestion = (q: unknown) => (isQuestionV2(q) ? isPmOwned(q.owner) : true)
+  const tagOf = (q: unknown) => (isQuestionV2(q) ? stripBrackets(q.tag) : '')
 
   const pmQuestions = result.critical_questions.filter(isPmQuestion)
   const ownerQuestions = result.critical_questions.filter(q => !isPmQuestion(q))
 
-  // 담당자 몫 질문은 태그로 갈라 보낸다 — [개발]만 개발 쪽, 나머지는 디자인 쪽.
-  // ([디자인]·[UX정책]은 물론 [비즈니스]도 담당자 몫이면 화면에서 풀리는 경우다)
-  const isDevQuestion = (q: unknown) =>
-    isQuestionV2(q) && stripBrackets(q.tag) === '개발'
-  const ownerDevQuestions = ownerQuestions.filter(isDevQuestion)
-  const ownerDesignQuestions = ownerQuestions.filter(q => !isDevQuestion(q))
+  // 질문을 직군으로 가르는 기준은 태그다. [개발]은 개발 쪽, [디자인]·[UX정책]은
+  // 디자인 쪽. [비즈니스]는 특정 직군의 작업이라 볼 수 없어 직군 탭에 넣지 않는다
+  // (담당자 몫으로 판정된 [비즈니스] 질문은 화면에서 풀리는 경우라 디자인 쪽에 둔다).
+  const isDevTag = (q: unknown) => tagOf(q) === '개발'
+  const isDesignTag = (q: unknown) => tagOf(q) === '디자인' || tagOf(q) === 'UX정책'
 
-  // 항목은 owner가 'pm'일 때만 PM 탭으로 올린다 — 'unknown'(옛 결과)은 원래 탭에.
+  const ownerDevQuestions = ownerQuestions.filter(isDevTag)
+  const ownerDesignQuestions = ownerQuestions.filter(q => !isDevTag(q))
+
+  // 항목은 owner가 'pm'일 때만 PM 몫으로 본다 — 'unknown'(옛 결과)은 담당자 쪽에.
   const pmDesignItems = designItems.filter(i => ownerOf(i.owner) === 'pm')
   const ownerDesignItems = designItems.filter(i => ownerOf(i.owner) !== 'pm')
   const pmDevItems = devItems.filter(i => ownerOf(i.owner) === 'pm')
   const ownerDevItems = devItems.filter(i => ownerOf(i.owner) !== 'pm')
+
+  // 직군 탭 아래쪽 "PM 답변 대기" 구역 — 그 직군 작업을 막고 있는 PM 몫들
+  const designWaiting = pmQuestions.filter(isDesignTag)
+  const devWaiting = pmQuestions.filter(isDevTag)
 
   // 심각도가 높은 것이 위로. 예전에는 질문이 먼저 오고 그 아래 항목이 붙어서,
   // Catastrophic 항목이 Minor 질문 세 개 아래에 묻히는 일이 생겼다.
@@ -659,8 +703,11 @@ export default function ResultScreen({
     (b.severity ?? 0) - (a.severity ?? 0)
 
   const pmCount = pmQuestions.length + pmDesignItems.length + pmDevItems.length
-  const designCount = ownerDesignItems.length + ownerDesignQuestions.length
-  const devCount = ownerDevItems.length + ownerDevQuestions.length
+  // 직군 탭 개수는 대기 중인 것까지 센다 — 탭 이름이 "이 직군에 걸린 것"이므로
+  const designActionable = ownerDesignItems.length + ownerDesignQuestions.length
+  const devActionable = ownerDevItems.length + ownerDevQuestions.length
+  const designCount = designActionable + designWaiting.length + pmDesignItems.length
+  const devCount = devActionable + devWaiting.length + pmDevItems.length
 
   // 문서에 이미 있어 디자인에 바로 쓸 수 있는 재료 (예전의 "가점 항목")
   const earnedMaterials = result.bonus_signals
@@ -1035,7 +1082,8 @@ export default function ResultScreen({
               (사내 표현은 PO가 아니라 PM) */}
           <TabsContent value="questions" className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
-              PM이 정해주지 않으면 디자이너·개발자가 결정할 수 없는 항목들
+              PM이 정해주지 않으면 디자이너·개발자가 결정할 수 없는 항목들 —
+              이 탭을 그대로 PM에게 전달하면 됩니다
             </p>
             {pmCount === 0 ? (
               <EmptyTab>PM이 답해야 할 항목이 없습니다. 담당자가 설계하면서 정할 수 있는 것만 남았습니다.</EmptyTab>
@@ -1064,46 +1112,85 @@ export default function ResultScreen({
             )}
           </TabsContent>
 
-          {/* 디자인 확인 필요 탭 — PM에게 묻지 않고 디자이너가 정할 수 있는 것 */}
+          {/* 디자인 확인 필요 탭 — 디자인 작업에 걸린 것 전부.
+              위: 지금 정할 수 있는 것 / 아래: PM 답을 기다리는 것 */}
           <TabsContent value="missing" className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
-              디자이너가 화면을 설계하면서 정할 항목들 — PM 답변을 기다리지 않아도 됩니다
+              화면 설계에 걸려 있는 항목들
             </p>
             {designCount === 0 ? (
-              <EmptyTab>
-                이 문서에서 디자이너가 스스로 정할 수 있는 항목은 없습니다 —
-                화면에 걸린 공백이 모두 PM 답변을 기다리는 상태입니다. PM 확인 필요 탭을 보세요.
-              </EmptyTab>
+              <EmptyTab>화면 설계에 걸린 항목이 없습니다.</EmptyTab>
             ) : (
               <>
+                <SectionHeading
+                  title="지금 정할 수 있는 것"
+                  note="PM 답변을 기다리지 않고 UX 스펙 단계에서 결정하면 됩니다"
+                  count={designActionable}
+                  emptyText="지금 바로 정할 수 있는 항목은 없습니다 — 아래 항목의 답이 와야 화면 설계를 시작할 수 있습니다"
+                />
                 {[...ownerDesignItems].sort(bySeverity).map((item, i) => (
                   <DesignerCard key={`d${i}`} item={item} />
                 ))}
                 {ownerDesignQuestions.map((q, i) => (
                   <QuestionCard key={`dq${i}`} q={q} index={i} accent={false} />
                 ))}
+
+                {designWaiting.length + pmDesignItems.length > 0 && (
+                  <>
+                    <SectionHeading
+                      title="PM 답변을 기다리는 것"
+                      note="PM 확인 필요 탭에도 있는 항목입니다 — 답이 와야 이 화면 작업이 풀립니다"
+                      count={designWaiting.length + pmDesignItems.length}
+                    />
+                    {[...pmDesignItems].sort(bySeverity).map((item, i) => (
+                      <DesignerCard key={`dw${i}`} item={item} />
+                    ))}
+                    {designWaiting.map((q, i) => (
+                      <QuestionCard key={`dwq${i}`} q={q} index={i} accent={false} />
+                    ))}
+                  </>
+                )}
               </>
             )}
           </TabsContent>
 
-          {/* 개발 확인 필요 탭 — API 설계서 등 다음 산출물에서 정해지는 것 */}
+          {/* 개발 확인 필요 탭 — 구현에 걸린 것 전부 (같은 두 구역 구조) */}
           <TabsContent value="dev" className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
-              개발자가 설계하면서 정할 항목들 — API 설계서 등 다음 산출물에서 결정됩니다
+              구현에 걸려 있는 항목들
             </p>
             {devCount === 0 ? (
-              <EmptyTab>
-                이 문서에서 개발자가 스스로 정할 수 있는 항목은 없습니다 —
-                구현에 걸린 공백이 모두 PM 답변을 기다리는 상태입니다. PM 확인 필요 탭을 보세요.
-              </EmptyTab>
+              <EmptyTab>구현에 걸린 항목이 없습니다.</EmptyTab>
             ) : (
               <>
+                <SectionHeading
+                  title="지금 정할 수 있는 것"
+                  note="API 설계서 등 다음 산출물에서 결정하면 됩니다"
+                  count={devActionable}
+                  emptyText="지금 바로 정할 수 있는 항목은 없습니다 — 아래 항목의 답이 와야 구현을 시작할 수 있습니다"
+                />
                 {[...ownerDevItems].sort(bySeverity).map((item, i) => (
                   <DevCard key={`v${i}`} item={item} />
                 ))}
                 {ownerDevQuestions.map((q, i) => (
                   <QuestionCard key={`vq${i}`} q={q} index={i} accent={false} />
                 ))}
+
+                {devWaiting.length + pmDevItems.length > 0 && (
+                  <>
+                    <SectionHeading
+                      title="PM 답변을 기다리는 것"
+                      note="PM 확인 필요 탭에도 있는 항목입니다 — 답이 와야 이 구현이 풀립니다"
+                      count={devWaiting.length + pmDevItems.length}
+                    />
+                    {[...pmDevItems].sort(bySeverity).map((item, i) => (
+                      <DevCard key={`vw${i}`} item={item} />
+                    ))}
+                    {devWaiting.map((q, i) => (
+                      <QuestionCard key={`vwq${i}`} q={q} index={i} accent={false} />
+                    ))}
+                  </>
+                )}
               </>
             )}
           </TabsContent>
