@@ -5,6 +5,14 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-08-10',
+    changes: [
+      'Hi-Fi 목업을 무신사 디자인 시스템(MCDS)으로 전환 — 실제 서비스와 동일한 컴포넌트·룩앤필로 프로토타입 생성',
+      'Hi-Fi 안정성 개선 — 화면 런타임 에러 격리(ErrorBoundary), 첫 화면·LNB 누락 보정, 하위 메뉴 클릭 정상화',
+      '프로토타입 생성 파이프라인 개선 및 분석 JSON 파싱 안정화',
+    ],
+  },
+  {
     date: '2026-07-07',
     changes: [
       'UI 디자인 시스템 개편 (astryx 적용) — 버튼·카드·탭·뱃지 등 전반 컴포넌트를 새 디자인 시스템으로 교체해 일관된 룩앤필 제공',
