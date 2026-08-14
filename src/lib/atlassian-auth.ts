@@ -306,5 +306,14 @@ export const ATLASSIAN_STATE_COOKIE = STATE_COOKIE_NAME
 
 export function buildCallbackUri(req: Request): string {
   const u = new URL(req.url)
-  return `${u.protocol}//${u.host}/api/auth/atlassian/callback`
+  // Vercel 등 프록시 뒤에서는 req.url의 host·protocol이 내부값(localhost/http)일 수
+  // 있다. 이 콜백은 authorize 단계와 token 교환 단계에서 동일해야 하고, 또 Atlassian
+  // 콘솔에 등록한 redirect_uri와 한 글자도 달라선 안 된다(달라지면 로그인 실패).
+  // 그래서 프록시가 넘겨주는 공개 host·protocol을 우선하고, 헤더가 없으면(로컬 dev)
+  // req.url을 그대로 쓴다 — 로컬 동작은 이전과 같다.
+  const fwdHost = req.headers.get('x-forwarded-host')
+  const fwdProto = req.headers.get('x-forwarded-proto')
+  const host = fwdHost || u.host
+  const proto = fwdProto ? fwdProto.split(',')[0].trim() : u.protocol.replace(/:$/, '')
+  return `${proto}://${host}/api/auth/atlassian/callback`
 }

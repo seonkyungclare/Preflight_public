@@ -326,6 +326,13 @@ const SHOW_DEV_READINESS = false
 // 쓰이지 않는 입력칸이 화면만 차지하므로 꺼 둔다. 배포 경로가 정리되면 켠다.
 const SHOW_REQUIREMENTS_INPUT = false
 
+// Hi-Fi 목업 생성을 띄울지.
+// Hi-Fi 경로(/api/mockup type=hifi)는 스펙 추출→화면 병렬 생성→조립이 직렬로
+// 이어져 실행 시간이 길다. 무료(Hobby) 플랜의 60초 함수 상한을 넘길 위험이 있어,
+// PM 테스트용 배포에서는 채점과 Lo-Fi만 열고 Hi-Fi 생성은 꺼 둔다.
+// Pro 플랜으로 올리거나 ANTHROPIC_SCREEN_MODEL을 가벼운 모델로 고정하면 다시 켠다.
+const SHOW_HIFI_MOCKUP = false
+
 // ── 개발 착수 전 확인 (점수 무관) ────────────────────────────────────────────
 // 판정을 "디자인 착수 가능"으로 줄인 것의 짝. 줄인 만큼 눈에 보이게 한다.
 const DEV_STATUS_STYLE: Record<string, { dot: string; text: string; label: string }> = {
@@ -865,13 +872,19 @@ export default function ResultScreen({
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {hasMockupHiFi && mockupHiFiAt
+                  {!SHOW_HIFI_MOCKUP
+                    ? '현재 비활성화되어 있습니다'
+                    : hasMockupHiFi && mockupHiFiAt
                     ? `${formatHistoryDate(mockupHiFiAt)} 생성`
                     : '아직 생성되지 않았습니다'}
                 </p>
               </div>
               <div className="flex gap-1.5 shrink-0">
-                {mockupGenerating === 'hifi' ? (
+                {!SHOW_HIFI_MOCKUP ? (
+                  <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled>
+                    준비 중
+                  </Button>
+                ) : mockupGenerating === 'hifi' ? (
                   <>
                     <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled>
                       <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
