@@ -180,7 +180,8 @@ export default function ResultScreen({
   const [showMockupModal, setShowMockupModal] = useState(false)
   const [isRegenerate, setIsRegenerate] = useState(false)
   // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
-  const [tab, setTab] = useState('recommendations')
+  // 기본 탭은 '요약' — 점수 다음으로 사용자가 가장 먼저 확인해야 할 정보
+  const [tab, setTab] = useState('summary')
 
   const devItems: DevItem[] = result.missing_for_developers ?? []
 
@@ -188,6 +189,45 @@ export default function ResultScreen({
   const criteriaEntries = Object.entries(result.criteria) as Array<
     [string, { score: number | null; notes?: unknown; evidence?: string; missing?: string[]; applied_principle?: string }]
   >
+
+  // 목업 컨트롤 한 줄(컴팩트). Lo-Fi/Hi-Fi 가 동일 구조라 헬퍼로 추출 — 히어로를 가볍게 유지한다.
+  const renderMockupRow = (
+    type: MockupType,
+    label: string,
+    badge: string,
+    badgeClass: string,
+    hasMockup: boolean,
+    mockupAt: number | null,
+  ) => (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-semibold">{label}</span>
+          <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border ${badgeClass}`}>
+            {badge}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+          {hasMockup && mockupAt ? `${formatHistoryDate(mockupAt)} 생성` : '미생성'}
+        </p>
+      </div>
+      <div className="flex gap-1.5 shrink-0">
+        {mockupGenerating === type ? (
+          <>
+            <AstryxButton variant="primary" size="sm" isDisabled icon={<Spinner size="sm" shade="inherit" />} label={generatingLabel} />
+            <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
+          </>
+        ) : hasMockup ? (
+          <>
+            <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup(type, false)} isDisabled={mockupGenerating !== null} />
+            <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup(type, true)} isDisabled={mockupGenerating !== null} />
+          </>
+        ) : (
+          <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup(type, false)} isDisabled={mockupGenerating !== null} />
+        )}
+      </div>
+    </div>
+  )
 
   return (
     <div data-astryx-theme="neutral" className="min-h-screen [&_button]:rounded-md">
@@ -219,103 +259,27 @@ export default function ResultScreen({
             <span className="text-sm text-muted-foreground">방금 분석됨</span>
           </div>
 
-        {/* 점수 + 목업 카드 */}
-        <div className="grid grid-cols-3 gap-2 mb-8">
-          {/* Score - 2행 span */}
-          <AstryxCard padding={0} className="flex flex-col items-center justify-center row-span-2 max-h-[200px]">
+        {/* 점수(주인공) + 목업 컨트롤(보조, 컴팩트) */}
+        <div className="flex items-center gap-5 mb-8 flex-wrap">
+          <AstryxCard padding={0} className="flex items-center justify-center shrink-0">
             <div className="flex items-center justify-center p-4">
               <ScoreGauge score={result.sufficiency_score} />
             </div>
           </AstryxCard>
 
-          {/* Lo-Fi 카드 */}
-          <AstryxCard padding={0} className={`col-span-2 max-h-[100px] overflow-hidden !py-0 ${hasMockupLowFi ? '' : 'bg-muted/30'}`}>
-            <div className="p-3 h-full flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-semibold">Lo-Fi</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-border bg-muted text-muted-foreground">
-                    와이어프레임
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {hasMockupLowFi && mockupLowFiAt
-                    ? `${formatHistoryDate(mockupLowFiAt)} 생성`
-                    : '아직 생성되지 않았습니다'}
-                </p>
-              </div>
-              <div className="flex gap-1.5 shrink-0">
-                {mockupGenerating === 'lowfi' ? (
-                  <>
-                    <AstryxButton
-                      variant="primary"
-                      size="sm"
-                      isDisabled
-                      icon={<Spinner size="sm" shade="inherit" />}
-                      label={generatingLabel}
-                    />
-                    <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
-                  </>
-                ) : hasMockupLowFi ? (
-                  <>
-                    <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup('lowfi', false)} isDisabled={mockupGenerating !== null} />
-                    <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup('lowfi', true)} isDisabled={mockupGenerating !== null} />
-                  </>
-                ) : (
-                  <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup('lowfi', false)} isDisabled={mockupGenerating !== null} />
-                )}
-              </div>
-            </div>
-          </AstryxCard>
-
-          {/* Hi-Fi 카드 */}
-          <AstryxCard padding={0} className={`col-span-2 max-h-[100px] overflow-hidden !py-0 ${hasMockupHiFi ? '' : 'bg-muted/30'}`}>
-            <div className="p-3 h-full flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-semibold">Hi-Fi</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary/30 bg-primary/10 text-primary">
-                    인터랙티브
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {hasMockupHiFi && mockupHiFiAt
-                    ? `${formatHistoryDate(mockupHiFiAt)} 생성`
-                    : '아직 생성되지 않았습니다'}
-                </p>
-              </div>
-              <div className="flex gap-1.5 shrink-0">
-                {mockupGenerating === 'hifi' ? (
-                  <>
-                    <AstryxButton
-                      variant="primary"
-                      size="sm"
-                      isDisabled
-                      icon={<Spinner size="sm" shade="inherit" />}
-                      label={generatingLabel}
-                    />
-                    <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
-                  </>
-                ) : hasMockupHiFi ? (
-                  <>
-                    <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup('hifi', false)} isDisabled={mockupGenerating !== null} />
-                    <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup('hifi', true)} isDisabled={mockupGenerating !== null} />
-                  </>
-                ) : (
-                  <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup('hifi', false)} isDisabled={mockupGenerating !== null} />
-                )}
-              </div>
-            </div>
-          </AstryxCard>
+          <div className="flex-1 min-w-[280px] flex flex-col gap-2">
+            {renderMockupRow('lowfi', 'Lo-Fi', '와이어프레임', 'border-border bg-muted text-muted-foreground', hasMockupLowFi, mockupLowFiAt)}
+            {renderMockupRow('hifi', 'Hi-Fi', '인터랙티브', 'border-primary/30 bg-primary/10 text-primary', hasMockupHiFi, mockupHiFiAt)}
+          </div>
         </div>
 
         {/* 탭 */}
         <TabList value={tab} onChange={setTab} layout="fill" className="mb-6">
-          <Tab value="recommendations" label="UX 제안" />
           <Tab value="summary" label="요약" />
-          <Tab value="missing" label={`디자이너 체크리스트 (${result.missing_for_designers.length})`} />
-          <Tab value="dev" label={`개발자 체크리스트 (${devItems.length})`} />
-          <Tab value="questions" label={`PO 확인 필요 (${result.critical_questions.length})`} />
+          <Tab value="missing" label={`디자이너 (${result.missing_for_designers.length})`} />
+          <Tab value="dev" label={`개발자 (${devItems.length})`} />
+          <Tab value="questions" label={`PO 질문 (${result.critical_questions.length})`} />
+          <Tab value="recommendations" label="UX 제안" />
         </TabList>
 
           {/* 요약 탭 */}
