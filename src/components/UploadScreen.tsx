@@ -34,6 +34,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   const [confluenceUrl, setConfluenceUrl] = useState('')
   const [atlassianConnected, setAtlassianConnected] = useState<boolean | null>(null)
   const [atlassianCloudUrl, setAtlassianCloudUrl] = useState<string | undefined>(undefined)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
   // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
@@ -80,6 +81,11 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
       })
       .catch(() => { if (!cancelled) setAtlassianConnected(false) })
 
+    fetch('/api/auth/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { email?: string } | null) => { if (!cancelled && d?.email) setUserEmail(d.email) })
+      .catch(() => {})
+
     const url = new URL(window.location.href)
     const err = url.searchParams.get('atlassian_error')
     if (err) {
@@ -93,10 +99,10 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
     return () => { cancelled = true }
   }, [])
 
-  async function handleAtlassianLogout() {
-    await fetch('/api/auth/atlassian/logout', { method: 'POST' })
-    setAtlassianConnected(false)
-    setAtlassianCloudUrl(undefined)
+  // Atlassian 계정이 곧 Preflight 접근 인증 수단이므로 로그아웃하면 로그인 화면으로 돌아간다
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    window.location.href = '/login'
   }
 
   const addFiles = useCallback((incoming: FileList | null) => {
@@ -200,6 +206,19 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
 
   return (
     <div data-astryx-theme="neutral" className="min-h-screen flex flex-col items-center justify-center px-6 py-12 relative [&_button]:rounded-md">
+      {/* 좌측 상단 — 로그인 계정 */}
+      {userEmail && (
+        <div className="absolute top-4 left-4 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate max-w-[220px]">{userEmail}</span>
+          <button
+            onClick={handleLogout}
+            className="hover:text-foreground underline underline-offset-2"
+          >
+            로그아웃
+          </button>
+        </div>
+      )}
+
       {/* 우측 상단 — 이전 분석 */}
       <button
         onClick={() => { refreshHistory(); setShowHistory(true) }}
@@ -343,10 +362,10 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
                   </div>
                   {atlassianConnected && (
                     <button
-                      onClick={handleAtlassianLogout}
+                      onClick={handleLogout}
                       className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
                     >
-                      연결 해제
+                      로그아웃
                     </button>
                   )}
                 </div>

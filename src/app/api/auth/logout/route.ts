@@ -2,10 +2,7 @@ import { cookies } from 'next/headers'
 import { ATLASSIAN_COOKIE, ATLASSIAN_REFRESH_COOKIE } from '@/lib/atlassian-auth'
 import { AUTH_COOKIE } from '@/lib/app-session'
 
-/**
- * Atlassian 연결 해제 = 앱 로그아웃.
- * Atlassian 계정이 곧 Preflight 접근 인증 수단이므로 두 세션을 함께 제거한다.
- */
+/** 앱 접근 세션과 Atlassian 연동 세션을 모두 정리 */
 export async function POST(): Promise<Response> {
   const cookieStore = await cookies()
   cookieStore.delete(AUTH_COOKIE)
