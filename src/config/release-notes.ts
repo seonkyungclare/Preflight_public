@@ -5,6 +5,14 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-09-01',
+    changes: [
+      '사내 계정 로그인 필수 — 무신사 Atlassian 계정으로 로그인해야 Preflight를 이용할 수 있습니다. 외부에서는 접근할 수 없습니다',
+      '로그인 한 번으로 Confluence 연결까지 완료 — 별도로 계정을 다시 연결할 필요가 없습니다',
+      '화면 좌측 상단에서 현재 로그인 계정 확인 및 로그아웃 가능 (로그인은 7일간 유지)',
+    ],
+  },
+  {
     date: '2026-08-10',
     changes: [
       'Hi-Fi 목업을 무신사 디자인 시스템(MCDS)으로 전환 — 실제 서비스와 동일한 컴포넌트·룩앤필로 프로토타입 생성',
