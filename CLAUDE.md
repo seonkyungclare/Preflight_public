@@ -60,7 +60,15 @@ Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-
 ## A-7. 문체
 분석 결과의 모든 한국어 문자열과 결과 화면 라벨은 [docs/analysis-writing-rules.md](docs/analysis-writing-rules.md) 를 따른다. 개조식(명사형 종결), 제목은 개념어 명사구, 엠대시 금지, 용어집 표기. PO 질문만 의문문. 외래어는 A(MCDS 컴포넌트: 영문 원어) / B(굳어진 음차 유지) / C(한글 정착어) 로 분류하고, 굳어진 영어 용어를 새로 번역하지 않는다(날짜 선택기 ✗ → Date Picker). 서버 치환표 `TERM_FIXES` 가 안전장치. 프롬프트 상수 `WRITING_STYLE`·`GLOSSARY` 는 이 문서의 사본이다.
 
-## A-8. 출력
+## A-8. 목업 정의 (2026-09-22 확정)
+* **Hi-Fi = 구조 충실 목업.** 목적은 (1) 화면 전체 구조와 (2) 필요한 요소·속성(필드·컬럼·액션·상태·이동)을 보는 것. 데모가 아니다.
+* 데이터는 실제처럼 보일 필요 없음: 행 2개, 값은 "값"·"2026-01-01"·"0"·PRD 상태값 같은 자리표시자. 브랜드명·금액 등 꾸밈 데이터 금지.
+* 요소는 빠짐없이: 스펙의 컬럼·필드·액션은 전부 MCDS 컴포넌트로 표시. 필드 유형은 컴포넌트 선택(TextField·Select·Date Picker)으로 드러낸다.
+* 인터랙션은 최소: 이동(navigate)과 화면당 Dialog 1개까지. 토스트·드로어·목록 갱신 로직·상태 변형 화면 없음.
+* 크기 상한: 화면당 110줄, 출력 4,500토큰, 화면 수 10개. 접힌 섹션은 요약 블록(stat 3개 또는 3열 2행 표).
+* Lo-Fi 는 기존 그레이스케일 와이어프레임 유지.
+
+## A-9. 출력
 `section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.
 
 ---
