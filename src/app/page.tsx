@@ -304,12 +304,21 @@ export default function Home() {
       // 1) 화면 구조: 앞서 확정된 spec 이 있으면 재사용(Lo-Fi/Hi-Fi 동일 화면 집합)
       let spec = state.mockupSpec as { screens: Array<{ id: string; name: string }> } | null
       if (!spec || !Array.isArray(spec.screens) || spec.screens.length === 0) {
-        setProgress(10, 'PRD 화면 구조 분석 중')
-        const r = await post<{ spec: { screens: Array<{ id: string; name: string }> } }>('/api/mockup/spec', {
-          prdText: state.prdText,
-          analysisText: JSON.stringify(state.analysis),
-        })
-        spec = r.spec
+        // 구조 추출은 30~70초 걸리고 중간 이벤트가 없다. 경과 시간을 흘려 멈춘 것처럼 보이지 않게 한다.
+        const s0 = Date.now()
+        const specTick = () => setProgress(10, `PRD 화면 구조 분석 중 · ${Math.round((Date.now() - s0) / 1000)}초 경과`)
+        specTick()
+        heartbeat = setInterval(specTick, 5000)
+        try {
+          const r = await post<{ spec: { screens: Array<{ id: string; name: string }> } }>('/api/mockup/spec', {
+            prdText: state.prdText,
+            analysisText: JSON.stringify(state.analysis),
+          })
+          spec = r.spec
+        } finally {
+          clearInterval(heartbeat)
+          heartbeat = null
+        }
       }
       const screens = spec.screens
       const total = screens.length
