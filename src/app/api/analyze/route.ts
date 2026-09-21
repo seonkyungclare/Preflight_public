@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { isTemplateId, type PrdTemplateId } from '@/config/prd-template'
-import { buildV3SystemPrompt, ANALYSIS_TOOL_V3 } from '@/lib/analyze-v3'
+import { buildStructurePrompt, buildChecklistPrompt, STRUCTURE_TOOL_V3, CHECKLIST_TOOL_V3 } from '@/lib/analyze-v3'
 import { finalizeV3Analysis, asList, type RawV3Analysis } from '@/lib/scoring'
 
 export const maxDuration = 300
@@ -10,6 +10,7 @@ export const maxDuration = 300
 // ----------------------------------------------------------------------------
 // - other / commerce-core → Protocol v2.0 (아래 SYSTEM_PROMPT / ANALYSIS_TOOL, 변경 없음)
 // - partner-growth        → Protocol v3.0 (lib/analyze-v3.ts 프롬프트 + lib/scoring.ts 서버 채점)
+//     두 호출을 병렬로 보낸다: A 구조(기본 모델) + B 체크리스트(빠른 모델). 시스템 프롬프트는 캐시.
 // 요청 본문의 `template` 이 없거나 모르는 값이면 400.
 // ============================================================================
 
@@ -396,18 +397,24 @@ function getAnthropicClient(): Anthropic {
   return new Anthropic({ apiKey })
 }
 
+function uniq(list: Array<string | undefined>): string[] {
+  const out: string[] = []
+  for (const m of list) if (m && !out.includes(m)) out.push(m)
+  return out
+}
+
+/** 기본(판정) 모델 후보. ANTHROPIC_MODEL 우선 */
 function getAnthropicModelCandidates(): string[] {
-  const configuredModel = process.env.ANTHROPIC_MODEL ?? process.env.anthropic_model
-  const candidates = [
-    configuredModel,
-    'claude-sonnet-4-6',
-    'claude-opus-4-6',
-  ].filter(Boolean) as string[]
-  const unique: string[] = []
-  for (const m of candidates) {
-    if (!unique.includes(m)) unique.push(m)
-  }
-  return unique
+  return uniq([process.env.ANTHROPIC_MODEL ?? process.env.anthropic_model, 'claude-sonnet-4-6', 'claude-opus-4-6'])
+}
+
+/** 빠른 모델 후보 (v3 B 호출 — 체크리스트·질문·UX 제안). ANTHROPIC_FAST_MODEL 우선, 없으면 Haiku → 기본 모델 */
+function getAnthropicFastModelCandidates(): string[] {
+  return uniq([
+    process.env.ANTHROPIC_FAST_MODEL ?? process.env.anthropic_fast_model,
+    'claude-haiku-4-5-20251001',
+    ...getAnthropicModelCandidates(),
+  ])
 }
 
 function extractToolInput(content: Anthropic.Messages.Message['content']): unknown {
@@ -418,8 +425,8 @@ function extractToolInput(content: Anthropic.Messages.Message['content']): unkno
 async function createMessageWithModelFallback(
   anthropic: Anthropic,
   params: Omit<Anthropic.Messages.MessageCreateParams, 'model' | 'stream'> & { stream?: false },
+  models: string[] = getAnthropicModelCandidates(),
 ): Promise<Anthropic.Messages.Message> {
-  const models = getAnthropicModelCandidates()
   let lastError: unknown
 
   for (const model of models) {
@@ -451,10 +458,129 @@ async function createMessageWithModelFallback(
   throw lastError
 }
 
+/** 시스템 프롬프트를 캐시 블록으로 (동일 프롬프트가 요청마다 반복되므로 prompt caching 적용) */
+function cachedSystem(text: string): Anthropic.Messages.MessageCreateParams['system'] {
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] as unknown as Anthropic.Messages.MessageCreateParams['system']
+}
+
+function usageSummary(m: Anthropic.Messages.Message): string {
+  const u = m.usage as unknown as Record<string, number | undefined>
+  return `in=${u.input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} cache_read=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens ?? 0}`
+}
+
+// ─── v3 (Partner Growth): A 구조 + B 체크리스트 병렬 호출 ────────────────────────
+
+async function analyzeV3(anthropic: Anthropic, prdText: string): Promise<Response> {
+  const userContent = `다음 PRD를 분석해줘:\n\n${prdText}`
+  const t0 = Date.now()
+
+  const structureCall = createMessageWithModelFallback(anthropic, {
+    max_tokens: 12000,
+    temperature: 0.2,
+    system: cachedSystem(buildStructurePrompt()),
+    tools: [STRUCTURE_TOOL_V3],
+    tool_choice: { type: 'tool', name: STRUCTURE_TOOL_V3.name },
+    messages: [{ role: 'user', content: userContent }],
+  }).then(m => ({ m, ms: Date.now() - t0 }))
+
+  const checklistCall = createMessageWithModelFallback(
+    anthropic,
+    {
+      max_tokens: 8000,
+      temperature: 0.2,
+      system: cachedSystem(buildChecklistPrompt()),
+      tools: [CHECKLIST_TOOL_V3],
+      tool_choice: { type: 'tool', name: CHECKLIST_TOOL_V3.name },
+      messages: [{ role: 'user', content: userContent }],
+    },
+    getAnthropicFastModelCandidates(),
+  ).then(m => ({ m, ms: Date.now() - t0 }))
+
+  // B 가 실패해도 A(점수)는 살린다 — 체크리스트는 빈 목록으로 내려가고 로그에 남긴다
+  const [structure, checklist] = await Promise.all([
+    structureCall,
+    checklistCall.catch(err => {
+      console.error('[analyze v3 B] 체크리스트 호출 실패 — 빈 목록으로 진행:', err)
+      return null
+    }),
+  ])
+
+  console.log(`[analyze v3 A] model=${structure.m.model} stop=${structure.m.stop_reason} ${usageSummary(structure.m)} ${structure.ms}ms`)
+  if (checklist) {
+    console.log(`[analyze v3 B] model=${checklist.m.model} stop=${checklist.m.stop_reason} ${usageSummary(checklist.m)} ${checklist.ms}ms`)
+  }
+
+  if (structure.m.stop_reason === 'max_tokens') {
+    return new Response('분석 응답이 너무 길어 잘렸습니다. PRD 분량을 줄여 다시 시도해주세요.', { status: 502 })
+  }
+
+  const rawA = extractToolInput(structure.m.content) as Partial<RawV3Analysis> | null
+  if (!rawA) {
+    console.error('[analyze v3 A] tool_use 블록을 찾지 못했습니다:', JSON.stringify(structure.m.content).slice(0, 500))
+    return new Response('분석 결과를 생성하지 못했습니다. 다시 시도해주세요.', { status: 502 })
+  }
+  const rawB =
+    checklist && checklist.m.stop_reason !== 'max_tokens'
+      ? ((extractToolInput(checklist.m.content) as Partial<RawV3Analysis> | null) ?? {})
+      : {}
+
+  const merged: RawV3Analysis = {
+    ...rawB,
+    ...rawA,
+    section_coverage: (rawA.section_coverage ?? []) as RawV3Analysis['section_coverage'],
+    missing_for_designers: rawB.missing_for_designers ?? [],
+    missing_for_developers: rawB.missing_for_developers ?? [],
+    critical_questions: rawB.critical_questions ?? [],
+    ux_recommendations: rawB.ux_recommendations ?? [],
+  }
+
+  console.log(
+    `[analyze v3] section_coverage type=${Array.isArray(rawA.section_coverage) ? 'array' : typeof rawA.section_coverage} ids=${JSON.stringify(
+      asList<{ section_id?: string; status?: string }>(rawA.section_coverage, 'section_id').map(s => `${s.section_id}:${s.status}`),
+    )}`,
+  )
+
+  const scored = finalizeV3Analysis(merged)
+  console.log(
+    `[analyze v3] score=${scored.sufficiency_score} raw=${scored.raw_score} gates=${scored.hard_gates.filter(g => g.triggered).map(g => g.id).join(',') || '-'} total=${Date.now() - t0}ms`,
+  )
+  return new Response(JSON.stringify(scored), {
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  })
+}
+
+// ─── v2 (그 외 / Commerce Core): 단일 호출 ─────────────────────────────────────
+
+async function analyzeV2(anthropic: Anthropic, prdText: string, template: PrdTemplateId): Promise<Response> {
+  const t0 = Date.now()
+  const result = await createMessageWithModelFallback(anthropic, {
+    max_tokens: 24000,
+    temperature: 0.2,
+    system: cachedSystem(SYSTEM_PROMPT),
+    tools: [ANALYSIS_TOOL],
+    tool_choice: { type: 'tool', name: ANALYSIS_TOOL.name },
+    messages: [{ role: 'user', content: `다음 PRD를 분석해줘:\n\n${prdText}` }],
+  })
+
+  console.log(`[analyze v2 ${template}] model=${result.model} stop=${result.stop_reason} ${usageSummary(result)} ${Date.now() - t0}ms`)
+
+  if (result.stop_reason === 'max_tokens') {
+    return new Response('분석 응답이 너무 길어 잘렸습니다. PRD 분량을 줄여 다시 시도해주세요.', { status: 502 })
+  }
+  const analysis = extractToolInput(result.content)
+  if (analysis == null) {
+    console.error('[analyze v2] tool_use 블록을 찾지 못했습니다:', JSON.stringify(result.content).slice(0, 500))
+    return new Response('분석 결과를 생성하지 못했습니다. 다시 시도해주세요.', { status: 502 })
+  }
+  const payload = { ...(analysis as Record<string, unknown>), template, protocol_version: '2.0' }
+  return new Response(JSON.stringify(payload), {
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  })
+}
+
 export async function POST(req: Request): Promise<Response> {
   const body: unknown = await req.json()
 
-  // 입력값 유효성 검사
   if (
     typeof body !== 'object' ||
     body === null ||
@@ -471,60 +597,11 @@ export async function POST(req: Request): Promise<Response> {
   }
   const template: PrdTemplateId = templateRaw
 
-  const isV3 = template === 'partner-growth'
-  const systemPrompt = isV3 ? buildV3SystemPrompt() : SYSTEM_PROMPT
-  const tool = isV3 ? ANALYSIS_TOOL_V3 : ANALYSIS_TOOL
-
-  // 시스템 지시사항과 사용자 요청을 하나의 프롬프트로 조합
-  const fullPrompt = `${systemPrompt}\n\n다음 PRD를 분석해줘:\n\n${prdText}`
-
   try {
     const anthropic = getAnthropicClient()
-    const result = await createMessageWithModelFallback(anthropic, {
-      max_tokens: 24000,
-      temperature: 0.2,
-      tools: [tool],
-      tool_choice: { type: 'tool', name: tool.name },
-      messages: [{ role: 'user', content: fullPrompt }],
-    })
-
-    console.log(`[analyze ${isV3 ? 'v3' : 'v2'} ${template}] stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
-
-    // 응답이 max_tokens로 잘리면 tool_use.input JSON도 불완전하므로 명시적으로 안내
-    if (result.stop_reason === 'max_tokens') {
-      return new Response('분석 응답이 너무 길어 잘렸습니다. PRD 분량을 줄여 다시 시도해주세요.', {
-        status: 502,
-      })
-    }
-
-    const analysis = extractToolInput(result.content)
-    if (analysis == null) {
-      console.error('[analyze] tool_use 블록을 찾지 못했습니다:', JSON.stringify(result.content))
-      return new Response('분석 결과를 생성하지 못했습니다. 다시 시도해주세요.', { status: 502 })
-    }
-
-    // tool_use.input은 API가 스키마에 맞춰 파싱한 객체 → 직렬화만 하면 항상 valid JSON
-    let payload: unknown
-    if (isV3) {
-      // v3: 모델은 판정만, 점수·게이트·is_sufficient 는 서버가 계산
-      const rawV3 = analysis as RawV3Analysis
-      console.log(
-        `[analyze v3] raw section_coverage type=${Array.isArray(rawV3.section_coverage) ? 'array' : typeof rawV3.section_coverage} ids=${JSON.stringify(
-          asList<{ section_id?: string; status?: string }>(rawV3.section_coverage, 'section_id').map(s => `${s.section_id}:${s.status}`),
-        )}`,
-      )
-      const scored = finalizeV3Analysis(rawV3)
-      console.log(
-        `[analyze v3] score=${scored.sufficiency_score} raw=${scored.raw_score} gates=${scored.hard_gates.filter(g => g.triggered).map(g => g.id).join(',') || '-'}`,
-      )
-      payload = scored
-    } else {
-      payload = { ...(analysis as Record<string, unknown>), template, protocol_version: '2.0' }
-    }
-
-    return new Response(JSON.stringify(payload), {
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    })
+    return template === 'partner-growth'
+      ? await analyzeV3(anthropic, prdText)
+      : await analyzeV2(anthropic, prdText, template)
   } catch (error) {
     console.error('[analyze] Claude API 오류:', error)
     if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {

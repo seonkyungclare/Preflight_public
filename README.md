@@ -6,6 +6,7 @@ PRD(Product Requirements Document) 문서를 업로드하면 Claude AI가 Prefli
 
 - **배포 URL(프로덕션)**: `https://preflight-public.vercel.app`
 - **필수 환경변수**: `ANTHROPIC_API_KEY`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_SESSION_SECRET`
+- **선택 환경변수**: `ANTHROPIC_MODEL` (기본 `claude-sonnet-4-6`), `ANTHROPIC_FAST_MODEL` (Partner Growth 체크리스트 호출용, 기본 `claude-haiku-4-5-20251001`)
   - Vercel Project → Settings → Environment Variables 에서 추가
 
 ## 🔐 접근 인증 (사내 계정 전용)
