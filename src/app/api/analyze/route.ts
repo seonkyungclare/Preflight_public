@@ -8,8 +8,8 @@ export const maxDuration = 300
 // ============================================================================
 // 템플릿 분기
 // ----------------------------------------------------------------------------
-// - commerce-core  → Protocol v2.0 (아래 SYSTEM_PROMPT / ANALYSIS_TOOL, 변경 없음)
-// - partner-growth → Protocol v3.0 (lib/analyze-v3.ts 프롬프트 + lib/scoring.ts 서버 채점)
+// - other / commerce-core → Protocol v2.0 (아래 SYSTEM_PROMPT / ANALYSIS_TOOL, 변경 없음)
+// - partner-growth        → Protocol v3.0 (lib/analyze-v3.ts 프롬프트 + lib/scoring.ts 서버 채점)
 // 요청 본문의 `template` 이 없거나 모르는 값이면 400.
 // ============================================================================
 
@@ -467,7 +467,7 @@ export async function POST(req: Request): Promise<Response> {
   const { prdText } = body as { prdText: string }
   const templateRaw = (body as Record<string, unknown>).template
   if (!isTemplateId(templateRaw)) {
-    return new Response('template 은 "partner-growth" 또는 "commerce-core" 여야 합니다', { status: 400 })
+    return new Response('template 은 "partner-growth" | "commerce-core" | "other" 여야 합니다', { status: 400 })
   }
   const template: PrdTemplateId = templateRaw
 

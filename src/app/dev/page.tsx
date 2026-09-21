@@ -7,7 +7,7 @@ import { finalizeV3Analysis, type RawV3Analysis } from '@/lib/scoring'
 
 // ─── v2 (Commerce Core) 목 데이터 ─────────────────────────────────────────────
 const MOCK_V2: AnalysisResult = {
-  template: 'commerce-core',
+  template: 'other',
   protocol_version: '2.0',
   sufficiency_score: 72,
   is_sufficient: false,
@@ -131,12 +131,12 @@ export default function DevPage() {
     <>
       <div className="fixed bottom-4 right-4 z-50 flex gap-1 rounded-md border border-border bg-background p-1 text-xs shadow">
         <button className={`px-2 py-1 rounded ${v === 'v3' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setV('v3')}>v3 PG</button>
-        <button className={`px-2 py-1 rounded ${v === 'v2' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setV('v2')}>v2 CC</button>
+        <button className={`px-2 py-1 rounded ${v === 'v2' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setV('v2')}>v2 기본</button>
       </div>
       <ResultScreen
         key={v}
         fileName={v === 'v3' ? 'dev-mock-pgt-prd.md' : 'dev-mock-prd.md'}
-        template={v === 'v3' ? 'partner-growth' : 'commerce-core'}
+        template={v === 'v3' ? 'partner-growth' : 'other'}
         result={result}
         hasMockupLowFi={false}
         hasMockupHiFi={false}

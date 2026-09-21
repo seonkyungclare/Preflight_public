@@ -5,7 +5,8 @@ Preflight는 분석 전에 사용자가 고른 **팀 템플릿**에 따라 두 �
 | 템플릿 선택 | 프로토콜 | 코드 | 기준 |
 | :--- | :--- | :--- | :--- |
 | **Partner Growth** | **v3.0** (아래 §A) | `src/config/prd-template.ts` · `src/lib/analyze-v3.ts` · `src/lib/scoring.ts` | [PGT PRD 템플릿](https://wiki.team.musinsa.com/wiki/spaces/PGT/pages/652153933) |
-| **Commerce Core** | v2.0 (아래 §B, v1.2 계승) | `src/app/api/analyze/route.ts` 의 `SYSTEM_PROMPT` | Commerce Core PRD 템플릿 + UX 휴리스틱 |
+| **Commerce Core** | (선택 불가, 전용 템플릿 준비 중) | — | — |
+| **그 외** | v2.0 (아래 §B, v1.2 계승) | `src/app/api/analyze/route.ts` 의 `SYSTEM_PROMPT` | UX 휴리스틱 6차원 |
 
 계획·결정 이력: [docs/preflight-v3-plan.md](docs/preflight-v3-plan.md)
 
@@ -54,9 +55,9 @@ v2 의 6차원은 점수 본체가 아니라 (1) §7.3·§8.3 의 "8대 고민 �
 
 ---
 
-# §B. Commerce Core 프로토콜 (v2.0 — v1.2 계승)
+# §B. 기본 프로토콜 — "그 외" 선택 시 (v2.0 — v1.2 계승)
 
-> 아래 v1.2 문서는 Commerce Core 템플릿 분석의 원칙이다. 실제 v2.0 프롬프트(6차원·프로젝트 타입 가중치)는 `src/app/api/analyze/route.ts` 를 따른다.
+> 아래 v1.2 문서는 팀 템플릿이 없는 문서(그 외)를 분석하는 원칙이다. 실제 v2.0 프롬프트(6차원·프로젝트 타입 가중치)는 `src/app/api/analyze/route.ts` 를 따른다. Commerce Core 전용 템플릿이 준비되면 §A 와 같은 방식으로 상수를 추가한다.
 
 ## 0. Core Philosophy
 * [cite_start]**Ambiguity as Risk**: PRD 점수는 단순히 항목의 존재 여부가 아니라, 디자인 및 개발 착수 시 발생할 수 있는 모호성(Ambiguity)의 총량을 의미한다[cite: 7].
