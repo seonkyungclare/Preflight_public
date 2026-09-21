@@ -85,16 +85,19 @@ export interface HardGateDef {
   description: string
 }
 
-/** 템플릿 §7·§8이 공통으로 요구하는 "고민되어야 하는 사항" 8가지 */
-export const CONCERN_CHECKLIST: Array<{ key: string; question: string; principle: string }> = [
-  { key: '데이터', question: '없으면? 대량이면? 중복이면?', principle: '빈 상태·페이징 (NN#1 상태 가시성)' },
-  { key: '표시', question: '텍스트가 길면? 숫자 표기는? 0과 미입력 구분은?', principle: '정보 위계·말줄임 규칙' },
-  { key: '네트워크', question: '실패·지연되면? 재시도는?', principle: '로딩·에러 복구 (NN#1, NN#9)' },
-  { key: '외부 연계', question: '송신·배치가 실패하면? 절반만 처리된 상태는? 실패를 누가 인지하나?', principle: '롤백·알람 경로' },
-  { key: '권한', question: '권한 없이 진입하면? 세션 만료되면?', principle: '접근 차단 화면 (§3.4 연동)' },
-  { key: '입력', question: '필수값 누락? 형식 오류? 극단값?', principle: '에러 예방 (NN#5)' },
-  { key: '상태', question: '이미 처리된 건을 또 처리하면? 동시 작업 충돌은? 작성 중 이탈하면?', principle: '확인 다이얼로그·중복 처리 방지' },
-  { key: '시간', question: '기한 만료되면? 마감 전후가 다른가? 처리 중 원본이 바뀌면?', principle: '상태 전이표 완결성' },
+/**
+ * 템플릿 §7·§8이 공통으로 요구하는 "고민되어야 하는 사항" 8가지.
+ * 템플릿 원문 그대로 쓴다. UX 휴리스틱(NN 등) 이름은 붙이지 않는다 — 점수 근거는 템플릿 문구뿐이다.
+ */
+export const CONCERN_CHECKLIST: Array<{ key: string; question: string }> = [
+  { key: '데이터', question: '없으면? 대량이면? 중복이면?' },
+  { key: '표시', question: '텍스트가 길면? 숫자 표기는? 0과 미입력 구분은?' },
+  { key: '네트워크', question: '실패·지연되면? 재시도는?' },
+  { key: '외부 연계', question: '송신·배치가 실패하면? 절반만 처리된 상태는? 실패를 누가 인지하나?' },
+  { key: '권한', question: '권한 없이 진입하면? 세션 만료되면?' },
+  { key: '입력', question: '필수값 누락? 형식 오류? 극단값?' },
+  { key: '상태', question: '이미 처리된 건을 또 처리하면? 동시 작업 충돌은? 작성 중 이탈하면?' },
+  { key: '시간', question: '기한 만료되면? 마감 전후가 다른가? 처리 중 원본이 바뀌면?' },
 ]
 
 export const PGT_TEMPLATE = {

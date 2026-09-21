@@ -38,6 +38,15 @@ const MOCK_V2: AnalysisResult = {
 
 // ─── v3 (Partner Growth) 목 데이터 — 모델 원본을 서버 채점기에 통과시켜 실제 경로와 동일하게 만든다 ──
 const RAW_V3: RawV3Analysis = {
+  summary: {
+    can_start: false,
+    verdict: '담당 MD와 시스템이 Actor 표에 없어 권한·화면 범위를 확정할 수 없습니다.',
+    top_fixes: [
+      'Actor 표(3.1)에 담당 MD·시스템 행을 추가하고 정의·진입 경로·권한 범위를 채워주세요.',
+      '시나리오 S-002·S-004에 [진입] [본 흐름] [예외] 상세를 쓰고, 이동하는 화면 ID를 적어주세요.',
+      '화면 요구사항(8번)에 S-003이 참조하는 SC-13 화면 행을 추가해주세요.',
+    ],
+  },
   section_coverage: [
     { section_id: '0', status: 'present', evidence: 'PM 김경애 · PD 김선경 · BE 홍길동, 2-Pager/Figma 링크', sub_items: [
       { id: '0.1', status: 'present' }, { id: '0.2', status: 'present' }, { id: '0.3', status: 'present' } ] },
@@ -96,12 +105,12 @@ const RAW_V3: RawV3Analysis = {
     '보류 14일 · 계약 동의 30일 무응답 시 EXPIRED',
   ],
   missing_for_designers: [
-    { screen: '검토 대기 목록', issue: '0건 빈 상태 화면 미정의', principle: 'NN#1 Visibility of System Status', severity: 2, user_impact: '배정 건이 없을 때 오류로 오해', suggestion: '빈 상태 문구와 새로고침 안내 추가' },
-    { screen: '신청 상세', issue: '권한 없는 건 직접 URL 접근 시 화면 미정의', principle: 'NN#5 Error Prevention', severity: 3, user_impact: '빈 화면 또는 시스템 오류 노출', suggestion: '접근 차단 화면 + 목록으로 돌아가기 CTA' },
+    { screen: '검토 대기 목록', issue: 'SC-11 검토 대기 목록에서 배정된 건이 0건일 때 무엇을 보여줄지 적혀 있지 않습니다.', section_ref: '§8.3 데이터', severity: 2, user_impact: '심사자는 오류인지 정말 없는 건지 알 수 없습니다.', suggestion: '"아직 배정된 신청이 없어요" 문구와 새로고침 버튼을 적어주세요.' },
+    { screen: '신청 상세', issue: 'SC-12 신청 상세 화면에 배정되지 않은 사람이 URL로 바로 들어왔을 때 무엇을 보여줄지 적혀 있지 않습니다.', section_ref: '§3.4 권한 없는 진입', severity: 3, user_impact: '빈 화면이나 시스템 오류가 그대로 노출됩니다.', suggestion: '"접근 권한이 없습니다" 화면과 목록으로 돌아가는 버튼을 적어주세요.' },
   ],
   missing_for_developers: [
-    { module: '외부 반영 배치', issue: '배치 실패 시 재시도·알람 경로 미정의', risk: '승인 건이 외부 시스템에 반영되지 않아도 아무도 모름', severity: 4, suggestion: '재시도 N회·소진 시 운영 알림 채널 명시' },
-    { module: '심사 처리', issue: '두 심사자가 동시에 같은 건을 처리할 때의 충돌 정책 없음', risk: '중복 승인/반려', severity: 3, suggestion: '낙관적 잠금 또는 처리 시작 시 배정 고정' },
+    { module: '외부 반영 배치', issue: '배치 실패 시 재시도·알람 경로 미정의', section_ref: '§9.2 연동 실패 처리', risk: '승인 건이 외부 시스템에 반영되지 않아도 아무도 모름', severity: 4, suggestion: '재시도 N회·소진 시 운영 알림 채널 명시' },
+    { module: '심사 처리', issue: '두 심사자가 동시에 같은 건을 처리할 때의 충돌 정책 없음', section_ref: '§7.3 상태', risk: '중복 승인/반려', severity: 3, suggestion: '낙관적 잠금 또는 처리 시작 시 배정 고정' },
   ],
   critical_questions: [
     { tag: '비즈니스', question: '"담당 MD"는 운영 심사자와 별도 Actor로 정의해야 하나요, 아니면 운영 심사자에 포함되나요?', format: 'binary', options: ['별도 Actor (권한 분리)', '운영 심사자에 포함'], impact: '권한 매트릭스·LNB 구성', blocks: ['§3.2 권한 매트릭스', 'SC-11 목록 필터'] },

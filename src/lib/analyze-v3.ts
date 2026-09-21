@@ -23,7 +23,7 @@ ${items}`
 
 export function buildV3SystemPrompt(): string {
   const sections = PGT_TEMPLATE.sections.map(renderSection).join('\n\n')
-  const concerns = CONCERN_CHECKLIST.map(c => `- ${c.key}: ${c.question}  → ${c.principle}`).join('\n')
+  const concerns = CONCERN_CHECKLIST.map(c => `- ${c.key}: ${c.question}`).join('\n')
   const gates = PGT_TEMPLATE.gates.map(g => `- ${g.id} ${g.label}: 점수 상한 ${g.cap}. ${g.description}`).join('\n')
   const actorAxes = PGT_TEMPLATE.actorAxes.map(a => `- ${a}`).join('\n')
 
@@ -38,6 +38,7 @@ Follow the Preflight Verification Protocol v3.0 strictly. Call the \`submit_anal
 4. Every present/partial judgement must be backed by a **direct quote from the PRD** (\`evidence\`). If you cannot quote it, it is missing.
 5. Output must be immediately actionable for PM, designer and developer.
 6. Section headings in the PRD may be numbered or titled differently. Match by meaning using the "탐지 단서", not by exact title.
+7. **Template only, for score and checklists.** A deduction, a designer item or a developer item is valid only when you can point to the template sub-item it violates (\`section_ref\`). UX heuristics — Nielsen's 10, Fitts, Hick, Fogg, Jakob, accessibility guidelines — never justify a deduction or a checklist item. Observations grounded in those go to \`ux_recommendations\` only.
 
 ## 1. Template Sections & Sub-items
 
@@ -82,12 +83,12 @@ Rules:
 | workflow_scenario_ref | §6 workflow does not map to any §5 scenario |
 | glossary_gap | domain term used ≥3 times in body but absent from §2 |
 
-Severity (Nielsen): 1 cosmetic · 2 minor · 3 major (fix before build) · 4 catastrophic (cannot start).
+Severity: 1 cosmetic · 2 minor · 3 major (fix before build) · 4 catastrophic (cannot start).
 These failures also lower the related sub-items (§5.1, §8.2, §6.3, §2.2).
 
 ## 5. 8대 고민 항목 (for §7.3 and §8.3)
 
-Count how many of the 8 concerns the policies (§7) and screen requirements (§8) actually address. Unaddressed concerns go to \`missing\`.
+These are the template's own words ("다음의 사항이 고민되어야 한다"). Count how many of the 8 the policies (§7) and screen requirements (§8) actually address. Unaddressed concerns go to \`missing\`, written in the template's wording (e.g. "데이터: 없으면?"), never as a UX principle name.
 ${concerns}
 
 ## 6. Hard Gates (server enforces; you only supply the facts)
@@ -97,10 +98,10 @@ ${gates}
 ## 7. Checklists & Questions
 
 - \`validated\`: 3~7 items that the PRD defines clearly — only things you can quote.
-- \`missing_for_designers\`: screen-level gaps (empty/loading/error states, 권한 없음 화면, 확인 다이얼로그, 말줄임 규칙…). Fields: screen, issue, principle, severity(1-4), user_impact, suggestion.
-- \`missing_for_developers\`: system/data gaps (상태 전이 누락, 재시도·롤백, 동시성, 배치 실패 알람, 권한 검증…). Fields: module, issue, risk, severity(1-4), suggestion.
+- \`missing_for_designers\`: screen-level gaps **the template requires** (§8 화면 표 열 누락, §8.3 고민 항목 미반영 — 예: 0건일 때 화면, 권한 없이 진입했을 때 화면, 텍스트가 길 때 표시 —, §3.4 권한 없는 진입, §4 Actor별 노출…). Fields: screen, issue, section_ref ("§8.3 데이터" 형식), severity(1-4), user_impact, suggestion. No \`principle\` field.
+- \`missing_for_developers\`: system/data gaps **the template requires** (§7.2 상태 전이 누락, §7.3 고민 항목 — 네트워크 재시도·외부 연계 실패·동시 작업 충돌 —, §9 연동 실패 처리·알람 경로…). Fields: module, issue, section_ref, risk, severity(1-4), suggestion.
 - \`critical_questions\`: 3~7 questions the PO must answer before design/dev starts. Tags: [디자인] | [개발] | [비즈니스] | [UX정책]. format: binary (2 options) | multiple (3~4) | open (["논의 필요"]). Every \`detected_undefined\` actor MUST produce one [비즈니스] question ("○○는 별도 Actor로 정의해야 하나요, 기존 Actor에 포함되나요?"). Every severity-4 issue MUST appear here.
-- \`ux_recommendations\`: 3~5 suggestions with principle (Fogg / Fitts / Hick / Jakob / NN#n), perspective (CRO | Friction Reduction | Convention | Accessibility), effort (low|medium|high), expected_impact. These are advice only and never affect the score.
+- \`ux_recommendations\`: **the only place for UX-heuristic observations.** 3~7 suggestions: anything you noticed from Nielsen's heuristics (visibility of status, error prevention, consistency…), Fitts / Hick / Fogg / Jakob, accessibility, or general usability quality — including quality judgements about empty/loading/error states beyond what the template literally asks. Fields: recommendation, principle (e.g. "NN#1 시스템 상태 가시성"), perspective (CRO | Friction Reduction | Convention | Accessibility), related_screen (optional), effort (low|medium|high), expected_impact. These are advice only and never affect the score or the checklists.
 - \`severity_summary\`: counts of catastrophic/major/minor/cosmetic across designer + developer items + cross_reference_issues.
 
 ## 8. Mockup Directives
@@ -110,13 +111,31 @@ ${gates}
 - \`attention_areas\`: sections with status missing, or partial with deduction ≥ half the 상한. Use { dimension: "§3 Actor & 권한 체계", score: <remaining points 0-10 scaled>, focus, render_hint }.
 - \`note_panel_priority\`: top items for the mockup note panel — undefined actors, scenarios without screens, missing sections.
 
-## 9. Self-check Before Submitting
+## 9. Writing Style (all Korean text — the reader may be a first-time product maker)
+
+Write every issue, missing item, question and recommendation so that someone who has never written a PRD understands it without help.
+
+1. **Three sentences per item, in this order**: (a) what is missing, (b) what goes wrong for the user or the team because of it, (c) what to write instead. Put (a) in \`issue\`, (b) in \`user_impact\` / \`risk\`, (c) in \`suggestion\`. Do not merge them into one sentence.
+2. **Describe the user's situation, not the checklist label.** Write "심사자가 들어왔는데 배정된 건이 하나도 없을 때 무엇을 보여줄지 적혀 있지 않습니다", not "빈 상태 미정의".
+3. **Spell out IDs and section names on first use**: "SC-12 신청 상세 화면", "시나리오 S-003(운영 심사자가 승인·반려하는 흐름)", "화면 요구사항(8번 섹션)". Never leave a bare "§8.3" or "SC-13" without its name.
+4. **No jargon without a plain-Korean gloss.** Avoid English UX terms; if a principle name is needed (UX 제안 only), put the plain meaning first and the name in parentheses: "지금 무슨 일이 일어나는지 화면이 알려줘야 합니다 (NN#1 시스템 상태 가시성)".
+5. **One idea per sentence, plain verbs, no bullet fragments inside strings.** Prefer "~적혀 있지 않습니다", "~를 적어주세요" over "~미정의", "~필요".
+6. \`evidence\` stays a direct quote. \`missing\` entries are short noun phrases in the template's wording.
+
+## 10. Summary (\`summary\` field — shown first, next to the score)
+
+- \`can_start\`: true only if no hard gate is triggered AND every required section is present or partial with small gaps — your honest call, the server may still cap the score.
+- \`verdict\`: one plain sentence answering "이 PRD로 지금 디자인·개발을 시작할 수 있나요?" and why. ≤ 60 Korean characters.
+- \`top_fixes\`: exactly 3 items, ordered by impact on the score, each one sentence starting with what to write ("Actor 표에 담당 MD·HO·시스템 행을 추가해 주세요"). Pick from gates first, then the largest deductions.
+
+## 11. Self-check Before Submitting
 
 1. Every one of the 11 sections appears exactly once in section_coverage, with every sub-item id listed.
 2. present/partial items have a non-empty evidence quote at section level.
 3. No required section is not_applicable.
 4. detected_undefined actors each have a matching [비즈니스] critical question.
-5. All string values are Korean (schema keys stay English).`
+5. All string values are Korean (schema keys stay English).
+6. Every issue/suggestion follows the three-sentence rule and spells out IDs; \`summary.top_fixes\` has exactly 3 items.`
 }
 
 const STATUS_ENUM = ['present', 'partial', 'missing', 'not_applicable']
@@ -128,6 +147,15 @@ export const ANALYSIS_TOOL_V3: Anthropic.Messages.Tool = {
   input_schema: {
     type: 'object',
     properties: {
+      summary: {
+        type: 'object',
+        properties: {
+          can_start: { type: 'boolean' },
+          verdict: { type: 'string' },
+          top_fixes: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['can_start', 'verdict', 'top_fixes'],
+      },
       section_coverage: {
         type: 'array',
         items: {
@@ -214,7 +242,7 @@ export const ANALYSIS_TOOL_V3: Anthropic.Messages.Tool = {
           properties: {
             screen: { type: 'string' },
             issue: { type: 'string' },
-            principle: { type: 'string' },
+            section_ref: { type: 'string' },
             severity: { type: 'integer' },
             user_impact: { type: 'string' },
             suggestion: { type: 'string' },
@@ -230,6 +258,7 @@ export const ANALYSIS_TOOL_V3: Anthropic.Messages.Tool = {
           properties: {
             module: { type: 'string' },
             issue: { type: 'string' },
+            section_ref: { type: 'string' },
             risk: { type: 'string' },
             severity: { type: 'integer' },
             suggestion: { type: 'string' },
@@ -262,6 +291,7 @@ export const ANALYSIS_TOOL_V3: Anthropic.Messages.Tool = {
             recommendation: { type: 'string' },
             principle: { type: 'string' },
             perspective: { type: 'string' },
+            related_screen: { type: 'string' },
             effort: { type: 'string' },
             expected_impact: { type: 'string' },
           },
@@ -280,6 +310,6 @@ export const ANALYSIS_TOOL_V3: Anthropic.Messages.Tool = {
       },
       mockup_directives: { type: 'object', additionalProperties: true },
     },
-    required: ['section_coverage', 'actors', 'scenarios', 'validated', 'critical_questions'],
+    required: ['summary', 'section_coverage', 'actors', 'scenarios', 'validated', 'critical_questions'],
   },
 }

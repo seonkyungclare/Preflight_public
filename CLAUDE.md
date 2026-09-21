@@ -47,8 +47,10 @@ Preflight는 분석 전에 사용자가 고른 **팀 템플릿**에 따라 두 �
 ## A-4. 교차 검증 (섹션 간 연결)
 Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-nnn) · IA 신설 메뉴↔화면 · Workflow↔시나리오 · 본문 용어↔용어 표. 실패는 `cross_reference_issues[]` 로 출력하고 관련 하위 항목(5.1, 8.2, 6.3, 2.2)을 함께 깎는다.
 
-## A-5. UX 휴리스틱의 위치
-v2 의 6차원은 점수 본체가 아니라 (1) §7.3·§8.3 의 "8대 고민 항목" 반영도 판정 근거, (2) `ux_recommendations` 의 이론 근거로만 쓴다. Fogg · Fitts · Hick · Jakob 은 점수에 영향을 주지 않는다.
+## A-5. UX 휴리스틱의 위치 (2026-09-21 확정)
+* **점수·체크리스트는 템플릿만.** 감점, 디자이너 항목, 개발자 항목은 반드시 템플릿 하위 항목(`section_ref`, 예 "§8.3 데이터")을 근거로 한다. §7.3·§8.3 의 "8대 고민 항목"은 템플릿 원문 그대로 쓰고 NN 원칙 이름을 붙이지 않는다.
+* **휴리스틱은 UX 제안에만.** Nielsen 10 · Fitts · Hick · Fogg · Jakob · 접근성에 근거한 관찰은 전부 `ux_recommendations` 로 보낸다. 원칙 태그는 거기서만 쓴다. 점수·체크리스트에 영향을 주지 않는다.
+* 빈 상태·로딩·에러처럼 템플릿 고민 항목과 휴리스틱이 겹치는 주제는 "템플릿 문구로 표현되는 누락"만 점수·체크리스트에 올리고, 품질 판단은 제안으로 보낸다.
 
 ## A-6. 출력
 `section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.
