@@ -313,6 +313,41 @@ function evaluateGates(sections: SectionCoverage[], actors: ActorsSummary): Hard
   })
 }
 
+/**
+ * 번역투 안전장치. 모델이 굳어진 UI 용어를 새로 번역해 내면 출력 직전에 되돌린다.
+ * 원본 규칙: docs/analysis-writing-rules.md §6-0. 새 번역투가 보이면 여기와 문서에 함께 추가.
+ */
+export const TERM_FIXES: Array<[RegExp, string]> = [
+  [/날짜\s?선택기|날짜\s?피커/g, 'Date Picker'],
+  [/펼침\s?목록|드롭다운\s?(목록|메뉴)|드롭 ?다운/g, 'Dropdown'],
+  [/말풍선\s?도움말|도움말\s?풍선|풍선\s?도움말/g, 'Tooltip'],
+  [/알림\s?띠|알림\s?바|스낵바/g, 'Snackbar'],
+  [/확인\s?대화\s?상자|대화\s?상자|확인\s?팝업|모달\s?창|모달/g, 'Dialog'],
+  [/표\s?머리글/g, 'Table 헤더'],
+  [/체크\s?상자|확인란/g, 'Checkbox'],
+  [/라디오\s?단추|라디오\s?버튼/g, 'Radio'],
+  [/토글\s?스위치|전환\s?스위치/g, 'Switch'],
+  [/페이지\s?매김|페이지\s?네이션/g, 'Pagination'],
+  [/불러오는\s?중/g, '로딩 중'],
+  [/탭\s?메뉴/g, 'Tab'],
+]
+
+/** 결과 객체의 모든 문자열에 TERM_FIXES 를 적용한다 (키는 건드리지 않음) */
+export function applyTermFixes(value: unknown): unknown {
+  if (typeof value === 'string') {
+    let out = value
+    for (const [re, to] of TERM_FIXES) out = out.replace(re, to)
+    return out
+  }
+  if (Array.isArray(value)) return value.map(v => applyTermFixes(v))
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = applyTermFixes(v)
+    return out
+  }
+  return value
+}
+
 function countSeverity(items: unknown[]): { catastrophic: number; major: number; minor: number; cosmetic: number } {
   const c = { catastrophic: 0, major: 0, minor: 0, cosmetic: 0 }
   for (const it of items) {
@@ -387,7 +422,7 @@ export function finalizeV3Analysis(raw: RawV3Analysis): ScoredV3Analysis {
     top_fixes: topFixes,
   }
 
-  return {
+  return applyTermFixes({
     template: 'partner-growth',
     protocol_version: '3.0',
     template_ref: PGT_TEMPLATE.ref,
@@ -408,7 +443,7 @@ export function finalizeV3Analysis(raw: RawV3Analysis): ScoredV3Analysis {
     // 심각도 집계는 서버가 한다 (모델 출력 절약 + 일관성)
     severity_summary: countSeverity([...designers, ...developers, ...cross_reference_issues]),
     mockup_directives: raw.mockup_directives ?? {},
-  }
+  } satisfies ScoredV3Analysis) as ScoredV3Analysis
 }
 
 // 템플릿 상수 무결성 — 필수 예산 합이 100 이 아니면 개발 중 바로 드러나게 한다

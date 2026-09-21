@@ -58,7 +58,7 @@ Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-
 * **프롬프트 캐싱**: 시스템 프롬프트를 cache_control 블록으로 보낸다.
 
 ## A-7. 문체
-분석 결과의 모든 한국어 문자열과 결과 화면 라벨은 [docs/analysis-writing-rules.md](docs/analysis-writing-rules.md) 를 따른다. 개조식(명사형 종결), 제목은 개념어 명사구, 엠대시 금지, 용어집 표기. PO 질문만 의문문. 프롬프트 상수 `WRITING_STYLE` 은 이 문서의 사본이다.
+분석 결과의 모든 한국어 문자열과 결과 화면 라벨은 [docs/analysis-writing-rules.md](docs/analysis-writing-rules.md) 를 따른다. 개조식(명사형 종결), 제목은 개념어 명사구, 엠대시 금지, 용어집 표기. PO 질문만 의문문. 외래어는 A(MCDS 컴포넌트: 영문 원어) / B(굳어진 음차 유지) / C(한글 정착어) 로 분류하고, 굳어진 영어 용어를 새로 번역하지 않는다(날짜 선택기 ✗ → Date Picker). 서버 치환표 `TERM_FIXES` 가 안전장치. 프롬프트 상수 `WRITING_STYLE`·`GLOSSARY` 는 이 문서의 사본이다.
 
 ## A-8. 출력
 `section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.
