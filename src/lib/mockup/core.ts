@@ -26,8 +26,10 @@ export interface ScreenSpec {
   actions: string[]
   navigates_to: string[]
   parent_id?: string  // set for 2nd-level screens; omitted for top-level menu screens
-  // 부모로 접힌 섹션 요약("일별 매출(일자·매출·주문수)"). 화면 생성 시 컴팩트 블록으로만 렌더한다.
+  // (구) 부모로 접힌 섹션 요약. 더 이상 채우지 않지만 과거 spec 호환을 위해 남긴다.
   sections?: string[]
+  // 섹션성 화면: 별도 코드로 생성하되 LNB 에 올리지 않고 부모 페이지 아래에 이어 붙인다.
+  embed_in_parent?: boolean
 }
 
 export interface NoteItem {
@@ -124,11 +126,12 @@ A "screen" is something the user NAVIGATES TO: it has its own entry (menu item, 
 - 별도 화면으로 PRD 가 명시한 하위 기능만 (SC-ID 가 있거나 "화면"·"페이지"로 불리고 진입 동작이 있는 것)
 - Rule: set parent_id to the 1st-level screen id
 
-NOT a separate screen (keep INSIDE the parent screen: as columns/fields/actions, never a screens entry):
-- **한 화면 안의 섹션**: 리포트·대시보드·현황 화면의 KPI 카드, 차트, 요약 표, 탭, 기간 필터, 상세 표 등. 예) "판매 리포트" 화면의 "일별 매출", "상품별 판매", "채널별 비중" 은 판매 리포트 화면의 섹션이지 화면이 아니다. 이런 항목은 parent 의 columns/fields 에 넣는다.
+Sections of a page (리포트·대시보드·현황 화면의 KPI 카드 묶음, 차트, 요약 표, 탭 내용 등):
+- DO extract them as screens with parent_id = the page and type "dashboard" (KPI/차트) or "other" (요약 표·탭 내용), each with its OWN columns/fields. They are rendered stacked under the parent page, not as menu items, so nothing is lost. Never drop their content.
+- Example: "판매 리포트" (dashboard, menu) + children "일별 매출"(dashboard), "상품별 판매"(other), "채널별 비중"(dashboard).
+
+NOT a screen at all (keep as an action in the parent, never a screens entry):
 - 삭제 확인 팝업, 인라인 수정, 필터 드롭다운, 컬럼 설정 모달 (<=5 fields in a modal) → parent actions
-- Rule: if you are about to create a 2nd-level screen whose type would be "dashboard" or "other", or whose name is a sub-part of the parent's content, do NOT create it. Fold it into the parent.
-- Sanity: a 1st-level screen normally has 0~3 sub-screens (detail / form). More than that means sections were split by mistake.
 
 ## Standard Navigation Flows (ALWAYS derive these even if PRD doesn't state them explicitly)
 These are universal UI conventions — populate navigates_to and flows based on these rules:
@@ -171,7 +174,7 @@ export const HIFI_SYSTEM = `You generate STRUCTURAL high-fidelity React componen
 PURPOSE (read first):
 The mockup exists to show (1) the overall structure of each screen and (2) which elements and attributes the screen needs: fields, columns, actions, states, navigation.
 It is NOT a demo. Data does not need to look real. Every element must be present; nothing needs to be pretty or detailed.
-Short code is a hard requirement: the whole function must be ≤ 110 lines. If the spec is large, compress (fewer rows, one helper, no extras); never drop required elements.
+Keep the function ≤ 170 lines: reuse one helper for repeated rows, no extras. Never drop required elements — every column, field and action in the spec must appear.
 
 Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
@@ -183,7 +186,7 @@ Pre-imported (DO NOT re-import): React, useState (from 'react').
 
 Code style (COMPACT):
 - No comments, no JSDoc, no blank lines between JSX elements
-- Data arrays: exactly 2 placeholder rows; always .map(); never repeat similar JSX blocks
+- Data arrays: exactly 3 placeholder rows; always .map(); never repeat similar JSX blocks
 - Short var names (open, sel, tab). At most 3 useState hooks.
 - Cell/field values are PLACEHOLDERS, not realistic data: text → the column/field name itself or "값", date → "2026-01-01", number → "0", amount → "0원", status → an actual PRD status value in a chip.
 
@@ -192,7 +195,7 @@ SCREEN SHAPE: return page content only (the app shell provides LNB + padding).
 1. Actions row: section title left, spec ACTIONS as buttons right (primary = first action, others secondary). No buttons that are not in ACTIONS.
 2. Filters (list/dashboard only, if FIELDS given): each FIELD as the matching control (TextField / Select / DatePicker) with its label. This shows which attributes filter the screen.
 3. Body by TYPE:
-   - list: table with ALL COLUMNS as <th>, 2 placeholder rows, status column as chip, first column as mcds-table__link. Row click → navigate(detail id) if a detail target exists, else opens the Dialog.
+   - list: table with ALL COLUMNS as <th>, 3 placeholder rows, status column as chip, first column as mcds-table__link. Row click → navigate(detail id) if a detail target exists, else opens the Dialog.
    - form: <div className="form"> with one row per FIELD: label (+ <span className="req">*</span> for required) and the matching control. Footer: 취소 / 저장 buttons.
    - detail: <div className="mcds-desc"> with one label/value pair per FIELD (placeholder values). Actions from ACTIONS.
    - dashboard: one <div className="mcds-stat"> per FIELD (label + "0"), then a 3-column mini table if COLUMNS given.
@@ -224,7 +227,7 @@ INTERACTIONS (minimal — enough to show where each action leads):
 RULES:
 - All text Korean. Use exact PRD field/column/action names. Do not add columns, fields or buttons that are not in the spec.
 - Required-looking fields (ID, 이름, 일자 등) get the * mark; others not.
-- If COLUMNS > 8, show the first 8 and one "…" column header.`
+- Show every column and field in the spec, however many there are.`
 
 // 상세 모드(선택): 실제 데이터 느낌·풍부한 인터랙션. 화면 단위 함수(300초)에서만 쓴다.
 export const HIFI_DETAIL_SYSTEM = `You generate high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes for interactive prototypes.
@@ -351,7 +354,8 @@ function getScreenModel(): string {
 
 // 화면 수 상한(화면은 병렬 생성되므로 벽시계 시간은 화면 수에 크게 비례하지 않음).
 // 실행시간·토큰·동시호출 한도 안전장치. env MOCKUP_MAX_SCREENS로 조정 가능.
-export const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 10
+// 화면별 생성이 병렬·독립 함수라 화면 수가 늘어도 시간은 거의 늘지 않는다. 상한은 스펙 추출 출력 크기 보호용.
+export const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 16
 
 // 전체 시간 예산. Vercel 함수 제한(300초) 안에 반드시 응답하도록, 조립·검증 여유(약 60초)를 뺀 값.
 // 예산을 넘긴 화면은 제외하고 나머지로 조립한다(타임아웃으로 전부 잃는 것보다 낫다).
@@ -482,6 +486,8 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
     })
     .join(', ')
 
+  const parent = screen.embed_in_parent && screen.parent_id ? allScreens.find(s => s.id === screen.parent_id) : undefined
+  const embeddedChildren = allScreens.filter(s => s.embed_in_parent && s.parent_id === screen.id)
   const lines: string[] = [
     `Generate the component for this screen.`,
     ``,
@@ -489,8 +495,20 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
     `SCREEN NAME: ${screen.name}`,
     `TYPE: ${screen.type}`,
   ]
+  if (parent) {
+    lines.push(
+      `ROLE: SECTION of the page "${parent.name}". It is rendered directly below the parent on the same page.`,
+      `- Return ONE <section className="section"> block with <div className="section__title">${screen.name}</div> as its heading. No <h1 className="page-title">, no page-level filters.`,
+      `- Show ALL of this section's columns/fields in full (a real table or stat cards). Do not summarize.`,
+    )
+  }
+  if (embeddedChildren.length > 0) {
+    lines.push(
+      `EMBEDDED SECTIONS rendered below this screen by the app (do NOT draw them yourself, do NOT repeat their content): ${embeddedChildren.map(c => c.name).join(', ')}`,
+    )
+  }
   // 너무 긴 스펙은 코드 폭발 → max_tokens·구문 오류로 이어진다. 표시 항목을 상한으로 자르고 요약을 지시한다.
-  const MAX_ITEMS = 10
+  const MAX_ITEMS = 30
   const cols = screen.columns.slice(0, MAX_ITEMS)
   const flds = screen.fields.slice(0, MAX_ITEMS)
   if (cols.length > 0) lines.push(`COLUMNS (all required): ${cols.join(', ')}${screen.columns.length > MAX_ITEMS ? ` (+${screen.columns.length - MAX_ITEMS} more: omit them)` : ''}`)
@@ -515,7 +533,7 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
 }
 
 // 화면 1개당 출력 상한. antd 화면은 코드가 길어 넉넉히 잡는다(8192 초과이므로 output-128k 베타 필요).
-export const SCREEN_MAX_TOKENS = 4500 // 구조 충실 목업: 화면당 ≤110줄
+export const SCREEN_MAX_TOKENS = 7000 // 구조 충실 목업: 화면당 ≤170줄, 요소 전부 표시
 export const SCREEN_MAX_TOKENS_DETAIL = 9000 // 상세 모드
 
 export async function generateScreen(
@@ -923,57 +941,61 @@ function pickFirstScreen(spec: MockupSpec, codedIds: Set<string>): string {
 //   - type 이 list 인데 부모가 dashboard / other / detail 인 것 (리포트 안의 표 섹션)
 // 유지: detail·form(상세·생성/수정 폼), 그리고 목록 부모 아래의 하위 기능 목록(예: 캠페인 관리 > 소재 관리).
 // 흡수 시 columns/fields/actions 를 부모에 합치고, 참조(navigates_to·flows·critical)는 부모로 치환한다.
+// 섹션성 2뎁스 화면을 "부모에 내장"으로 표시한다. 코드는 별도로 생성하고(내용 보존), LNB·흐름도에는
+// 올리지 않으며 부모 페이지 아래에 순서대로 이어 붙인다. 상세·폼(detail/form)과 목록 부모 아래 하위 기능 목록은 독립 화면 유지.
+// (이전에는 컬럼·필드를 요약해 부모에 접었는데, 그 결과 내용 대부분이 사라졌다 — 2026-09-22 되돌림)
 export function foldSectionScreens(spec: MockupSpec): MockupSpec {
   const byId = new Map(spec.screens.map(s => [s.id, s]))
-  const folded = new Map<string, string>() // child id → parent id
-  for (const s of spec.screens) {
-    if (!s.parent_id || !byId.has(s.parent_id)) continue
+  const embedded: string[] = []
+  const screens = spec.screens.map(s => {
+    if (!s.parent_id || !byId.has(s.parent_id)) return s
     const parent = byId.get(s.parent_id)!
     const isSection =
       s.type === 'dashboard' ||
       s.type === 'other' ||
       (s.type === 'list' && (parent.type === 'dashboard' || parent.type === 'other' || parent.type === 'detail'))
-    if (isSection) folded.set(s.id, s.parent_id)
+    if (!isSection) return s
+    embedded.push(s.id)
+    return { ...s, embed_in_parent: true }
+  })
+  if (embedded.length > 0) {
+    console.log(`[mockup] ${embedded.length} section screens will be embedded under their parents: ${embedded.map(id => byId.get(id)!.name).join(', ')}`)
   }
-  if (folded.size === 0) return spec
+  return { ...spec, screens, menu_screen_ids: spec.menu_screen_ids.filter(id => !embedded.includes(id)) }
+}
 
-  const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)))
-  const remap = (id: string) => folded.get(id) ?? id
-
-  for (const [childId, parentId] of folded) {
-    const child = byId.get(childId)!
-    const parent = byId.get(parentId)!
-    // 섹션 내용은 요약 한 줄로만 넘긴다. 컬럼·필드를 부모에 전부 합치면 한 화면 코드가 폭발해
-    // max_tokens·구문 오류로 생성이 실패한다(판매 리포트 1화면에 섹션 6개가 접혔던 사례).
-    const items = uniq([...(child.columns ?? []), ...(child.fields ?? [])]).slice(0, 4)
-    parent.sections = uniq([...(parent.sections ?? []), items.length ? `${child.name}(${items.join('·')})` : child.name]).slice(0, 8)
-    parent.actions = uniq([...(parent.actions ?? []), ...(child.actions ?? [])]).slice(0, 8)
-    parent.navigates_to = uniq([...(parent.navigates_to ?? []), ...(child.navigates_to ?? [])].map(remap).filter(t => t !== parentId))
+/** 조립용: 내장 화면을 부모로 치환한 spec (흐름도·첫 화면 계산에 사용) */
+function collapseEmbedded(spec: MockupSpec): { spec: MockupSpec; embedMap: Record<string, string>; childrenOf: Map<string, ScreenSpec[]> } {
+  const embedMap: Record<string, string> = {}
+  const childrenOf = new Map<string, ScreenSpec[]>()
+  for (const s of spec.screens) {
+    if (s.embed_in_parent && s.parent_id) {
+      embedMap[s.id] = s.parent_id
+      if (!childrenOf.has(s.parent_id)) childrenOf.set(s.parent_id, [])
+      childrenOf.get(s.parent_id)!.push(s)
+    }
   }
-
+  const remap = (id: string) => embedMap[id] ?? id
+  const uniq = (arr: string[]) => Array.from(new Set(arr))
   const screens = spec.screens
-    .filter(s => !folded.has(s.id))
+    .filter(s => !s.embed_in_parent)
     .map(s => ({ ...s, navigates_to: uniq((s.navigates_to ?? []).map(remap).filter(t => t !== s.id)) }))
   const flows = spec.flows
     .map(f => ({ ...f, from: remap(f.from), to: remap(f.to) }))
     .filter((f, i, arr) => f.from !== f.to && arr.findIndex(g => g.from === f.from && g.to === f.to) === i)
-
-  console.log(
-    `[mockup v3] Folded ${folded.size} section-like sub-screens into parents: ${Array.from(folded.entries()).map(([c, p]) => `${byId.get(c)!.name} → ${byId.get(p)!.name}`).join(', ')}`,
-  )
-
   return {
-    ...spec,
-    screens,
-    flows,
-    menu_screen_ids: spec.menu_screen_ids.filter(id => !folded.has(id)),
-    critical_screen_ids: uniq((spec.critical_screen_ids ?? []).map(remap)),
+    spec: { ...spec, screens, flows, critical_screen_ids: uniq((spec.critical_screen_ids ?? []).map(remap)) },
+    embedMap,
+    childrenOf,
   }
 }
 
-export function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+export function assembleLofiApp(screenCodes: Map<string, string>, fullSpec: MockupSpec): string {
+  const { spec, embedMap, childrenOf } = collapseEmbedded(fullSpec)
   const codedIds = new Set(screenCodes.keys())
   const has = (id: string) => screenCodes.has(id)
+  const embeddedRenders = (parentId: string) =>
+    (childrenOf.get(parentId) ?? []).filter(c => has(c.id)).map(c => `<Screen_${c.id} navigate={go} />`).join('')
   const menuScreens = spec.screens.filter(s => spec.menu_screen_ids.includes(s.id))
 
   // 2-depth(parent_id 있는 화면: 상세/생성폼/수정폼 등)를 부모별로 그룹화 — Hi-Fi와 동일 규칙
@@ -1010,14 +1032,14 @@ export function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSp
     .map(e => `  { id: '${e.id}', label: '${e.label.replace(/'/g, "\\'")}', depth: ${e.depth} }`)
     .join(',\n')
 
-  const screenFunctions = spec.screens
+  const screenFunctions = fullSpec.screens
     .filter(s => screenCodes.has(s.id))
     .map(s => screenCodes.get(s.id)!)
     .join('\n\n')
 
   const screenRenders = spec.screens
     .filter(s => screenCodes.has(s.id))
-    .map(s => `        {page === '${s.id}' && <Screen_${s.id} navigate={setPage} />}`)
+    .map(s => `        {page === '${s.id}' && <><Screen_${s.id} navigate={go} />${embeddedRenders(s.id)}</>}`)
     .join('\n')
 
   return `import React, { useState } from 'react'
@@ -1052,9 +1074,11 @@ const MENU_ITEMS = [
 ${menuItems}
 ]
 const RENDERED_IDS = ${JSON.stringify(renderedIds)}
+const EMBED = ${JSON.stringify(embedMap)}
 
 export default function App() {
   const [page, setPage] = useState('${firstScreen}')
+  const go = (id) => setPage(EMBED[id] ?? id)
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f5f5', fontFamily: '-apple-system, sans-serif', fontSize: 13 }}>
       <div style={{ width: 200, minWidth: 200, background: '#fff', borderRight: '1px solid #e0e0e0', padding: '16px 0', flexShrink: 0 }}>
@@ -1068,9 +1092,9 @@ export default function App() {
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         <ScreenErrorBoundary pageKey={page} onReset={() => setPage('flow')}>
-        {page === 'flow' && <FlowDiagram navigate={setPage} />}
+        {page === 'flow' && <FlowDiagram navigate={go} />}
 ${screenRenders}
-        {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
+        {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={go} />}
         </ScreenErrorBoundary>
       </div>
       <NotePanel />
@@ -1079,8 +1103,11 @@ ${screenRenders}
 }`
 }
 
-export function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+export function assembleHifiApp(screenCodes: Map<string, string>, fullSpec: MockupSpec): string {
+  const { spec, embedMap, childrenOf } = collapseEmbedded(fullSpec)
   const codedIds = new Set(screenCodes.keys())
+  const embeddedRenders = (parentId: string) =>
+    (childrenOf.get(parentId) ?? []).filter(c => codedIds.has(c.id)).map(c => `<Screen_${c.id} navigate={go} />`).join('')
 
   // Critical screens first in menu. 코드가 생성된 화면만 메뉴에 노출(죽은 링크 방지).
   const menuScreens = spec.screens
@@ -1125,33 +1152,34 @@ export function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSp
     .map(e => `  { id: '${e.id}', label: '${e.label.replace(/'/g, "\\'")}', depth: ${e.depth} }`)
     .join(',\n')
 
-  const screenFunctions = spec.screens
+  const screenFunctions = fullSpec.screens
     .filter(s => screenCodes.has(s.id))
     .map(s => screenCodes.get(s.id)!)
     .join('\n\n')
 
   const screenRenders = spec.screens
     .filter(s => screenCodes.has(s.id))
-    .map(s => `            {page === '${s.id}' && <Screen_${s.id} navigate={setPage} />}`)
+    .map(s => `            {page === '${s.id}' && <><Screen_${s.id} navigate={go} />${embeddedRenders(s.id)}</>}`)
     .join('\n')
 
   // 실제 생성된 prototype 코드에서 navigate('id') 호출을 파싱해 flow 추출 (1/2depth 모두)
   const codeFlows: Array<{ from: string; to: string; trigger: string }> = []
-  for (const screen of spec.screens) {
+  for (const screen of fullSpec.screens) {
     if (!spec.menu_screen_ids.includes(screen.id) && !screen.parent_id) continue
     const code = screenCodes.get(screen.id)
     if (!code) continue
+    const fromId = embedMap[screen.id] ?? screen.id
     const re = /navigate\(['"]([^'"]+)['"]\)/g
     const seen = new Set<string>()
     let m: RegExpExecArray | null
     while ((m = re.exec(code)) !== null) {
-      const targetId = m[1]
-      if (targetId === screen.id || seen.has(targetId)) continue
+      const targetId = embedMap[m[1]] ?? m[1]
+      if (targetId === fromId || seen.has(targetId)) continue
       seen.add(targetId)
       // 해당 navigate 호출 앞 100자에서 한글 버튼 레이블 추출 시도
       const ctx = code.slice(Math.max(0, m.index - 120), m.index)
       const labelMatch = ctx.match(/['"]([가-힣][가-힣\w\s]{1,10})['"]\s*[^{]*$/)
-      codeFlows.push({ from: screen.id, to: targetId, trigger: labelMatch ? labelMatch[1] : '이동' })
+      codeFlows.push({ from: fromId, to: targetId, trigger: labelMatch ? labelMatch[1] : '이동' })
     }
   }
 
@@ -1190,9 +1218,11 @@ const MENU_ITEMS = [
 ${menuItems}
 ]
 const RENDERED_IDS = ${JSON.stringify(renderedIds)}
+const EMBED = ${JSON.stringify(embedMap)}
 
 export default function App() {
   const [page, setPage] = useState('${firstScreen}')
+  const go = (id) => setPage(EMBED[id] ?? id)
   return (
     <div className="layout" style={{ minHeight: '100vh', background: 'var(--fill-subtle)' }}>
       <div className="lnb" style={{ top: 0, minHeight: '100vh' }}>
@@ -1209,9 +1239,9 @@ export default function App() {
       <div className="main" style={{ minHeight: '100vh' }}>
         <div style={{ flex: 1, overflow: 'auto', padding: '32px 32px 80px' }}>
           <ScreenErrorBoundary pageKey={page} onReset={() => setPage('flow')}>
-          {page === 'flow' && <FlowDiagram navigate={setPage} />}
+          {page === 'flow' && <FlowDiagram navigate={go} />}
 ${screenRenders}
-          {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={setPage} />}
+          {page !== 'flow' && !RENDERED_IDS.includes(page) && <FlowDiagram navigate={go} />}
           </ScreenErrorBoundary>
         </div>
       </div>
