@@ -84,9 +84,10 @@ npm run dev
 
 ## 📋 사용 방법
 
-1. **팀 템플릿 선택**: 어떤 PRD 템플릿 기준으로 검증할지 고릅니다 (필수)
+1. **팀 선택**: 어떤 PRD 템플릿 기준으로 검증할지 고릅니다 (필수)
    - **Partner Growth** — PGT PRD 템플릿 11개 섹션 기준 감점제 (Protocol v3.0). Actor·유저 시나리오 누락은 점수 상한이 걸립니다
-   - **Commerce Core** — UX 6차원 평가 (Protocol v2.0)
+   - **Commerce Core** — 전용 템플릿 준비 중 (선택 불가)
+   - **그 외** — UX 6차원 평가 (Protocol v2.0)
 2. **PRD 문서 선택**: Confluence 페이지 URL 또는 PDF/MD/TXT 업로드
 3. **분석 대기**: Claude AI가 선택한 프로토콜에 따라 분석
 4. **결과 확인**:

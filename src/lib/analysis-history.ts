@@ -8,8 +8,8 @@ export interface HistoryEntry {
   createdAt: number
   fileName: string
   prdText: string
-  // v3 도입(2026-09) 이전 항목에는 없다 → 복원 시 commerce-core(v2) 로 간주
-  template?: 'partner-growth' | 'commerce-core'
+  // v3 도입(2026-09) 이전 항목에는 없다 → 복원 시 other(기존 v2 규칙) 로 간주
+  template?: 'partner-growth' | 'commerce-core' | 'other'
   analysis: unknown
   mockupFilesLowFi: Record<string, string> | null
   mockupFilesHiFi: Record<string, string> | null

@@ -168,7 +168,7 @@ function normalizeRec(rec: unknown): NormalizedRec {
 
 export default function ResultScreen({
   fileName,
-  template = 'commerce-core',
+  template = 'other',
   result,
   hasMockupLowFi,
   hasMockupHiFi,
@@ -270,8 +270,8 @@ export default function ResultScreen({
               <>
                 <span className="text-muted-foreground">·</span>
                 <AstryxBadge
-                  variant={templateOption.id === 'partner-growth' ? 'teal' : 'blue'}
-                  label={`${templateOption.label} 템플릿 · v${templateOption.protocol}`}
+                  variant={templateOption.id === 'partner-growth' ? 'teal' : 'neutral'}
+                  label={templateOption.id === 'other' ? '기본 검증' : `${templateOption.label} 템플릿`}
                 />
               </>
             )}

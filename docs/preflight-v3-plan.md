@@ -235,7 +235,7 @@ PO 위임("모두 최적을 알아서 선택")에 따라 아래로 확정하고 
 | 4 | v1/v2 히스토리 | 읽기 전용 호환 유지. `template` 없는 항목은 Commerce Core로 간주 | IndexedDB 마이그레이션 비용 없이 과거 결과 열람 가능 |
 | 5 | 템플릿 추적 | `PGT_TEMPLATE.ref = "PGT-PRD/652153933@2026-09-20"` 수동 관리 | 템플릿이 아직 변동 중. 자동 diff는 안정화 후 |
 | 6 | PGT 외 팀 PRD | 분석 전 팀 템플릿 선택으로 분기. Partner Growth = v3, Commerce Core = v2 | §1-1 |
-| 7 | 선택 UI 문구 | 라벨 + 한 줄 설명 + Protocol 버전 배지 + 템플릿 링크(Partner Growth만, Commerce Core 템플릿 링크는 미확보) | 무엇을 넣어야 하는지 선택 시점에 알 수 있게 |
+| 7 | 선택 UI 문구 | ~~라벨 + 설명 + 버전 배지 + 링크~~ → **PO 지시(09-21)로 라벨만.** 선택지는 Partner Growth / Commerce Core(비활성) / 그 외 3개. "그 외"가 기존 v2 규칙 | 화면을 단순하게. Commerce Core 는 전용 템플릿이 준비될 때까지 선택 불가 |
 
 **구현 위치 요약**
 

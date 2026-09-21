@@ -9,13 +9,17 @@
 //   https://wiki.team.musinsa.com/wiki/spaces/PGT/pages/652153933
 // ============================================================================
 
-export type PrdTemplateId = 'partner-growth' | 'commerce-core'
+// - partner-growth : PGT 템플릿 기준 v3.0 감점제
+// - commerce-core  : 전용 템플릿 준비 전까지 선택 불가 (disabled)
+// - other          : 팀 템플릿이 없는 문서. 기존 v2.0 규칙(UX 6차원)으로 분석
+export type PrdTemplateId = 'partner-growth' | 'commerce-core' | 'other'
 
 export interface TemplateOption {
   id: PrdTemplateId
   label: string
-  description: string
   protocol: '2.0' | '3.0'
+  /** 선택 불가. UI 에서 비활성으로 표시하고 저장된 선택도 무시한다 */
+  disabled?: boolean
   referenceUrl?: string
 }
 
@@ -23,20 +27,29 @@ export const TEMPLATE_OPTIONS: TemplateOption[] = [
   {
     id: 'partner-growth',
     label: 'Partner Growth',
-    description: 'PGT PRD 템플릿 기준. Actor·유저 시나리오·정책 섹션 누락을 감점',
     protocol: '3.0',
     referenceUrl: 'https://wiki.team.musinsa.com/wiki/spaces/PGT/pages/652153933',
   },
   {
     id: 'commerce-core',
     label: 'Commerce Core',
-    description: 'Commerce Core PRD 템플릿 기준. UX 6차원(구조·상태·에러·인터랙션·위계·행동) 평가',
+    protocol: '2.0',
+    disabled: true,
+  },
+  {
+    id: 'other',
+    label: '그 외',
     protocol: '2.0',
   },
 ]
 
 export function isTemplateId(v: unknown): v is PrdTemplateId {
-  return v === 'partner-growth' || v === 'commerce-core'
+  return v === 'partner-growth' || v === 'commerce-core' || v === 'other'
+}
+
+/** 사용자가 고를 수 있는 템플릿인지 (존재하고 disabled 가 아님) */
+export function isSelectableTemplate(v: unknown): v is PrdTemplateId {
+  return isTemplateId(v) && !TEMPLATE_OPTIONS.find(o => o.id === v)?.disabled
 }
 
 // ─── Partner Growth 템플릿 구조 ───────────────────────────────────────────────

@@ -377,8 +377,8 @@ export default function Home() {
       screen: 'result',
       fileName: entry.fileName,
       prdText: entry.prdText,
-      // v3 도입 전 항목은 template 이 없다 → 결과 안의 값, 없으면 commerce-core(v2)
-      template: entry.template ?? restored.template ?? 'commerce-core',
+      // v3 도입 전 항목은 template 이 없다 → 결과 안의 값, 없으면 other(기존 v2 규칙)
+      template: entry.template ?? restored.template ?? 'other',
       analysis: restored,
       mockupFilesLowFi: entry.mockupFilesLowFi,
       mockupFilesHiFi: entry.mockupFilesHiFi,
@@ -422,7 +422,7 @@ export default function Home() {
       {state.screen === 'result' && state.analysis && (
         <ResultScreen
           fileName={state.fileName}
-          template={state.template ?? state.analysis.template ?? 'commerce-core'}
+          template={state.template ?? state.analysis.template ?? 'other'}
           result={state.analysis}
           hasMockupLowFi={!!state.mockupFilesLowFi}
           hasMockupHiFi={!!state.mockupFilesHiFi}

@@ -8,7 +8,7 @@ import { TabList, Tab } from '@astryxdesign/core/TabList'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { releaseNotes } from '@/config/release-notes'
-import { TEMPLATE_OPTIONS, isTemplateId, type PrdTemplateId } from '@/config/prd-template'
+import { TEMPLATE_OPTIONS, isSelectableTemplate, type PrdTemplateId } from '@/config/prd-template'
 import {
   listEntries,
   deleteEntry,
@@ -48,7 +48,8 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   useEffect(() => {
     try {
       const saved = localStorage.getItem(TEMPLATE_STORAGE_KEY)
-      if (isTemplateId(saved)) setTemplate(saved)
+      // 이후 비활성화된 옵션(commerce-core)이 저장돼 있으면 무시
+      if (isSelectableTemplate(saved)) setTemplate(saved)
     } catch {
       // 프라이빗 모드 등 — 기억 기능만 비활성
     }
@@ -274,70 +275,49 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
         디자인 전, 목업으로 먼저 확인해 보세요
       </h1>
       <p className="text-muted-foreground text-center mb-10 text-sm">
-        팀 템플릿을 고르고 Confluence 페이지나 PDF·MD 파일을 올리면, <br/>
-        AI가 템플릿 기준으로 빠진 항목을 찾고 Lo-Fi·Hi-Fi 목업까지 만들어줍니다.
+        팀을 고르고 Confluence 페이지나 PDF·MD 파일을 올리면, <br/>
+        AI가 PRD 템플릿 기준으로 빠진 항목을 찾고 Lo-Fi·Hi-Fi 목업까지 만들어줍니다.
       </p>
 
       <div className="w-full max-w-xl">
-        {/* 1단계 — 팀 템플릿 선택 (필수). 채점 기준이 갈리므로 URL·파일 입력보다 먼저 고른다 */}
-        <div className="mb-5">
-          <p className="text-xs font-medium text-muted-foreground mb-2">
-            1. 어떤 팀의 PRD 템플릿으로 검증할까요?
-            {!template && <span className="ml-1.5 text-primary">선택해야 다음 단계로 넘어갈 수 있어요</span>}
-          </p>
-          <div role="radiogroup" aria-label="PRD 템플릿" className="grid grid-cols-2 gap-3">
-            {TEMPLATE_OPTIONS.map(opt => {
-              const selected = template === opt.id
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => selectTemplate(opt.id)}
-                  className={[
-                    'text-left rounded-xl border p-4 transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                    selected
+        {/* 팀 템플릿 선택 (필수). 채점 기준이 갈리므로 URL·파일 입력보다 먼저 고른다 */}
+        <div role="radiogroup" aria-label="PRD 템플릿" className="grid grid-cols-3 gap-3 mb-5">
+          {TEMPLATE_OPTIONS.map(opt => {
+            const selected = template === opt.id
+            const disabled = !!opt.disabled
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-disabled={disabled}
+                disabled={disabled}
+                onClick={() => !disabled && selectTemplate(opt.id)}
+                className={[
+                  'flex items-center justify-between gap-2 rounded-xl border px-4 py-3.5 text-left transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                  disabled
+                    ? 'border-border opacity-40 cursor-not-allowed'
+                    : selected
                       ? 'border-primary bg-primary/5 shadow-sm'
                       : 'border-border hover:border-primary/50 hover:bg-accent',
+                ].join(' ')}
+              >
+                <span className="text-sm font-semibold truncate">{opt.label}</span>
+                <span
+                  className={[
+                    'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0',
+                    selected ? 'border-primary' : 'border-muted-foreground/40',
                   ].join(' ')}
+                  aria-hidden
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{opt.label}</span>
-                    <span
-                      className={[
-                        'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0',
-                        selected ? 'border-primary' : 'border-muted-foreground/40',
-                      ].join(' ')}
-                      aria-hidden
-                    >
-                      {selected && <span className="w-2 h-2 rounded-full bg-primary" />}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{opt.description}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">
-                      Protocol v{opt.protocol}
-                    </span>
-                    {opt.referenceUrl && (
-                      <a
-                        href={opt.referenceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={e => e.stopPropagation()}
-                        className="text-[10px] text-primary hover:underline underline-offset-2"
-                      >
-                        템플릿 보기 ↗
-                      </a>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+                  {selected && <span className="w-2 h-2 rounded-full bg-primary" />}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
-        <p className="text-xs font-medium text-muted-foreground mb-2">2. PRD를 가져올 방법</p>
         <div
           className={template ? '' : 'opacity-50 pointer-events-none select-none'}
           aria-disabled={!template}
