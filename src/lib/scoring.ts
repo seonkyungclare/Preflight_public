@@ -313,6 +313,18 @@ function evaluateGates(sections: SectionCoverage[], actors: ActorsSummary): Hard
   })
 }
 
+function countSeverity(items: unknown[]): { catastrophic: number; major: number; minor: number; cosmetic: number } {
+  const c = { catastrophic: 0, major: 0, minor: 0, cosmetic: 0 }
+  for (const it of items) {
+    const sev = (it as { severity?: unknown })?.severity
+    if (sev === 4) c.catastrophic++
+    else if (sev === 3) c.major++
+    else if (sev === 2) c.minor++
+    else if (sev === 1) c.cosmetic++
+  }
+  return c
+}
+
 /**
  * 모델 원본 → 점수가 확정된 v3 결과.
  *
@@ -330,6 +342,28 @@ export function finalizeV3Analysis(raw: RawV3Analysis): ScoredV3Analysis {
   const caps = hard_gates.filter(g => g.triggered).map(g => g.cap)
   const capped = caps.length > 0 ? Math.min(raw_score, ...caps) : raw_score
   const sufficiency_score = clamp(Math.round(capped), 0, 100)
+
+  const designers = Array.isArray(raw.missing_for_designers) ? raw.missing_for_designers : []
+  const developers = Array.isArray(raw.missing_for_developers) ? raw.missing_for_developers : []
+  const questions = Array.isArray(raw.critical_questions) ? [...raw.critical_questions] : []
+
+  // 미정의 Actor 는 반드시 [비즈니스] 질문이 있어야 한다 — B 호출이 놓쳤으면 서버가 보강
+  for (const a of actors.detected_undefined) {
+    const covered = questions.some(q => {
+      const text = typeof q === 'string' ? q : JSON.stringify(q)
+      return text.includes(a.name)
+    })
+    if (!covered) {
+      questions.unshift({
+        tag: '[비즈니스]',
+        question: `"${a.name}"은(는) 별도 Actor로 정의해야 하나요, 아니면 기존 Actor에 포함되나요?`,
+        format: 'binary',
+        options: ['별도 Actor로 정의 (권한 분리)', '기존 Actor에 포함'],
+        impact: 'Actor 표(3번 섹션)·권한 매트릭스·화면별 노출 범위',
+        blocks: ['§3.1 Actor 정의', '§3.2 권한 매트릭스'],
+      })
+    }
+  }
 
   const cross_reference_issues = Array.isArray(raw.cross_reference_issues)
     ? raw.cross_reference_issues
@@ -367,11 +401,12 @@ export function finalizeV3Analysis(raw: RawV3Analysis): ScoredV3Analysis {
     scenarios,
     cross_reference_issues,
     validated: Array.isArray(raw.validated) ? raw.validated : [],
-    missing_for_designers: Array.isArray(raw.missing_for_designers) ? raw.missing_for_designers : [],
-    missing_for_developers: Array.isArray(raw.missing_for_developers) ? raw.missing_for_developers : [],
-    critical_questions: Array.isArray(raw.critical_questions) ? raw.critical_questions : [],
+    missing_for_designers: designers,
+    missing_for_developers: developers,
+    critical_questions: questions,
     ux_recommendations: Array.isArray(raw.ux_recommendations) ? raw.ux_recommendations : [],
-    severity_summary: raw.severity_summary ?? { catastrophic: 0, major: 0, minor: 0, cosmetic: 0 },
+    // 심각도 집계는 서버가 한다 (모델 출력 절약 + 일관성)
+    severity_summary: countSeverity([...designers, ...developers, ...cross_reference_issues]),
     mockup_directives: raw.mockup_directives ?? {},
   }
 }

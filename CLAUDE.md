@@ -52,7 +52,12 @@ Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-
 * **휴리스틱은 UX 제안에만.** Nielsen 10 · Fitts · Hick · Fogg · Jakob · 접근성에 근거한 관찰은 전부 `ux_recommendations` 로 보낸다. 원칙 태그는 거기서만 쓴다. 점수·체크리스트에 영향을 주지 않는다.
 * 빈 상태·로딩·에러처럼 템플릿 고민 항목과 휴리스틱이 겹치는 주제는 "템플릿 문구로 표현되는 누락"만 점수·체크리스트에 올리고, 품질 판단은 제안으로 보낸다.
 
-## A-6. 출력
+## A-6. 호출 구조 (2026-09-21, 분석 시간 단축)
+* **두 호출 병렬**: A 구조(섹션 커버리지·Actor·시나리오·교차 검증·요약·목업 지시, 기본 모델) + B 체크리스트(디자이너·개발자·PO 질문·UX 제안, 빠른 모델 `ANTHROPIC_FAST_MODEL` → Haiku 4.5 → 기본 모델). 서버가 합쳐 채점한다. B 가 실패해도 A 로 점수는 낸다.
+* **출력 다이어트**: 인용 80자, 목록당 3~5개, 문장 60자, 충족 항목은 `missing` 생략. 심각도 집계·미정의 Actor 질문 보강은 서버가 한다.
+* **프롬프트 캐싱**: 시스템 프롬프트를 cache_control 블록으로 보낸다.
+
+## A-7. 출력
 `section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.
 
 ---
