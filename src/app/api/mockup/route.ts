@@ -110,18 +110,21 @@ Commerce Core PRD 템플릿의 "7. 유저 스토리"는 액터별(고객/운영�
 목표: 목업이 "스토리로 확정된 것"과 "AI가 가정한 것"을 구분해 보여주게 하여, 빈 곳이 그럴듯한 화면으로 가려지지 않도록 한다.
 
 ## Screen hierarchy (2-level max)
-Decide per screen whether it's 1st-level (top menu) or 2nd-level (sub-page):
+Decide per screen whether it's 1st-level (top menu) or 2nd-level (sub-page).
+A "screen" is something the user NAVIGATES TO: it has its own entry (menu item, row click, button) and replaces the current page.
 
 2nd-level screen (add to screens array with parent_id set, do NOT add to menu_screen_ids):
-- 상세 페이지: viewing a single item's full detail (e.g., 캠페인 상세, 광고 상세)
-- 생성/등록 폼: full-page creation form with many fields (e.g., 캠페인 생성, 소재 등록)
-- 수정 폼: full-page edit form (e.g., 캠페인 수정)
-- 서브 섹션: sub-feature under a parent (e.g., 소재 관리 under 캠페인 관리)
+- 상세 페이지: viewing a single item's full detail (e.g., 캠페인 상세, 광고 상세) → type "detail"
+- 생성/등록 폼: full-page creation form with many fields (e.g., 캠페인 생성, 소재 등록) → type "form"
+- 수정 폼: full-page edit form (e.g., 캠페인 수정) → type "form"
+- 별도 화면으로 PRD 가 명시한 하위 기능만 (SC-ID 가 있거나 "화면"·"페이지"로 불리고 진입 동작이 있는 것)
 - Rule: set parent_id to the 1st-level screen id
 
-NOT a separate screen (keep as action in parent, no separate screen entry):
-- 삭제 확인 팝업, 인라인 수정, 필터 드롭다운, 컬럼 설정 모달 (<=5 fields in a modal)
-- Rule: put in parent screen actions list only
+NOT a separate screen (keep INSIDE the parent screen: as columns/fields/actions, never a screens entry):
+- **한 화면 안의 섹션**: 리포트·대시보드·현황 화면의 KPI 카드, 차트, 요약 표, 탭, 기간 필터, 상세 표 등. 예) "판매 리포트" 화면의 "일별 매출", "상품별 판매", "채널별 비중" 은 판매 리포트 화면의 섹션이지 화면이 아니다. 이런 항목은 parent 의 columns/fields 에 넣는다.
+- 삭제 확인 팝업, 인라인 수정, 필터 드롭다운, 컬럼 설정 모달 (<=5 fields in a modal) → parent actions
+- Rule: if you are about to create a 2nd-level screen whose type would be "dashboard" or "other", or whose name is a sub-part of the parent's content, do NOT create it. Fold it into the parent.
+- Sanity: a 1st-level screen normally has 0~3 sub-screens (detail / form). More than that means sections were split by mistake.
 
 ## Standard Navigation Flows (ALWAYS derive these even if PRD doesn't state them explicitly)
 These are universal UI conventions — populate navigates_to and flows based on these rules:
@@ -599,10 +602,10 @@ function generateFlowDiagramHifi(spec: MockupSpec, codeFlows: Array<{ from: stri
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>사용자 Flow 다이어그램</Typography.Title>
-        <Button size="small" onClick={() => setFlowKey(k => k + 1)}>↺ 새로고침</Button>
+        <h4 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#212121' }}>화면 흐름</h4>
+        <button type="button" className="btn btn--secondary" onClick={() => setFlowKey(k => k + 1)}>↺ 새로고침</button>
       </div>
-      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>노드를 클릭하면 해당 화면으로 이동합니다.</Typography.Text>
+      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#757575' }}>노드 클릭 시 해당 화면으로 이동</p>
       <div style={{ height: 520, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', background: '#fafafa' }}>
         <ReactFlow
           key={flowKey}
@@ -770,6 +773,58 @@ function pickFirstScreen(spec: MockupSpec, codedIds: Set<string>): string {
     if (codedIds.has(mid)) return mid
   }
   return spec.screens.find(s => codedIds.has(s.id))?.id ?? 'flow'
+}
+
+// 2뎁스 화면 중 "화면"이 아니라 부모 화면의 섹션인 것을 부모로 흡수한다.
+// 흡수 대상: parent_id 가 있고
+//   - type 이 dashboard / other 인 것 (리포트·현황 화면의 KPI·차트·요약 섹션), 또는
+//   - type 이 list 인데 부모가 dashboard / other / detail 인 것 (리포트 안의 표 섹션)
+// 유지: detail·form(상세·생성/수정 폼), 그리고 목록 부모 아래의 하위 기능 목록(예: 캠페인 관리 > 소재 관리).
+// 흡수 시 columns/fields/actions 를 부모에 합치고, 참조(navigates_to·flows·critical)는 부모로 치환한다.
+function foldSectionScreens(spec: MockupSpec): MockupSpec {
+  const byId = new Map(spec.screens.map(s => [s.id, s]))
+  const folded = new Map<string, string>() // child id → parent id
+  for (const s of spec.screens) {
+    if (!s.parent_id || !byId.has(s.parent_id)) continue
+    const parent = byId.get(s.parent_id)!
+    const isSection =
+      s.type === 'dashboard' ||
+      s.type === 'other' ||
+      (s.type === 'list' && (parent.type === 'dashboard' || parent.type === 'other' || parent.type === 'detail'))
+    if (isSection) folded.set(s.id, s.parent_id)
+  }
+  if (folded.size === 0) return spec
+
+  const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)))
+  const remap = (id: string) => folded.get(id) ?? id
+
+  for (const [childId, parentId] of folded) {
+    const child = byId.get(childId)!
+    const parent = byId.get(parentId)!
+    parent.columns = uniq([...(parent.columns ?? []), ...(child.columns ?? [])])
+    parent.fields = uniq([...(parent.fields ?? []), ...(child.fields ?? [])])
+    parent.actions = uniq([...(parent.actions ?? []), ...(child.actions ?? [])])
+    parent.navigates_to = uniq([...(parent.navigates_to ?? []), ...(child.navigates_to ?? [])].map(remap).filter(t => t !== parentId))
+  }
+
+  const screens = spec.screens
+    .filter(s => !folded.has(s.id))
+    .map(s => ({ ...s, navigates_to: uniq((s.navigates_to ?? []).map(remap).filter(t => t !== s.id)) }))
+  const flows = spec.flows
+    .map(f => ({ ...f, from: remap(f.from), to: remap(f.to) }))
+    .filter((f, i, arr) => f.from !== f.to && arr.findIndex(g => g.from === f.from && g.to === f.to) === i)
+
+  console.log(
+    `[mockup v3] Folded ${folded.size} section-like sub-screens into parents: ${Array.from(folded.entries()).map(([c, p]) => `${byId.get(c)!.name} → ${byId.get(p)!.name}`).join(', ')}`,
+  )
+
+  return {
+    ...spec,
+    screens,
+    flows,
+    menu_screen_ids: spec.menu_screen_ids.filter(id => !folded.has(id)),
+    critical_screen_ids: uniq((spec.critical_screen_ids ?? []).map(remap)),
+  }
 }
 
 function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
@@ -1122,6 +1177,9 @@ export async function POST(req: Request): Promise<Response> {
                 : `화면 구조 분석 완료 (${spec.screens.length}개 화면)`,
           })
         }
+
+        // 섹션성 2뎁스 화면 흡수: 리포트/대시보드의 섹션이 화면으로 쪼개져 LNB 에 중복 노출되는 것을 막는다
+        spec = foldSectionScreens(spec)
 
         console.log(`[mockup v3] Spec: ${spec.screens.length} screens, ${spec.menu_screen_ids.length} in menu`)
 
