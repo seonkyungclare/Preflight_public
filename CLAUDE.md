@@ -57,7 +57,10 @@ Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-
 * **출력 다이어트**: 인용 80자, 목록당 3~5개, 문장 60자, 충족 항목은 `missing` 생략. 심각도 집계·미정의 Actor 질문 보강은 서버가 한다.
 * **프롬프트 캐싱**: 시스템 프롬프트를 cache_control 블록으로 보낸다.
 
-## A-7. 출력
+## A-7. 문체
+분석 결과의 모든 한국어 문자열과 결과 화면 라벨은 [docs/analysis-writing-rules.md](docs/analysis-writing-rules.md) 를 따른다. 개조식(명사형 종결), 제목은 개념어 명사구, 엠대시 금지, 용어집 표기. PO 질문만 의문문. 프롬프트 상수 `WRITING_STYLE` 은 이 문서의 사본이다.
+
+## A-8. 출력
 `section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.
 
 ---

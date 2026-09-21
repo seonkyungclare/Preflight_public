@@ -291,20 +291,20 @@ export default function ResultScreen({
           </div>
         </div>
 
-        {/* v3: 초심자용 3줄 요약 — "시작할 수 있나?" + 먼저 채울 것 3가지 */}
+        {/* v3: 3줄 요약. 착수 가능 여부 + 우선 보완 항목(3). 라벨은 docs/analysis-writing-rules.md 를 따른다 */}
         {v3 && result.summary && (
           <AstryxCard padding={0} className="mb-8">
             <div className="py-4 px-5 space-y-3">
               <p className="text-sm">
-                <span className="font-semibold">이 PRD로 지금 디자인·개발을 시작할 수 있나요? </span>
+                <span className="font-semibold">착수 가능 여부: </span>
                 <span className={result.summary.can_start ? 'text-green-600 font-semibold' : 'text-amber-500 font-semibold'}>
-                  {result.summary.can_start ? '네' : '아직이요'}
+                  {result.summary.can_start ? '가능' : '불가'}
                 </span>
-                <span className="text-muted-foreground"> — {result.summary.verdict}</span>
+                <span className="text-muted-foreground"> ({result.summary.verdict})</span>
               </p>
               {result.summary.top_fixes.length > 0 && (
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">가장 먼저 채울 것</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">우선 보완 항목({result.summary.top_fixes.length})</p>
                   <ol className="space-y-1.5">
                     {result.summary.top_fixes.map((fix, i) => (
                       <li key={i} className="flex gap-2 text-sm">
@@ -335,7 +335,7 @@ export default function ResultScreen({
             {v3 && <ResultV3Summary result={result} />}
 
             <div>
-              <p className="text-sm text-muted-foreground mb-4">PRD에서 명확하게 정의된 항목들</p>
+              <p className="text-sm text-muted-foreground mb-4">{v3 ? '확인된 정의 항목' : 'PRD에서 명확하게 정의된 항목들'}</p>
               <div className="space-y-3">
                 {result.validated.map((item, i) => (
                   <AstryxCard padding={0} key={i}>
@@ -406,7 +406,7 @@ export default function ResultScreen({
           {tab === 'missing' && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
-              디자이너가 작업을 시작하기 전에 확인이 필요한 항목들
+              {v3 ? '디자인 착수 전 보완 항목' : '디자이너가 작업을 시작하기 전에 확인이 필요한 항목들'}
             </p>
             {result.missing_for_designers.map((item: MissingItem, i: number) => {
               // v2 optional fields
@@ -455,7 +455,7 @@ export default function ResultScreen({
           {tab === 'dev' && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground mb-4">
-              개발 착수 전 시스템·데이터 로직 관점에서 확인이 필요한 항목들
+              {v3 ? '개발 착수 전 보완 항목(시스템·데이터)' : '개발 착수 전 시스템·데이터 로직 관점에서 확인이 필요한 항목들'}
             </p>
             {devItems.length === 0 ? (
               <p className="text-sm text-muted-foreground">항목이 없습니다.</p>
@@ -501,7 +501,7 @@ export default function ResultScreen({
           {tab === 'questions' && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
-              개발 착수 전 PO가 답변해야 할 핵심 질문들
+              {v3 ? '착수 전 PO 결정 사항' : '개발 착수 전 PO가 답변해야 할 핵심 질문들'}
             </p>
             {result.critical_questions.map((q, i) => {
               // v1: string, v2: object
@@ -571,7 +571,7 @@ export default function ResultScreen({
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
               {v3
-                ? '점수와 무관한 UX 관점 제안입니다. 템플릿이 요구하지 않는 사용성·접근성 개선 아이디어를 원칙 근거와 함께 모았습니다'
+                ? '점수와 무관한 UX 관점 제안. 템플릿이 요구하지 않는 사용성·접근성 개선안을 원칙 근거와 함께 정리'
                 : '사용성 및 비즈니스 성과를 높이기 위한 UX 제안'}
             </p>
             {result.ux_recommendations.map((rec, i) => {
@@ -632,7 +632,7 @@ export default function ResultScreen({
               </div>
               {hasMockupLowFi && (
                 <span className="text-xs text-primary font-medium">
-                  {isRegenerate ? '다시 만들기 →' : '이미 생성됨 — 바로 열기 →'}
+                  {isRegenerate ? '다시 만들기 →' : '이미 생성됨: 바로 열기 →'}
                 </span>
               )}
             </button>
@@ -654,7 +654,7 @@ export default function ResultScreen({
               </div>
               {hasMockupHiFi && (
                 <span className="text-xs text-primary font-medium">
-                  {isRegenerate ? '다시 만들기 →' : '이미 생성됨 — 바로 열기 →'}
+                  {isRegenerate ? '다시 만들기 →' : '이미 생성됨: 바로 열기 →'}
                 </span>
               )}
             </button>
