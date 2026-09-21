@@ -271,7 +271,7 @@ function validateJsx(code: string): { message: string; line?: number } | null {
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY 환경변수가 없습니다')
-  return new Anthropic({ apiKey })
+  return new Anthropic({ apiKey, maxRetries: 1 })
 }
 
 function getModel(): string {
@@ -286,6 +286,22 @@ function getScreenModel(): string {
 // 실행시간·토큰·동시호출 한도 안전장치. env MOCKUP_MAX_SCREENS로 조정 가능.
 const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 12
 
+// 전체 시간 예산. Vercel 함수 제한(300초) 안에 반드시 응답하도록, 조립·검증 여유(약 60초)를 뺀 값.
+// 예산을 넘긴 화면은 제외하고 나머지로 조립한다(타임아웃으로 전부 잃는 것보다 낫다).
+const TIME_BUDGET_MS = Number(process.env.MOCKUP_TIME_BUDGET_MS) || 240_000
+const MIN_SCREEN_BUDGET_MS = 25_000 // 이보다 적게 남으면 화면 생성을 시작하지 않는다
+const MIN_RETRY_BUDGET_MS = 70_000 // 이보다 적게 남으면 재시도·수리 호출을 하지 않는다
+
+class Deadline {
+  constructor(private readonly startedAt: number, private readonly budgetMs: number) {}
+  elapsed(): number { return Date.now() - this.startedAt }
+  remaining(): number { return Math.max(0, this.budgetMs - this.elapsed()) }
+  /** SDK per-request timeout: 남은 예산에서 여유를 뺀 값 */
+  requestTimeout(reserveMs = 5_000): number { return Math.max(1_000, this.remaining() - reserveMs) }
+}
+
+type DropReason = 'timeout' | 'failed' | 'skipped_budget'
+
 function extractText(content: Anthropic.Messages.Message['content']): string {
   return content.map(b => (b.type === 'text' ? b.text : '')).join('').trim()
 }
@@ -294,25 +310,29 @@ function extractText(content: Anthropic.Messages.Message['content']): string {
 async function callClaude(
   anthropic: Anthropic,
   params: Omit<Anthropic.Messages.MessageCreateParams, 'model' | 'stream'>,
+  timeoutMs?: number,
 ): Promise<Anthropic.Messages.Message> {
-  return anthropic.messages.create({
-    ...params,
-    model: getModel(),
-    stream: false,
-  }) as Promise<Anthropic.Messages.Message>
+  return anthropic.messages.create(
+    { ...params, model: getModel(), stream: false },
+    timeoutMs ? { timeout: timeoutMs } : undefined,
+  ) as Promise<Anthropic.Messages.Message>
 }
 
 // Cached call — system prompt cached for 5 min (prompt-caching beta)
 async function callClaudeCached(
   anthropic: Anthropic,
   params: Omit<Anthropic.Messages.MessageCreateParams, 'model' | 'stream'>,
+  timeoutMs?: number,
 ): Promise<Anthropic.Messages.Message> {
-  const result = await anthropic.beta.messages.create({
-    ...params,
-    model: getModel(),
-    stream: false,
-    betas: ['output-128k-2025-02-19', 'prompt-caching-2024-07-31'],
-  })
+  const result = await anthropic.beta.messages.create(
+    {
+      ...params,
+      model: getModel(),
+      stream: false,
+      betas: ['output-128k-2025-02-19', 'prompt-caching-2024-07-31'],
+    },
+    timeoutMs ? { timeout: timeoutMs } : undefined,
+  )
   return result as unknown as Anthropic.Messages.Message
 }
 
@@ -324,6 +344,7 @@ async function extractSpec(
   anthropic: Anthropic,
   prdText: string,
   analysisText: string,
+  deadline?: Deadline,
 ): Promise<MockupSpec> {
   let directivesHint = ''
   try {
@@ -347,17 +368,22 @@ Actor 가 여럿이면 Actor 별로 접근 가능한 메뉴가 다를 수 있으
     }
   } catch { /* ignore — non-JSON analysisText */ }
 
-  const result = await callClaudeCached(anthropic, {
-    max_tokens: 12000,
-    temperature: 0.1,
-    system: [
-      { type: 'text', text: SPEC_EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
-    ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
-    messages: [{
-      role: 'user',
-      content: `PRD:\n${prdText}${directivesHint}\n\nExtract the structured spec JSON.`,
-    }],
-  })
+  const result = await callClaudeCached(
+    anthropic,
+    {
+      max_tokens: 12000,
+      temperature: 0.1,
+      system: [
+        { type: 'text', text: SPEC_EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
+      ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
+      messages: [{
+        role: 'user',
+        content: `PRD:\n${prdText}${directivesHint}\n\nExtract the structured spec JSON.`,
+      }],
+    },
+    // 스펙 추출은 전체 예산의 절반까지만. 남은 절반은 화면 생성 몫
+    deadline ? Math.min(deadline.requestTimeout(), Math.floor(TIME_BUDGET_MS / 2)) : undefined,
+  )
 
   const text = extractText(result.content)
   console.log(`[mockup v3] extractSpec stop_reason=${result.stop_reason} chars=${text.length} preview: ${text.slice(0, 200)}`)
@@ -421,7 +447,14 @@ async function generateScreen(
   allScreens: ScreenSpec[],
   type: 'lowfi' | 'hifi',
   systemPrompt: string,
+  deadline: Deadline,
+  dropReasons: Map<string, DropReason>,
 ): Promise<string | null> {
+  if (deadline.remaining() < MIN_SCREEN_BUDGET_MS) {
+    console.warn(`[mockup] Screen ${screen.id}: 시간 예산 부족(${Math.round(deadline.remaining() / 1000)}s) — 생성 생략`)
+    dropReasons.set(screen.id, 'skipped_budget')
+    return null
+  }
   const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
   // Hi-Fi는 antd라 코드가 길어 넉넉히, Lo-Fi는 단순해 기존 상한 유지.
   const maxTokens = type === 'hifi' ? SCREEN_MAX_TOKENS : 4000
@@ -430,22 +463,41 @@ async function generateScreen(
   // 첫 시도가 실패(max_tokens 잘림·괄호 불완전·repair 실패)하면 1회 재시도해 화면 drop을 최소화한다.
   // 모든 화면이 같은 systemPrompt를 쓰므로 prompt-caching으로 반복 입력 토큰 절약.
   for (let attempt = 0; attempt < 2; attempt++) {
+    // 재시도는 예산이 충분히 남았을 때만
+    if (attempt > 0 && deadline.remaining() < MIN_RETRY_BUDGET_MS) {
+      console.warn(`[mockup] Screen ${screen.id}: 재시도 생략(남은 예산 ${Math.round(deadline.remaining() / 1000)}s)`)
+      break
+    }
     const attemptPrompt =
       attempt === 0
         ? userPrompt
         : `${userPrompt}\n\n(RETRY: 직전 응답이 너무 길어 잘렸습니다. mock 데이터와 JSX를 더 압축해, 반드시 완결된 하나의 함수로 반환하세요.)`
 
-    const result = (await anthropic.beta.messages.create({
-      model: getScreenModel(),
-      max_tokens: maxTokens,
-      temperature,
-      system: [
-        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
-      ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
-      messages: [{ role: 'user', content: attemptPrompt }],
-      stream: false,
-      betas: ['output-128k-2025-02-19', 'prompt-caching-2024-07-31'],
-    })) as unknown as Anthropic.Messages.Message
+    let result: Anthropic.Messages.Message
+    try {
+      result = (await anthropic.beta.messages.create(
+        {
+          model: getScreenModel(),
+          max_tokens: maxTokens,
+          temperature,
+          system: [
+            { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+          ] as unknown as Anthropic.Messages.MessageCreateParams['system'],
+          messages: [{ role: 'user', content: attemptPrompt }],
+          stream: false,
+          betas: ['output-128k-2025-02-19', 'prompt-caching-2024-07-31'],
+        },
+        { timeout: deadline.requestTimeout() },
+      )) as unknown as Anthropic.Messages.Message
+    } catch (e) {
+      const isTimeout = e instanceof Error && /timed? ?out/i.test(e.message)
+      console.warn(`[mockup] Screen ${screen.id}: ${isTimeout ? '시간 예산 초과' : '호출 실패'} (attempt ${attempt + 1}) — ${(e as Error).message}`)
+      if (isTimeout) {
+        dropReasons.set(screen.id, 'timeout')
+        return null
+      }
+      continue
+    }
 
     if (result.stop_reason === 'max_tokens') {
       console.warn(`[mockup] Screen ${screen.id} hit max_tokens (attempt ${attempt + 1})`)
@@ -465,15 +517,20 @@ async function generateScreen(
     const err = validateJsx(wrapped)
     if (err) {
       console.warn(`[mockup] Screen ${screen.id} syntax error: ${err.message} (line ${err.line})`)
-      const repaired = await repairScreen(anthropic, code, err.message, screen.id)
-      if (repaired) return repaired
+      if (deadline.remaining() >= MIN_RETRY_BUDGET_MS) {
+        const repaired = await repairScreen(anthropic, code, err.message, screen.id, deadline.requestTimeout())
+        if (repaired) return repaired
+      } else {
+        console.warn(`[mockup] Screen ${screen.id}: 수리 생략(남은 예산 ${Math.round(deadline.remaining() / 1000)}s)`)
+      }
       continue
     }
 
     return code
   }
 
-  console.warn(`[mockup] Screen ${screen.id}: 2회 시도 모두 실패 — drop`)
+  console.warn(`[mockup] Screen ${screen.id}: 시도 모두 실패 — drop`)
+  dropReasons.set(screen.id, 'failed')
   return null
 }
 
@@ -482,22 +539,29 @@ async function repairScreen(
   brokenCode: string,
   errorMsg: string,
   screenId: string,
+  timeoutMs?: number,
 ): Promise<string | null> {
   console.log(`[mockup] Repairing Screen_${screenId}...`)
-  const result = await callClaude(anthropic, {
-    max_tokens: 8000,
-    temperature: 0.1,
-    messages: [{
-      role: 'user',
-      content: `Fix the syntax error in this React component function.
+  let result: Anthropic.Messages.Message
+  try {
+    result = await callClaude(anthropic, {
+      max_tokens: 8000,
+      temperature: 0.1,
+      messages: [{
+        role: 'user',
+        content: `Fix the syntax error in this React component function.
 Return ONLY the fixed function. No imports, no export, no explanation.
 
 Error: ${errorMsg}
 
 Code:
 ${brokenCode}`,
-    }],
-  })
+      }],
+    }, timeoutMs)
+  } catch (e) {
+    console.warn(`[mockup] Screen ${screenId}: repair 호출 실패 — ${(e as Error).message}`)
+    return null
+  }
 
   const output = extractText(result.content)
   const code = extractCode(output) ?? output.trim()
@@ -1119,6 +1183,8 @@ export async function POST(req: Request): Promise<Response> {
         }
       }
 
+      const deadline = new Deadline(Date.now(), TIME_BUDGET_MS)
+      const sec = () => Math.round(deadline.elapsed() / 1000)
       try {
         const anthropic = getAnthropicClient()
         emit({ type: 'progress', progress: 5, message: '요청을 준비하고 있습니다' })
@@ -1133,9 +1199,10 @@ export async function POST(req: Request): Promise<Response> {
           console.log('[mockup v3] Step 1: extracting spec')
           emit({ type: 'progress', progress: 10, message: 'PRD 화면 구조 분석 중' })
           try {
-            spec = await extractSpec(anthropic, prdText, analysisText)
+            spec = await extractSpec(anthropic, prdText, analysisText, deadline)
+            console.log(`[mockup v3] Step 1 done in ${sec()}s`)
           } catch (err) {
-            console.error('[mockup v3] Spec extraction failed:', err)
+            console.error(`[mockup v3] Spec extraction failed after ${sec()}s:`, err)
             emit({ type: 'error', error: 'PRD 구조 추출에 실패했습니다. 다시 시도해주세요.' })
             return finish()
           }
@@ -1190,31 +1257,59 @@ export async function POST(req: Request): Promise<Response> {
         const total = spec.screens.length
         let completed = 0
 
-        const results = await Promise.all(
-          spec.screens.map(async screen => {
-            try {
-              return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt)
-            } catch (e) {
-              console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
-              return null
-            } finally {
-              completed++
-              const pct = 20 + Math.round((completed / total) * 65)
-              emit({ type: 'progress', progress: pct, message: `화면 생성 중 (${completed}/${total})` })
-            }
-          }),
-        )
-        console.log(`[mockup v3] Flows: ${spec.flows.length} (from spec) + navigates_to + codeFlows`)
+        const dropReasons = new Map<string, DropReason>()
+        // 첫 화면이 끝나기 전에도 진행 중임을 보여준다 (화면 생성은 병렬이라 초반 수십 초는 진행률이 움직이지 않는다)
+        const heartbeat = setInterval(() => {
+          if (completed < total) {
+            emit({ type: 'progress', progress: 20 + Math.round((completed / total) * 65), message: `화면 생성 중 (${completed}/${total}) · ${sec()}초 경과` })
+          }
+        }, 8_000)
+
+        let results: Array<string | null>
+        try {
+          results = await Promise.all(
+            spec.screens.map(async screen => {
+              try {
+                return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt, deadline, dropReasons)
+              } catch (e) {
+                console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
+                dropReasons.set(screen.id, 'failed')
+                return null
+              } finally {
+                completed++
+                const pct = 20 + Math.round((completed / total) * 65)
+                emit({ type: 'progress', progress: pct, message: `화면 생성 중 (${completed}/${total}) · ${sec()}초 경과` })
+              }
+            }),
+          )
+        } finally {
+          clearInterval(heartbeat)
+        }
+        console.log(`[mockup v3] Step 2 done in ${sec()}s. Flows: ${spec.flows.length} (from spec) + navigates_to + codeFlows`)
 
         const screenCodes = new Map<string, string>()
+        const droppedByTime: ScreenSpec[] = []
         spec.screens.forEach((screen, i) => {
           const code = results[i]
           if (code) {
             screenCodes.set(screen.id, code)
           } else {
-            console.warn(`[mockup v3] Screen "${screen.name}" (${screen.id}) failed — skipping`)
+            const reason = dropReasons.get(screen.id) ?? 'failed'
+            console.warn(`[mockup v3] Screen "${screen.name}" (${screen.id}) dropped: ${reason}`)
+            if (reason === 'timeout' || reason === 'skipped_budget') droppedByTime.push(screen)
           }
         })
+        if (droppedByTime.length > 0) {
+          spec.note_items = [
+            ...(spec.note_items ?? []),
+            ...droppedByTime.map(s => ({
+              category: 'omitted' as const,
+              item: s.name,
+              reason: `생성 시간 제한(${Math.round(TIME_BUDGET_MS / 1000)}초)으로 이번 목업에서 제외됨. 재생성 시 다시 시도`,
+            })),
+          ]
+          emit({ type: 'progress', progress: 88, message: `시간 제한으로 화면 ${droppedByTime.length}개 제외, 나머지로 조립` })
+        }
 
         if (screenCodes.size === 0) {
           emit({ type: 'error', error: '화면 생성에 모두 실패했습니다. 다시 시도해주세요.' })
@@ -1240,7 +1335,7 @@ export async function POST(req: Request): Promise<Response> {
           return finish()
         }
 
-        console.log(`[mockup v3] Done ✓ screens=${screenCodes.size}/${spec.screens.length}`)
+        console.log(`[mockup v3] Done ✓ screens=${screenCodes.size}/${spec.screens.length} in ${sec()}s`)
         emit({ type: 'progress', progress: 100, message: '완료' })
         // Hi-Fi는 MCDS 스타일시트를 Sandpack 정적 파일로 함께 주입한다(App.js가 import './mcds.css').
         const files: Record<string, string> =
