@@ -130,7 +130,7 @@ Write every issue, missing item, question and recommendation so that someone who
 
 ## 11. Self-check Before Submitting
 
-1. Every one of the 11 sections appears exactly once in section_coverage, with every sub-item id listed.
+1. \`section_coverage\` is a JSON **array** of exactly 11 objects (one per section, in order §0…§10), each with \`section_id\` ("0"…"10"), \`status\`, \`evidence\`, and a \`sub_items\` **array** of objects with \`id\`. Never an object keyed by section id.
 2. present/partial items have a non-empty evidence quote at section level.
 3. No required section is not_applicable.
 4. detected_undefined actors each have a matching [비즈니스] critical question.
