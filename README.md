@@ -84,13 +84,18 @@ npm run dev
 
 ## 📋 사용 방법
 
-1. **PRD 문서 선택**: PDF 또는 텍스트 형식의 PRD 문서 업로드
-2. **분석 대기**: Claude AI가 검증 프로토콜에 따라 분석
-3. **결과 확인**:
-   - **점수**: 0-100 (80 이상 Ready)
+1. **팀 템플릿 선택**: 어떤 PRD 템플릿 기준으로 검증할지 고릅니다 (필수)
+   - **Partner Growth** — PGT PRD 템플릿 11개 섹션 기준 감점제 (Protocol v3.0). Actor·유저 시나리오 누락은 점수 상한이 걸립니다
+   - **Commerce Core** — UX 6차원 평가 (Protocol v2.0)
+2. **PRD 문서 선택**: Confluence 페이지 URL 또는 PDF/MD/TXT 업로드
+3. **분석 대기**: Claude AI가 선택한 프로토콜에 따라 분석
+4. **결과 확인**:
+   - **점수**: 0-100 (80 이상 Ready). Partner Growth는 섹션별 감점 내역·게이트·Actor·시나리오·교차 검증 카드 제공
    - **누락 항목**: 디자이너/개발자별 체크리스트
    - **질문**: PO가 확인해야 할 모호한 항목
    - **개선안**: UX 최적화 제안
+
+프로토콜 상세는 [CLAUDE.md](CLAUDE.md), Partner Growth 작성 가이드는 [docs/pg-scenario-writing-guide.md](docs/pg-scenario-writing-guide.md) 참고.
 
 ## 🛠️ 기술 스택
 

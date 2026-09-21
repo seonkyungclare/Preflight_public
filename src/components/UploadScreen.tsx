@@ -8,6 +8,7 @@ import { TabList, Tab } from '@astryxdesign/core/TabList'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { releaseNotes } from '@/config/release-notes'
+import { TEMPLATE_OPTIONS, isTemplateId, type PrdTemplateId } from '@/config/prd-template'
 import {
   listEntries,
   deleteEntry,
@@ -17,12 +18,15 @@ import {
 } from '@/lib/analysis-history'
 
 interface UploadScreenProps {
-  onAnalyze: (text: string, fileName: string) => void
+  onAnalyze: (text: string, fileName: string, template: PrdTemplateId) => void
   error: string | null
   onRestoreHistory?: (entry: HistoryEntry) => void
 }
 
 const MAX_FILES = 3
+// 마지막으로 고른 팀 템플릿을 기억한다. 기본값은 두지 않는다 — 잘못된 기준으로 채점된 결과가
+// 그대로 공유되는 사고를 막기 위해, 사용자가 매번 눈으로 확인하고 지나가게 한다.
+const TEMPLATE_STORAGE_KEY = 'preflight_template'
 
 export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: UploadScreenProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -39,6 +43,26 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   const [history, setHistory] = useState<HistoryEntry[]>([])
   // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
   const [tab, setTab] = useState<'confluence' | 'file'>('confluence')
+  const [template, setTemplate] = useState<PrdTemplateId | null>(null)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(TEMPLATE_STORAGE_KEY)
+      if (isTemplateId(saved)) setTemplate(saved)
+    } catch {
+      // 프라이빗 모드 등 — 기억 기능만 비활성
+    }
+  }, [])
+
+  function selectTemplate(id: PrdTemplateId) {
+    setTemplate(id)
+    setLocalError('')
+    try {
+      localStorage.setItem(TEMPLATE_STORAGE_KEY, id)
+    } catch {
+      // 무시
+    }
+  }
 
   async function refreshHistory() {
     try {
@@ -154,6 +178,10 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
 
   async function handleFileSubmit() {
     if (files.length === 0) return
+    if (!template) {
+      setLocalError('먼저 어떤 팀 템플릿으로 검증할지 선택해주세요')
+      return
+    }
     setParsing(true)
     setLocalError('')
 
@@ -169,7 +197,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
       if (!combined.trim()) throw new Error('파일에서 텍스트를 추출하지 못했습니다')
 
       const combinedName = files.length === 1 ? files[0].name : `${files.length}개 파일`
-      onAnalyze(combined, combinedName)
+      onAnalyze(combined, combinedName, template)
     } catch (e) {
       setLocalError((e as Error).message)
       setParsing(false)
@@ -178,6 +206,10 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
 
   async function handleUrlSubmit() {
     if (!confluenceUrl.trim()) return
+    if (!template) {
+      setLocalError('먼저 어떤 팀 템플릿으로 검증할지 선택해주세요')
+      return
+    }
     setParsing(true)
     setLocalError('')
 
@@ -194,7 +226,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
       const text = data.text ?? ''
       if (!text.trim()) throw new Error('페이지에서 텍스트를 추출하지 못했습니다')
 
-      onAnalyze(`=== ${title} ===\n${text}`, title)
+      onAnalyze(`=== ${title} ===\n${text}`, title, template)
     } catch (e) {
       setLocalError((e as Error).message)
       setParsing(false)
@@ -242,11 +274,74 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
         디자인 전, 목업으로 먼저 확인해 보세요
       </h1>
       <p className="text-muted-foreground text-center mb-10 text-sm">
-        PDF나 MD 파일로 PRD를 올리면, AI가 UI를 구현하기에 내용이 충분한지 확인해줍니다. <br/>
-        low-fi, high-fi 목업으로 확인할수 있어요.
+        팀 템플릿을 고르고 Confluence 페이지나 PDF·MD 파일을 올리면, <br/>
+        AI가 템플릿 기준으로 빠진 항목을 찾고 Lo-Fi·Hi-Fi 목업까지 만들어줍니다.
       </p>
 
       <div className="w-full max-w-xl">
+        {/* 1단계 — 팀 템플릿 선택 (필수). 채점 기준이 갈리므로 URL·파일 입력보다 먼저 고른다 */}
+        <div className="mb-5">
+          <p className="text-xs font-medium text-muted-foreground mb-2">
+            1. 어떤 팀의 PRD 템플릿으로 검증할까요?
+            {!template && <span className="ml-1.5 text-primary">선택해야 다음 단계로 넘어갈 수 있어요</span>}
+          </p>
+          <div role="radiogroup" aria-label="PRD 템플릿" className="grid grid-cols-2 gap-3">
+            {TEMPLATE_OPTIONS.map(opt => {
+              const selected = template === opt.id
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => selectTemplate(opt.id)}
+                  className={[
+                    'text-left rounded-xl border p-4 transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                    selected
+                      ? 'border-primary bg-primary/5 shadow-sm'
+                      : 'border-border hover:border-primary/50 hover:bg-accent',
+                  ].join(' ')}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{opt.label}</span>
+                    <span
+                      className={[
+                        'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0',
+                        selected ? 'border-primary' : 'border-muted-foreground/40',
+                      ].join(' ')}
+                      aria-hidden
+                    >
+                      {selected && <span className="w-2 h-2 rounded-full bg-primary" />}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{opt.description}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">
+                      Protocol v{opt.protocol}
+                    </span>
+                    {opt.referenceUrl && (
+                      <a
+                        href={opt.referenceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="text-[10px] text-primary hover:underline underline-offset-2"
+                      >
+                        템플릿 보기 ↗
+                      </a>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <p className="text-xs font-medium text-muted-foreground mb-2">2. PRD를 가져올 방법</p>
+        <div
+          className={template ? '' : 'opacity-50 pointer-events-none select-none'}
+          aria-disabled={!template}
+        >
         <TabList value={tab} onChange={(v) => setTab(v as 'confluence' | 'file')} layout="fill" className="mb-4">
           <Tab value="confluence" label="Confluence URL" />
           <Tab value="file" label="파일 업로드" />
@@ -404,6 +499,7 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
             )}
           </div>
         )}
+        </div>
 
         {displayError && (
           <Banner status="error" title={displayError} className="mt-3" />

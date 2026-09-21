@@ -5,6 +5,18 @@ export interface ReleaseEntry {
 
 export const releaseNotes: ReleaseEntry[] = [
   {
+    date: '2026-09-21',
+    changes: [
+      '분석 전 팀 템플릿 선택 — Partner Growth / Commerce Core 중 어떤 PRD 템플릿 기준으로 검증할지 먼저 고릅니다',
+      'Partner Growth 검증 프로토콜 v3.0 — PGT PRD 템플릿 11개 섹션을 기준으로, 있어야 할 항목이 없으면 감점하는 방식으로 전환',
+      'Actor 정의 검증 강화 — 본문에 등장하는 MD·파트너·대행사·시스템 등 모든 Actor 유형이 각각 정의됐는지 대조하고, 미정의 Actor는 PO 질문으로 승격',
+      '유저 시나리오 필수화 — 시나리오 섹션이 없으면 점수 상한 59점(Rewrite). Actor·화면 요구사항 부재도 상한 적용',
+      '섹션 간 교차 검증 — Actor↔시나리오, 시나리오↔화면, IA↔화면, Workflow↔시나리오 연결이 끊긴 곳을 별도 카드로 표시',
+      '점수 재현성 — 모델은 판정만 하고 최종 점수는 서버가 계산합니다',
+      'Commerce Core 는 기존 v2 프로토콜(UX 6차원)을 그대로 사용합니다. 이전 분석 기록도 그대로 열립니다',
+    ],
+  },
+  {
     date: '2026-09-01',
     changes: [
       '사내 계정 로그인 필수 — 무신사 Atlassian 계정으로 로그인해야 Preflight를 이용할 수 있습니다. 외부에서는 접근할 수 없습니다',

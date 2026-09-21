@@ -1,10 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { isTemplateId, type PrdTemplateId } from '@/config/prd-template'
+import { buildV3SystemPrompt, ANALYSIS_TOOL_V3 } from '@/lib/analyze-v3'
+import { finalizeV3Analysis, type RawV3Analysis } from '@/lib/scoring'
 
 export const maxDuration = 300
 
+// ============================================================================
+// 템플릿 분기
+// ----------------------------------------------------------------------------
+// - commerce-core  → Protocol v2.0 (아래 SYSTEM_PROMPT / ANALYSIS_TOOL, 변경 없음)
+// - partner-growth → Protocol v3.0 (lib/analyze-v3.ts 프롬프트 + lib/scoring.ts 서버 채점)
+// 요청 본문의 `template` 이 없거나 모르는 값이면 400.
+// ============================================================================
 
 // ============================================================================
-// Preflight Verification Protocol v2.0
+// Preflight Verification Protocol v2.0 (Commerce Core)
 // ----------------------------------------------------------------------------
 // v1.2 대비 주요 변경점:
 // - 5차원 → 6차원 (Fogg 조건부 추가)
@@ -455,21 +465,30 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { prdText } = body as { prdText: string }
+  const templateRaw = (body as Record<string, unknown>).template
+  if (!isTemplateId(templateRaw)) {
+    return new Response('template 은 "partner-growth" 또는 "commerce-core" 여야 합니다', { status: 400 })
+  }
+  const template: PrdTemplateId = templateRaw
+
+  const isV3 = template === 'partner-growth'
+  const systemPrompt = isV3 ? buildV3SystemPrompt() : SYSTEM_PROMPT
+  const tool = isV3 ? ANALYSIS_TOOL_V3 : ANALYSIS_TOOL
 
   // 시스템 지시사항과 사용자 요청을 하나의 프롬프트로 조합
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n다음 PRD를 분석해줘:\n\n${prdText}`
+  const fullPrompt = `${systemPrompt}\n\n다음 PRD를 분석해줘:\n\n${prdText}`
 
   try {
     const anthropic = getAnthropicClient()
-const result = await createMessageWithModelFallback(anthropic, {
+    const result = await createMessageWithModelFallback(anthropic, {
       max_tokens: 24000,
       temperature: 0.2,
-      tools: [ANALYSIS_TOOL],
-      tool_choice: { type: 'tool', name: ANALYSIS_TOOL.name },
+      tools: [tool],
+      tool_choice: { type: 'tool', name: tool.name },
       messages: [{ role: 'user', content: fullPrompt }],
     })
 
-    console.log(`[analyze v2] stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
+    console.log(`[analyze ${isV3 ? 'v3' : 'v2'} ${template}] stop_reason=${result.stop_reason} usage=${JSON.stringify(result.usage)}`)
 
     // 응답이 max_tokens로 잘리면 tool_use.input JSON도 불완전하므로 명시적으로 안내
     if (result.stop_reason === 'max_tokens') {
@@ -485,7 +504,23 @@ const result = await createMessageWithModelFallback(anthropic, {
     }
 
     // tool_use.input은 API가 스키마에 맞춰 파싱한 객체 → 직렬화만 하면 항상 valid JSON
-    return new Response(JSON.stringify(analysis), {
+    let payload: unknown
+    if (isV3) {
+      // v3: 모델은 판정만, 점수·게이트·is_sufficient 는 서버가 계산
+      const rawV3 = analysis as RawV3Analysis
+      console.log(
+        `[analyze v3] raw section ids=${JSON.stringify((rawV3.section_coverage ?? []).map(s => `${s.section_id}:${s.status}`))}`,
+      )
+      const scored = finalizeV3Analysis(rawV3)
+      console.log(
+        `[analyze v3] score=${scored.sufficiency_score} raw=${scored.raw_score} gates=${scored.hard_gates.filter(g => g.triggered).map(g => g.id).join(',') || '-'}`,
+      )
+      payload = scored
+    } else {
+      payload = { ...(analysis as Record<string, unknown>), template, protocol_version: '2.0' }
+    }
+
+    return new Response(JSON.stringify(payload), {
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     })
   } catch (error) {

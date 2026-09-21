@@ -88,12 +88,26 @@ PRD가 명시적으로 정의한 메뉴 구조를 IA의 최우선 근거로 삼�
 - **섹션 제목/목차**: 기능 요구사항 섹션 제목(예: "디스플레이 광고 관리", "인벤토리 관리", "검수 관리")도 메뉴 후보다.
 - 여러 진입 경로가 같은 상위(예: "성장솔루션 관리")를 공유하면 그 하위 항목들을 menu_screen_ids로 채택한다.
 
-## User Stories (유저스토리 → 화면·액션·권한 도출)
-PRD에 "유저스토리"(액터/시스템 동작 표 포함)가 있으면 화면 설계의 핵심 근거로 삼는다:
-- 유저스토리의 **액터·진입 경로**로 화면과 접근 권한을 결정한다.
-- 각 스토리 문장("~할 수 있다", "~조회한다")에서 **화면 동작을 actions로, 조회 대상 데이터를 columns/fields로** 도출한다.
-- "시스템 동작"(예: 권한 없음 시 403, 생성·수정 불가) 같은 제약은 해당 화면의 actions/note_items에 반영한다.
-- 표가 다소 흐트러져 있어도 행 번호(1, 2, 3…)를 기준으로 개별 스토리를 구분해 해석한다.
+## User Stories (유저스토리 → 화면·액션·권한 도출) — 최우선 소스
+유저스토리가 있으면 화면 설계의 **1차 근거**로 삼는다. 다른 섹션(배경·가설·성공지표 등)보다 우선한다.
+Commerce Core PRD 템플릿의 "7. 유저 스토리"는 액터별(고객/운영자/파트너)로
+"나는 [역할]로서 [수단/기능]을 통해 [기대 결과]를 원한다" 형식이다. 각 문장을 다음과 같이 분해한다:
+- **[역할]** → 화면 사용자/접근 권한(persona). 역할이 다르면 화면을 분리하거나 권한 제약을 note_items에 남긴다.
+- **[수단/기능]** → 화면 유형과 actions의 근거. "~목록/조회/검색" → list, "~등록/생성/수정/신청" → form, "~상세/확인" → detail, "~현황/대시보드" → dashboard.
+  문장에 화면명·데이터 항목이 드러나면 그대로 name/columns/fields/actions로 쓴다.
+  (예: "캠페인 목록에서 상태·예산으로 필터해 집행중 캠페인을 찾는다" → name:"캠페인 목록", type:"list", columns:["상태","예산"], actions:["필터"])
+- **[기대 결과]** → 화면의 목적. 성공 피드백(저장 완료 토스트 등) 및 결과 화면 설계의 근거.
+- "시스템 동작" 제약(권한 없음 403, 생성·수정 불가 등)이 있으면 해당 화면 actions/note_items에 반영한다.
+- 표 형식이면 행 번호(1, 2, 3…) 기준으로 개별 스토리를 구분해 해석한다.
+- 8-2 Functional Spec 등 화면 정의가 함께 있으면 유저스토리와 교차 검증해 보강한다(있으면 우선 신뢰).
+
+## 가정 실토 (Assumption flagging) — 필수
+유저스토리는 대개 화면 세부(정확한 컬럼/필드/전환)를 명시하지 않으므로 화면 구성을 위해 일부를 추론(가정)하게 된다.
+**스토리에서 명시적으로 도출되지 않았는데 추론으로 채운 항목은 반드시 note_items에 category:"ambiguous"로 남긴다.**
+- 컬럼/필드를 임의 구성한 경우 → { "category":"ambiguous", "item":"<화면명> 표시 항목", "reason":"유저스토리에 데이터 항목이 명시되지 않아 임의 가정함 — 확인 필요" }
+- 화면 간 전환을 스토리 근거 없이 표준 규칙으로 채운 경우 → { "category":"ambiguous", "item":"<화면A>→<화면B> 전환", "reason":"스토리에 흐름이 명시되지 않아 표준 컨벤션으로 가정함 — 확인 필요" }
+- 유저스토리가 암시하나 화면으로 만들지 못한 기능 → category:"missing"으로 남긴다.
+목표: 목업이 "스토리로 확정된 것"과 "AI가 가정한 것"을 구분해 보여주게 하여, 빈 곳이 그럴듯한 화면으로 가려지지 않도록 한다.
 
 ## Screen hierarchy (2-level max)
 Decide per screen whether it's 1st-level (top menu) or 2nd-level (sub-page):
@@ -313,6 +327,20 @@ async function extractSpec(
     const analysis = JSON.parse(analysisText)
     if (analysis?.mockup_directives) {
       directivesHint = `\n\nAnalysis mockup_directives:\n${JSON.stringify(analysis.mockup_directives, null, 2)}`
+    }
+    // v3(Partner Growth): Actor·시나리오 판정을 화면 추출에 넘긴다.
+    // §8 화면 ID / §5.4 SC 참조가 화면 집합의 1차 근거이고, Actor 는 LNB 노출·권한 노트의 근거다.
+    if (analysis?.protocol_version === '3.0') {
+      const actors = analysis.actors ?? {}
+      const scenarios = analysis.scenarios ?? {}
+      directivesHint += `\n\nPartner Growth PRD 판정 (v3):
+- 정의된 Actor: ${(actors.defined ?? []).map((a: { name: string }) => a.name).join(', ') || '없음'}
+- 미정의 Actor(본문에만 등장): ${(actors.detected_undefined ?? []).map((a: { name: string }) => a.name).join(', ') || '없음'}
+- 시나리오 맵 ${scenarios.map_count ?? 0}건 · 상세 ${scenarios.detail_count ?? 0}건
+- 화면 참조 없는 시나리오: ${(scenarios.scenarios_without_screen_ref ?? []).join(', ') || '없음'}
+규칙: 화면 집합은 "8. 화면 요구사항"의 화면 ID/화면명과 "5.4 시나리오 상세"의 SC-nn 참조를 1차 근거로 삼는다.
+Actor 가 여럿이면 Actor 별로 접근 가능한 메뉴가 다를 수 있으니 IA(4)의 "Actor별 노출" 열을 menu 구성에 반영하고,
+미정의 Actor 와 화면 참조 없는 시나리오는 note_items(ambiguous) 로 남긴다.`
     }
   } catch { /* ignore — non-JSON analysisText */ }
 
