@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypt
 const COOKIE_NAME = 'atlassian_session'
 const REFRESH_COOKIE_NAME = 'atlassian_refresh'
 const STATE_COOKIE_NAME = 'atlassian_oauth_state'
-const SCOPES = ['read:page:confluence', 'read:space:confluence', 'offline_access']
+const SCOPES = ['read:me', 'read:page:confluence', 'read:space:confluence', 'offline_access']
 
 export const ATLASSIAN_SESSION_MAX_AGE = 60 * 60 * 24 * 7 // 7일
 
@@ -140,6 +140,30 @@ export async function getAccessibleResource(accessToken: string): Promise<{
   if (!res.ok) return null
   const arr = (await res.json()) as Array<{ id: string; url: string; name: string }>
   return arr[0] ?? null
+}
+
+export interface AtlassianProfile {
+  accountId: string
+  email?: string
+  name?: string
+}
+
+/** 로그인한 Atlassian 계정 정보 조회 (read:me 스코프 필요) */
+export async function getCurrentUser(accessToken: string): Promise<AtlassianProfile | null> {
+  try {
+    const res = await fetch('https://api.atlassian.com/me', {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      console.error(`[atlassian me] ${res.status} ${(await res.text()).slice(0, 200)}`)
+      return null
+    }
+    const me = (await res.json()) as { account_id: string; email?: string; name?: string }
+    return { accountId: me.account_id, email: me.email, name: me.name }
+  } catch (e) {
+    console.error('[atlassian me]', e)
+    return null
+  }
 }
 
 export function encodeSessionCore(session: SessionData): string {

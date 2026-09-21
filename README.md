@@ -5,8 +5,32 @@ PRD(Product Requirements Document) 문서를 업로드하면 Claude AI가 Prefli
 ## 🌐 Vercel 배포 (웹으로 공유)
 
 - **배포 URL(프로덕션)**: `https://preflight-public.vercel.app`
-- **필수 환경변수**: `ANTHROPIC_API_KEY`
+- **필수 환경변수**: `ANTHROPIC_API_KEY`, `ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`, `ATLASSIAN_SESSION_SECRET`
   - Vercel Project → Settings → Environment Variables 에서 추가
+
+## 🔐 접근 인증 (사내 계정 전용)
+
+모든 페이지와 API는 미들웨어([src/middleware.ts](src/middleware.ts))로 보호되어 있어,
+**무신사 Atlassian 계정으로 로그인한 사용자만** 접근할 수 있습니다.
+
+1. 미인증 요청 → `/login`으로 리다이렉트 (API는 401)
+2. Atlassian OAuth 로그인 → `https://api.atlassian.com/me`로 계정 이메일 확인
+3. 이메일 도메인이 허용 목록(`ALLOWED_EMAIL_DOMAINS`, 기본 `musinsa.com`)에 없으면 **세션을 발급하지 않고** 차단
+4. 통과 시 HMAC 서명된 HttpOnly 쿠키(`preflight_auth`, 7일) 발급
+
+| 환경변수 | 필수 | 설명 |
+| :--- | :--- | :--- |
+| `ATLASSIAN_CLIENT_ID` / `ATLASSIAN_CLIENT_SECRET` | ✅ | Atlassian OAuth 2.0 (3LO) 앱 자격증명 |
+| `ATLASSIAN_SESSION_SECRET` | ✅ | 세션 쿠키 서명/암호화 키 (`openssl rand -base64 32`) |
+| `AUTH_SESSION_SECRET` | – | 접근 세션 전용 키. 미설정 시 `ATLASSIAN_SESSION_SECRET` 사용 |
+| `ALLOWED_EMAIL_DOMAINS` | – | 허용 도메인, 쉼표 구분 (기본 `musinsa.com`, 서브도메인 포함) |
+| `ALLOWED_EMAILS` | – | 도메인 예외로 개별 허용할 이메일, 쉼표 구분 |
+
+### Atlassian 앱 설정
+
+- **Callback URL**: `https://<배포도메인>/api/auth/atlassian/callback`, `http://localhost:3000/api/auth/atlassian/callback`
+- **Scopes**: `read:me`, `read:page:confluence`, `read:space:confluence`, `offline_access`
+  - `read:me`가 없으면 이메일을 확인할 수 없어 로그인이 `no_email`로 실패합니다.
 
 ## 🚀 빠른 시작
 
