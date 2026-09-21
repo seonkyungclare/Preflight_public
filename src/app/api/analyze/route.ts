@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { isTemplateId, type PrdTemplateId } from '@/config/prd-template'
 import { buildV3SystemPrompt, ANALYSIS_TOOL_V3 } from '@/lib/analyze-v3'
-import { finalizeV3Analysis, type RawV3Analysis } from '@/lib/scoring'
+import { finalizeV3Analysis, asList, type RawV3Analysis } from '@/lib/scoring'
 
 export const maxDuration = 300
 
@@ -509,7 +509,9 @@ export async function POST(req: Request): Promise<Response> {
       // v3: 모델은 판정만, 점수·게이트·is_sufficient 는 서버가 계산
       const rawV3 = analysis as RawV3Analysis
       console.log(
-        `[analyze v3] raw section ids=${JSON.stringify((rawV3.section_coverage ?? []).map(s => `${s.section_id}:${s.status}`))}`,
+        `[analyze v3] raw section_coverage type=${Array.isArray(rawV3.section_coverage) ? 'array' : typeof rawV3.section_coverage} ids=${JSON.stringify(
+          asList<{ section_id?: string; status?: string }>(rawV3.section_coverage, 'section_id').map(s => `${s.section_id}:${s.status}`),
+        )}`,
       )
       const scored = finalizeV3Analysis(rawV3)
       console.log(

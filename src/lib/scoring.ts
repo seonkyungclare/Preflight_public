@@ -127,6 +127,22 @@ export function isV3Result(r: { protocol_version?: string; section_coverage?: un
   return !!r && (r.protocol_version === '3.0' || Array.isArray(r.section_coverage))
 }
 
+/**
+ * 모델이 배열 대신 객체({ "§3": {...} } 또는 { "3.1-a": "partial" })로 보내는 경우가 있다.
+ * 키를 id 로 승격해 배열로 맞춘다. 배열이면 그대로, 그 외는 빈 배열.
+ */
+export function asList<T extends object>(v: unknown, idKey: string): T[] {
+  if (Array.isArray(v)) return v.filter(x => x && typeof x === 'object') as T[]
+  if (v && typeof v === 'object') {
+    return Object.entries(v as Record<string, unknown>).map(([k, val]) =>
+      val && typeof val === 'object'
+        ? ({ [idKey]: k, ...(val as object) } as T)
+        : ({ [idKey]: k, status: val } as unknown as T),
+    )
+  }
+  return []
+}
+
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
 const toInt = (n: unknown, fallback = 0) => {
   const v = typeof n === 'number' && Number.isFinite(n) ? Math.round(n) : fallback
@@ -151,12 +167,16 @@ function subItemKey(id: unknown): string {
     .replace(/[^0-9a-z.]/g, '')
 }
 
-function normalizeSections(raw: RawV3Analysis['section_coverage']): SectionCoverage[] {
+type RawSection = RawV3Analysis['section_coverage'][number]
+type RawSubItem = NonNullable<RawSection['sub_items']>[number]
+
+function normalizeSections(rawInput: unknown): SectionCoverage[] {
+  const raw = asList<RawSection>(rawInput, 'section_id')
   const byId = new Map(raw.map(s => [sectionKey(s.section_id), s]))
 
   return PGT_TEMPLATE.sections.map(def => {
     const r = byId.get(def.id)
-    const subById = new Map((r?.sub_items ?? []).map(s => [subItemKey(s.id), s]))
+    const subById = new Map(asList<RawSubItem>(r?.sub_items, 'id').map(s => [subItemKey(s.id), s]))
 
     // 섹션 상태
     let status: CoverageStatus = r?.status ?? 'missing'
@@ -300,7 +320,7 @@ function evaluateGates(sections: SectionCoverage[], actors: ActorsSummary): Hard
  *   score = max(0, min(raw, 발동한 게이트 상한들의 최솟값))
  */
 export function finalizeV3Analysis(raw: RawV3Analysis): ScoredV3Analysis {
-  const section_coverage = normalizeSections(Array.isArray(raw.section_coverage) ? raw.section_coverage : [])
+  const section_coverage = normalizeSections(raw.section_coverage)
   const actors = normalizeActors(raw.actors)
   const scenarios = normalizeScenarios(raw.scenarios)
   const hard_gates = evaluateGates(section_coverage, actors)
