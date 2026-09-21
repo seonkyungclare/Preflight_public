@@ -17,6 +17,8 @@ interface ScreenSpec {
   actions: string[]
   navigates_to: string[]
   parent_id?: string  // set for 2nd-level screens; omitted for top-level menu screens
+  // 부모로 접힌 섹션 요약("일별 매출(일자·매출·주문수)"). 화면 생성 시 컴팩트 블록으로만 렌더한다.
+  sections?: string[]
 }
 
 interface NoteItem {
@@ -271,7 +273,9 @@ function validateJsx(code: string): { message: string; line?: number } | null {
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY 환경변수가 없습니다')
-  return new Anthropic({ apiKey, maxRetries: 1 })
+  // SDK 자동 재시도를 끈다. 타임아웃된 요청을 SDK 가 한 번 더 돌리면 시간 예산이 두 배로 새어
+  // 300초 제한을 넘긴다(16:17 타임아웃 사례). 재시도는 예산을 아는 우리 코드에서만 한다.
+  return new Anthropic({ apiKey, maxRetries: 0 })
 }
 
 function getModel(): string {
@@ -288,7 +292,7 @@ const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 12
 
 // 전체 시간 예산. Vercel 함수 제한(300초) 안에 반드시 응답하도록, 조립·검증 여유(약 60초)를 뺀 값.
 // 예산을 넘긴 화면은 제외하고 나머지로 조립한다(타임아웃으로 전부 잃는 것보다 낫다).
-const TIME_BUDGET_MS = Number(process.env.MOCKUP_TIME_BUDGET_MS) || 240_000
+const TIME_BUDGET_MS = Number(process.env.MOCKUP_TIME_BUDGET_MS) || 230_000
 const MIN_SCREEN_BUDGET_MS = 25_000 // 이보다 적게 남으면 화면 생성을 시작하지 않는다
 const MIN_RETRY_BUDGET_MS = 70_000 // 이보다 적게 남으면 재시도·수리 호출을 하지 않는다
 
@@ -423,9 +427,20 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
     `SCREEN NAME: ${screen.name}`,
     `TYPE: ${screen.type}`,
   ]
-  if (screen.columns.length > 0) lines.push(`COLUMNS (all required): ${screen.columns.join(', ')}`)
-  if (screen.fields.length > 0) lines.push(`FIELDS (all required): ${screen.fields.join(', ')}`)
-  if (screen.actions.length > 0) lines.push(`ACTIONS: ${screen.actions.join(', ')}`)
+  // 너무 긴 스펙은 코드 폭발 → max_tokens·구문 오류로 이어진다. 표시 항목을 상한으로 자르고 요약을 지시한다.
+  const MAX_ITEMS = 10
+  const cols = screen.columns.slice(0, MAX_ITEMS)
+  const flds = screen.fields.slice(0, MAX_ITEMS)
+  if (cols.length > 0) lines.push(`COLUMNS (all required): ${cols.join(', ')}${screen.columns.length > MAX_ITEMS ? ` (+${screen.columns.length - MAX_ITEMS} more: omit them)` : ''}`)
+  if (flds.length > 0) lines.push(`FIELDS (all required): ${flds.join(', ')}${screen.fields.length > MAX_ITEMS ? ` (+${screen.fields.length - MAX_ITEMS} more: omit them)` : ''}`)
+  if (screen.actions.length > 0) lines.push(`ACTIONS: ${screen.actions.slice(0, 8).join(', ')}`)
+  if (screen.sections && screen.sections.length > 0) {
+    lines.push(
+      `SECTIONS (parts of THIS screen, not separate screens): ${screen.sections.join(' | ')}`,
+      `- Render each section as ONE compact block: a heading + either 3 KPI cards (label + value) or a mini table with ≤3 columns and 2 rows. Never a full table per section.`,
+      `- Total component ≤ 180 lines. Reuse one small row-render helper instead of repeating JSX.`,
+    )
+  }
   // navigate()는 여기 나열된 id로만 허용한다. 목록에 없으면 화면 간 이동을 만들지 않는다(엉뚱한 연결 방지).
   lines.push(
     navTargets
@@ -865,9 +880,11 @@ function foldSectionScreens(spec: MockupSpec): MockupSpec {
   for (const [childId, parentId] of folded) {
     const child = byId.get(childId)!
     const parent = byId.get(parentId)!
-    parent.columns = uniq([...(parent.columns ?? []), ...(child.columns ?? [])])
-    parent.fields = uniq([...(parent.fields ?? []), ...(child.fields ?? [])])
-    parent.actions = uniq([...(parent.actions ?? []), ...(child.actions ?? [])])
+    // 섹션 내용은 요약 한 줄로만 넘긴다. 컬럼·필드를 부모에 전부 합치면 한 화면 코드가 폭발해
+    // max_tokens·구문 오류로 생성이 실패한다(판매 리포트 1화면에 섹션 6개가 접혔던 사례).
+    const items = uniq([...(child.columns ?? []), ...(child.fields ?? [])]).slice(0, 4)
+    parent.sections = uniq([...(parent.sections ?? []), items.length ? `${child.name}(${items.join('·')})` : child.name]).slice(0, 8)
+    parent.actions = uniq([...(parent.actions ?? []), ...(child.actions ?? [])]).slice(0, 8)
     parent.navigates_to = uniq([...(parent.navigates_to ?? []), ...(child.navigates_to ?? [])].map(remap).filter(t => t !== parentId))
   }
 
@@ -1199,7 +1216,15 @@ export async function POST(req: Request): Promise<Response> {
           console.log('[mockup v3] Step 1: extracting spec')
           emit({ type: 'progress', progress: 10, message: 'PRD 화면 구조 분석 중' })
           try {
-            spec = await extractSpec(anthropic, prdText, analysisText, deadline)
+            try {
+              spec = await extractSpec(anthropic, prdText, analysisText, deadline)
+            } catch (firstErr) {
+              const status = (firstErr as { status?: number }).status
+              const transient = status === 429 || status === 529 || (typeof status === 'number' && status >= 500)
+              if (!transient || deadline.remaining() < 90_000) throw firstErr
+              console.warn(`[mockup v3] Spec extraction transient error(${status}) — 1회 재시도 (남은 예산 ${Math.round(deadline.remaining() / 1000)}s)`)
+              spec = await extractSpec(anthropic, prdText, analysisText, deadline)
+            }
             console.log(`[mockup v3] Step 1 done in ${sec()}s`)
           } catch (err) {
             console.error(`[mockup v3] Spec extraction failed after ${sec()}s:`, err)

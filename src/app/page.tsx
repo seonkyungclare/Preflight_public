@@ -169,6 +169,7 @@ interface AppState {
   error: string | null
   mockupGenerating: MockupType | null  // 생성 중인 타입, null이면 미생성 중
   mockupProgress: number | null  // 생성 진행률 0-100, null이면 아직 진행률 미수신
+  mockupMessage: string | null   // 서버 진행 메시지("화면 생성 중 (2/5) · 46초 경과")
   mockupSpec: unknown  // 앞선 생성에서 확정된 화면 구조(spec). Lo-Fi/Hi-Fi가 공유해 동일 화면 집합 보장
   historyId: string | null  // 현재 분석 세션의 history 엔트리 ID
   historyCreatedAt: number | null
@@ -191,6 +192,7 @@ export default function Home() {
     error: null,
     mockupGenerating: null,
     mockupProgress: null,
+    mockupMessage: null,
     mockupSpec: null,
     analysis: null,
     historyId: null,
@@ -270,7 +272,7 @@ export default function Home() {
       return
     }
 
-    setState(prev => ({ ...prev, mockupGenerating: type, mockupProgress: 0 }))
+    setState(prev => ({ ...prev, mockupGenerating: type, mockupProgress: 0, mockupMessage: '요청 준비 중' }))
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -312,7 +314,7 @@ export default function Home() {
             | { type: 'done'; files: Record<string, string>; spec?: unknown }
             | { type: 'error'; error: string }
           if (evt.type === 'progress') {
-            setState(prev => ({ ...prev, mockupProgress: evt.progress }))
+            setState(prev => ({ ...prev, mockupProgress: evt.progress, mockupMessage: evt.message ?? prev.mockupMessage }))
           } else if (evt.type === 'done') {
             files = evt.files
             receivedSpec = evt.spec ?? null
@@ -336,6 +338,7 @@ export default function Home() {
         ...prev,
         mockupGenerating: null,
         mockupProgress: null,
+        mockupMessage: null,
         // 확정된 spec 보관(없으면 기존 유지) → 다음 fidelity 생성 시 동일 화면 집합 재사용
         mockupSpec: receivedSpec ?? prev.mockupSpec,
         mockupFilesLowFi: nextLowFi,
@@ -362,9 +365,9 @@ export default function Home() {
     } catch (e) {
       // 취소한 경우 에러 표시 없이 조용히 종료
       if ((e as Error).name === 'AbortError') {
-        setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null }))
+        setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null, mockupMessage: null }))
       } else {
-        setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null, error: (e as Error).message }))
+        setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null, mockupMessage: null, error: (e as Error).message }))
       }
     } finally {
       abortRef.current = null
@@ -393,6 +396,7 @@ export default function Home() {
       error: null,
       mockupGenerating: null,
       mockupProgress: null,
+      mockupMessage: null,
       mockupSpec: null,
       historyId: entry.id,
       historyCreatedAt: entry.createdAt,
@@ -438,6 +442,7 @@ export default function Home() {
           onCancelMockup={handleCancelMockup}
           mockupGenerating={state.mockupGenerating}
           mockupProgress={state.mockupProgress}
+          mockupMessage={state.mockupMessage}
           onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null, mockupSpec: null }))}
         />
       )}
