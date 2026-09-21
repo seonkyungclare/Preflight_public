@@ -40,11 +40,11 @@ const MOCK_V2: AnalysisResult = {
 const RAW_V3: RawV3Analysis = {
   summary: {
     can_start: false,
-    verdict: '담당 MD와 시스템이 Actor 표에 없어 권한·화면 범위를 확정할 수 없습니다.',
+    verdict: '담당 MD·시스템 Actor 미정의로 권한·화면 범위 확정 불가',
     top_fixes: [
-      'Actor 표(3.1)에 담당 MD·시스템 행을 추가하고 정의·진입 경로·권한 범위를 채워주세요.',
-      '시나리오 S-002·S-004에 [진입] [본 흐름] [예외] 상세를 쓰고, 이동하는 화면 ID를 적어주세요.',
-      '화면 요구사항(8번)에 S-003이 참조하는 SC-13 화면 행을 추가해주세요.',
+      'Actor 표(3번 섹션)에 담당 MD·시스템 행 추가, 정의·진입 경로·권한 범위 기재',
+      '시나리오 S-002·S-004 상세([진입]·[본 흐름]·[예외]) 작성, 이동 화면 ID 명시',
+      '화면 요구사항(8번 섹션)에 S-003 참조 화면 SC-13 행 추가',
     ],
   },
   section_coverage: [
@@ -100,13 +100,13 @@ const RAW_V3: RawV3Analysis = {
     { check: 'workflow_scenario_ref', detail: '§6 Workflow 가 어떤 S-nnn 에 해당하는지 표기가 없습니다', severity: 2 },
   ],
   validated: [
-    '신청 상태 전이(SUBMISSION → EVALUATION → CONTRACT → REGISTRATION → COMPLETION)가 표로 정의됨',
-    '반려 시 사유 입력이 필수이며 미입력 시 처리 차단',
+    '신청 상태 전이표(SUBMISSION → EVALUATION → CONTRACT → REGISTRATION → COMPLETION) 정의',
+    '반려 사유 필수 입력, 미입력 시 처리 차단',
     '보류 14일 · 계약 동의 30일 무응답 시 EXPIRED',
   ],
   missing_for_designers: [
-    { screen: '검토 대기 목록', issue: 'SC-11 검토 대기 목록에서 배정된 건이 0건일 때 무엇을 보여줄지 적혀 있지 않습니다.', section_ref: '§8.3 데이터', severity: 2, user_impact: '심사자는 오류인지 정말 없는 건지 알 수 없습니다.', suggestion: '"아직 배정된 신청이 없어요" 문구와 새로고침 버튼을 적어주세요.' },
-    { screen: '신청 상세', issue: 'SC-12 신청 상세 화면에 배정되지 않은 사람이 URL로 바로 들어왔을 때 무엇을 보여줄지 적혀 있지 않습니다.', section_ref: '§3.4 권한 없는 진입', severity: 3, user_impact: '빈 화면이나 시스템 오류가 그대로 노출됩니다.', suggestion: '"접근 권한이 없습니다" 화면과 목록으로 돌아가는 버튼을 적어주세요.' },
+    { screen: '검토 대기 목록', issue: 'SC-11 검토 대기 목록에서 배정 건 0건일 때 표시 내용 미정의', section_ref: '§8.3 데이터', severity: 2, user_impact: '심사자가 오류 여부 판단 불가', suggestion: '안내 문구("배정된 신청 없음")와 새로고침 버튼 기재 필요' },
+    { screen: '신청 상세', issue: 'SC-12 신청 상세에 미배정 담당자가 URL 직접 진입 시 표시 내용 미정의', section_ref: '§3.4 권한 없는 진입', severity: 3, user_impact: '빈 화면 또는 시스템 오류 노출', suggestion: '접근 차단 화면과 목록 복귀 버튼 기재 필요' },
   ],
   missing_for_developers: [
     { module: '외부 반영 배치', issue: '배치 실패 시 재시도·알람 경로 미정의', section_ref: '§9.2 연동 실패 처리', risk: '승인 건이 외부 시스템에 반영되지 않아도 아무도 모름', severity: 4, suggestion: '재시도 N회·소진 시 운영 알림 채널 명시' },

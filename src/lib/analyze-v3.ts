@@ -1,9 +1,9 @@
 // ============================================================================
-// Preflight v3.0 — Partner Growth 템플릿 프로토콜 (시스템 프롬프트 + tool 스키마)
+// Preflight v3.0: Partner Growth 템플릿 프로토콜 (시스템 프롬프트 + tool 스키마)
 // ----------------------------------------------------------------------------
 // 분석을 두 호출로 나눈다. 서버(analyze route)가 둘을 병렬로 보내고 합친다.
-//   A. structure  — 섹션 커버리지·Actor·시나리오·교차 검증·요약·목업 지시 (점수 재료). 기본 모델
-//   B. checklist  — 디자이너·개발자 체크리스트·PO 질문·UX 제안.               빠른 모델
+//   A. structure : 섹션 커버리지·Actor·시나리오·교차 검증·요약·목업 지시 (점수 재료). 기본 모델
+//   B. checklist : 디자이너·개발자 체크리스트·PO 질문·UX 제안.               빠른 모델
 // 출력 토큰이 분석 시간을 지배하므로 두 프롬프트 모두 "출력 다이어트" 규칙을 강제한다.
 // 프롬프트는 config/prd-template.ts 의 섹션 정의에서 생성한다.
 // ============================================================================
@@ -12,14 +12,14 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { PGT_TEMPLATE, CONCERN_CHECKLIST, type TemplateSection } from '@/config/prd-template'
 
 function renderSection(s: TemplateSection): string {
-  const req = s.requirement === 'required' ? '필수' : `조건부 — ${s.applicability ?? ''}`
+  const req = s.requirement === 'required' ? '필수' : `조건부: ${s.applicability ?? ''}`
   const items = s.subItems.map(i => `  - [${i.id}] ${i.label} (감점 상한 ${i.max}): ${i.hint}`).join('\n')
   return `### §${s.id} ${s.title}  (${req}, 섹션 감점 상한 ${s.max})
 탐지 단서: ${s.detection}
 ${items}`
 }
 
-/** B 호출용 — 섹션·하위 항목 이름만 (판정 힌트 없음). section_ref 를 달기 위한 목차 */
+/** B 호출용: 섹션·하위 항목 이름만 (판정 힌트 없음). section_ref 를 달기 위한 목차 */
 function renderSectionIndex(s: TemplateSection): string {
   const items = s.subItems.map(i => `${i.id} ${i.label}`).join(' · ')
   return `- §${s.id} ${s.title}: ${items}`
@@ -28,25 +28,35 @@ function renderSectionIndex(s: TemplateSection): string {
 const CONCERNS = CONCERN_CHECKLIST.map(c => `- ${c.key}: ${c.question}`).join('\n')
 const ACTOR_AXES = PGT_TEMPLATE.actorAxes.map(a => `- ${a}`).join('\n')
 
-const WRITING_STYLE = `## Writing Style (all Korean text — the reader may be a first-time product maker)
+const GLOSSARY = `Actor(액터·역할 ✗) · 파트너 PO(파트너 ✗) · 대행사 · 담당 MD(MD ✗) · 운영 심사자(운영자·심사자·내부 담당자 ✗) · HO · 시스템(배치·자동 처리 ✗) · PO(기획자·PM ✗) · 디자이너(PD ✗) · 개발자(엔지니어 ✗)
+파트너센터 · 운영 어드민(어드민·백오피스 ✗) · 화면(페이지·스크린 ✗) · 목록(리스트 ✗) · 상세 · 작성 화면(폼 ✗) · 메뉴(내비게이션 ✗) · 진입 경로 · 버튼(CTA ✗) · 확인 대화상자(팝업·모달 ✗) · 안내 문구(메시지·카피 ✗) · 오류 문구(에러 메시지 ✗) · 접근 차단 화면(403 화면 ✗)
+0건 상태(빈 상태·엠티 ✗) · 불러오는 중(로딩 ✗) · 오류(에러 ✗) · 재시도 · 되돌리기(롤백 ✗) · 배치 · 상태 전이 · 상태 전이표 · 권한 매트릭스 · 세션 만료 · 필수값 · 극단값 · 말줄임 · 동시 처리 충돌 · 기한 만료
+PRD · 템플릿(양식 ✗) · 섹션(장·파트 ✗) · 하위 항목 · 유저 시나리오(유저 스토리 ✗) · 시나리오 상세 · 마일스톤 · 도달선 · 감점 · 점수 상한(게이트 ✗) · 교차 검증 · 체크리스트 · PO 질문 · UX 제안 · 목업 · 착수(킥오프 ✗)`
 
-Write every issue, question and recommendation so that someone who has never written a PRD understands it without help.
+const WRITING_STYLE = `## Writing Style: 한국어 사내 문서 규칙 (source: docs/analysis-writing-rules.md)
 
-1. **Three sentences per item, in this order**: (a) what is missing, (b) what goes wrong for the user or the team because of it, (c) what to write instead. Put (a) in \`issue\`, (b) in \`user_impact\` / \`risk\`, (c) in \`suggestion\`. Do not merge them into one sentence, and do not add a fourth.
-2. **Describe the user's situation, not the checklist label.** Write "심사자가 들어왔는데 배정된 건이 하나도 없을 때 무엇을 보여줄지 적혀 있지 않습니다", not "빈 상태 미정의".
-3. **Spell out IDs and section names on first use**: "SC-12 신청 상세 화면", "시나리오 S-003(운영 심사자가 승인·반려하는 흐름)", "화면 요구사항(8번 섹션)". Never leave a bare "§8.3" or "SC-13" without its name.
-4. **No jargon without a plain-Korean gloss.** Avoid English UX terms; if a principle name is needed (UX 제안 only), put the plain meaning first and the name in parentheses: "지금 무슨 일이 일어나는지 화면이 알려줘야 합니다 (NN#1 시스템 상태 가시성)".
-5. **One idea per sentence, plain verbs.** Prefer "~적혀 있지 않습니다", "~를 적어주세요" over "~미정의", "~필요".
-6. **Be short.** Each sentence ≤ 60 Korean characters. Output length directly slows the analysis; say each thing once.`
+The reader may be a first-time product maker. Write so they understand without help, in the house style below.
 
-const OUTPUT_DIET_COMMON = `## Output Budget (hard limits — the response is slow when it is long)
+1. **개조식.** Every Korean string ends with a noun form (~함, ~임, ~필요, ~미정의, ~없음) or is a noun phrase. No polite sentence endings (~합니다, ~주세요, ~입니다).
+   Exception: \`critical_questions[].question\` is an interrogative (~할까요?). \`options\` are noun phrases.
+2. **Three parts per checklist item, one noun-form sentence each (≤ 60 chars)**: \`issue\` = what is missing, \`user_impact\` / \`risk\` = what goes wrong because of it, \`suggestion\` = what to write. Example:
+   issue "SC-11 검토 대기 목록에서 배정 건 0건일 때 표시 내용 미정의" · user_impact "심사자가 오류 여부 판단 불가" · suggestion "안내 문구와 새로고침 버튼 기재 필요".
+3. **Describe the user's situation, not the checklist label.** "심사자 진입 시 배정 건 0건인 경우 표시 내용 미정의", not "빈 상태 미정의".
+4. **Titles and labels (screen, module) are concept nouns.** Never "~것", "~는가", "누가 무엇을". Numbers go in parentheses after the noun: "미정의 Actor(3)", "화면 요구사항(8번 섹션)".
+5. **Spell out IDs and section names on first use**: "SC-12 신청 상세", "시나리오 S-003(운영 심사자 승인·반려)", "화면 요구사항(8번 섹션)". Never a bare "§8.3" or "SC-13".
+6. **Forbidden forms**: "수 + 개의 + 명사" (세 개의 화면 ✗ → 화면 3종 / 3개 화면 ✗ → 화면 3개는 허용하되 "3계층, 2종" 형태 우선) · English metaphors translated literally (~가 만나는 면, 한 다리로 서 있다, ~위에서 조정된다) · "하나는 ~, 하나는 ~" · pronoun "그것" · em-dash (—): use ":" or parentheses · English UX terms alone: plain Korean first, principle name in parentheses only inside ux_recommendations.
+7. **Glossary (표기 → 지양 ✗)**:
+${GLOSSARY}
+8. **Self-check silently** for violations of 1~7 before submitting. Do not output a list of corrections.`
+
+const OUTPUT_DIET_COMMON = `## Output Budget (hard limits: the response is slow when it is long)
 
 - Every string ≤ 120 Korean characters unless a rule below says otherwise.
 - Never repeat the same gap in two places. If it is in \`missing\`, do not restate it in a checklist item.
 - All string values in Korean; schema keys stay English. Return only via the tool call.`
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A. Structure prompt — 점수 재료
+// A. Structure prompt: 점수 재료
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildStructurePrompt(): string {
@@ -54,14 +64,14 @@ export function buildStructurePrompt(): string {
   const gates = PGT_TEMPLATE.gates.map(g => `- ${g.id} ${g.label}: 점수 상한 ${g.cap}. ${g.description}`).join('\n')
 
   return `You are a senior product engineer reviewing a PRD written for the Musinsa **Partner Growth** team.
-Follow the Preflight Verification Protocol v3.0 strictly. Call the \`submit_structure\` tool with your result — do not write JSON as text.
+Follow the Preflight Verification Protocol v3.0 strictly. Call the \`submit_structure\` tool with your result: do not write JSON as text.
 
 ## 0. Core Principles
 
 1. The reference standard is the Partner Growth PRD template (${PGT_TEMPLATE.ref}). Your job is to find what the template requires but the PRD lacks.
 2. **You judge, the server scores.** For every section and sub-item you report status (present / partial / missing / not_applicable) and, for partial, a proposed deduction. Do NOT compute a total score.
-3. If information is missing, record it as missing — never invent plausible defaults.
-4. Every present/partial judgement must be backed by a **direct quote from the PRD** (\`evidence\`, ≤ 80 characters — cut with "…"). If you cannot quote it, it is missing.
+3. If information is missing, record it as missing: never invent plausible defaults.
+4. Every present/partial judgement must be backed by a **direct quote from the PRD** (\`evidence\`, ≤ 80 characters: cut with "…"). If you cannot quote it, it is missing.
 5. Section headings in the PRD may be numbered or titled differently. Match by meaning using the "탐지 단서", not by exact title.
 6. **Template only.** A deduction is valid only when it maps to a template sub-item. UX heuristics (Nielsen, Fitts, Hick, Fogg, Jakob, accessibility) never justify a deduction. Do not mention them anywhere in this output.
 
@@ -69,7 +79,7 @@ Follow the Preflight Verification Protocol v3.0 strictly. Call the \`submit_stru
 
 Status rules per sub-item:
 - **present**: exists and is filled with real content (not template guide text, not an empty table). Omit \`missing\` for present items.
-- **partial**: exists but incomplete. Propose \`deduction\` between 1 and the item's 감점 상한, proportional to what is missing. List the concrete gaps in \`missing\` — at most 5 short noun phrases (≤ 30 characters each) in the template's wording.
+- **partial**: exists but incomplete. Propose \`deduction\` between 1 and the item's 감점 상한, proportional to what is missing. List the concrete gaps in \`missing\`: at most 5 short noun phrases (≤ 30 characters each) in the template's wording.
 - **missing**: not found anywhere in the PRD. (Server applies the full 감점 상한.)
 - **not_applicable**: only for conditional sections when the applicability rule says so. Never for required sections.
 
@@ -79,7 +89,7 @@ ${sections}
 
 ## 2. Actor Extraction (feeds §3.1-a and gate G3)
 
-Scan the ENTIRE PRD — scenario subjects, workflow actors, screen "관련 Actor" columns, policy tables' "주체" column, notification recipients — and list every distinct actor type. Reference axes:
+Scan the ENTIRE PRD: scenario subjects, workflow actors, screen "관련 Actor" columns, policy tables' "주체" column, notification recipients: and list every distinct actor type. Reference axes:
 ${ACTOR_AXES}
 
 Rules:
@@ -123,13 +133,16 @@ ${gates}
 ## 7. Summary, Validated, Mockup Directives
 
 - \`summary.can_start\`: true only if no gate is triggered AND every required section is present or partial with small gaps. The server may still cap it.
-- \`summary.verdict\`: one plain sentence answering "이 PRD로 지금 디자인·개발을 시작할 수 있나요?" and why. ≤ 60 characters.
-- \`summary.top_fixes\`: exactly 3 items, ordered by impact on the score, each one sentence (≤ 80 chars) starting with what to write ("Actor 표(3번 섹션)에 담당 MD·HO·시스템 행을 추가해 주세요"). Gates first, then the largest deductions. Spell out section numbers and IDs.
-- \`validated\`: 3~5 things the PRD defines clearly, one short sentence each (≤ 60 chars) — only things you can quote.
+- \`summary.verdict\`: one noun-form line (≤ 60 chars) giving the reason for 착수 가능/불가, e.g. "Actor 미정의·시나리오 상세 누락으로 착수 불가". The UI prefixes it with "착수 가능 여부".
+- \`summary.top_fixes\`: exactly 3 noun-form items (≤ 80 chars each), ordered by impact on the score, each naming the section and what to write: "Actor 표(3번 섹션)에 담당 MD·HO·시스템 행 추가". Gates first, then the largest deductions.
+- \`validated\`: 3~5 noun phrases (≤ 60 chars) for what the PRD defines clearly: only things you can quote.
 - \`mockup_directives\`: \`critical_screens\` (≤ 5, exact §8 screen names tied to severity ≥3 issues or referenced by §5.4 but missing in §8) · \`forced_states\` (subset of "empty","error","forbidden": "error" if 네트워크/입력 concern missing, "empty" if 데이터 concern missing, "forbidden" if §3.4 missing) · \`attention_areas\` (≤ 3: { dimension: "§3 Actor & 권한 체계", score: remaining points scaled 0-10, focus ≤ 40 chars, render_hint ≤ 60 chars }) · \`note_panel_priority\` (≤ 5 short items).
+
+${WRITING_STYLE}
 
 ${OUTPUT_DIET_COMMON}
 - \`sub_items\`: list every sub-item id, but only partial/missing items carry \`missing\`; present items are just { id, status }.
+- \`missing\` entries and \`cross_reference_issues[].detail\` are noun phrases in 개조식.
 
 ## 8. Self-check Before Submitting
 
@@ -137,27 +150,28 @@ ${OUTPUT_DIET_COMMON}
 2. present/partial sections have a non-empty evidence quote.
 3. No required section is not_applicable.
 4. \`summary.top_fixes\` has exactly 3 items.
-5. No UX principle names anywhere.`
+5. No UX principle names anywhere.
+6. Every Korean string is 개조식 (noun-form ending), no em-dash, glossary spellings.`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// B. Checklist prompt — 디자이너·개발자·PO 질문·UX 제안
+// B. Checklist prompt: 디자이너·개발자·PO 질문·UX 제안
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildChecklistPrompt(): string {
   const index = PGT_TEMPLATE.sections.map(renderSectionIndex).join('\n')
 
   return `You are a senior product designer and engineer reviewing a PRD written for the Musinsa **Partner Growth** team.
-Your job in this call is ONLY the actionable lists: designer checklist, developer checklist, PO questions, UX suggestions. Another call scores the document — do not score, do not rate sections.
-Call the \`submit_checklist\` tool with your result — do not write JSON as text.
+Your job in this call is ONLY the actionable lists: designer checklist, developer checklist, PO questions, UX suggestions. Another call scores the document: do not score, do not rate sections.
+Call the \`submit_checklist\` tool with your result: do not write JSON as text.
 
 ## 0. Core Principles
 
 1. The reference standard is the Partner Growth PRD template (${PGT_TEMPLATE.ref}). Its sections and sub-items:
 ${index}
-2. If information is missing, say it is missing — never invent plausible defaults. Quote or point to the PRD when you can.
-3. **Template only, for the two checklists.** A designer item or a developer item is valid only when you can name the template sub-item it violates (\`section_ref\`, e.g. "§8.3 데이터", "§3.4 권한 없는 진입", "§9.2 연동 실패 처리"). UX heuristics — Nielsen's 10, Fitts, Hick, Fogg, Jakob, accessibility — never justify a checklist item. Observations grounded in those go to \`ux_recommendations\` only.
-4. The template's "다음의 사항이 고민되어야 한다" list for §7 and §8 — use its wording when writing section_ref gaps:
+2. If information is missing, say it is missing: never invent plausible defaults. Quote or point to the PRD when you can.
+3. **Template only, for the two checklists.** A designer item or a developer item is valid only when you can name the template sub-item it violates (\`section_ref\`, e.g. "§8.3 데이터", "§3.4 권한 없는 진입", "§9.2 연동 실패 처리"). UX heuristics: Nielsen's 10, Fitts, Hick, Fogg, Jakob, accessibility: never justify a checklist item. Observations grounded in those go to \`ux_recommendations\` only.
+4. The template's "다음의 사항이 고민되어야 한다" list for §7 and §8: use its wording when writing section_ref gaps:
 ${CONCERNS}
 
 ## 1. Actors (for PO questions)
@@ -168,10 +182,10 @@ Any actor used in the body but absent from the §3.1 Actor 정의 표 MUST produ
 
 ## 2. Lists
 
-- \`missing_for_designers\` (**3~5 items, most severe first**): screen-level gaps the template requires — §8 화면 표 열 누락, §8.3 고민 항목 미반영 (0건일 때 화면, 권한 없이 진입했을 때 화면, 텍스트가 길 때 표시…), §3.4 권한 없는 진입, §4 Actor별 노출. Fields: screen (exact PRD wording, or "미정의: <what it should be>"), issue, section_ref, severity(1-4), user_impact, suggestion.
-- \`missing_for_developers\` (**3~5 items, most severe first**): system/data gaps the template requires — §7.2 상태 전이 누락, §7.3 고민 항목 (네트워크 재시도·외부 연계 실패·동시 작업 충돌·기한 만료), §9 연동 실패 처리·알람 경로, §3.2 권한 매트릭스 빈칸. Fields: module, issue, section_ref, risk, severity(1-4), suggestion.
+- \`missing_for_designers\` (**3~5 items, most severe first**): screen-level gaps the template requires: §8 화면 표 열 누락, §8.3 고민 항목 미반영 (0건일 때 화면, 권한 없이 진입했을 때 화면, 텍스트가 길 때 표시…), §3.4 권한 없는 진입, §4 Actor별 노출. Fields: screen (exact PRD wording, or "미정의: <what it should be>"), issue, section_ref, severity(1-4), user_impact, suggestion.
+- \`missing_for_developers\` (**3~5 items, most severe first**): system/data gaps the template requires: §7.2 상태 전이 누락, §7.3 고민 항목 (네트워크 재시도·외부 연계 실패·동시 작업 충돌·기한 만료), §9 연동 실패 처리·알람 경로, §3.2 권한 매트릭스 빈칸. Fields: module, issue, section_ref, risk, severity(1-4), suggestion.
 - \`critical_questions\` (**3~5 questions**): what the PO must answer before design/dev starts. Tags: [디자인] | [개발] | [비즈니스] | [UX정책]. format: binary (2 options) | multiple (3~4) | open (["논의 필요"]). Fields: tag, question (≤ 100 chars), format, options (each ≤ 40 chars), impact (≤ 60 chars), blocks (≤ 3 short items). Undefined-actor questions come first. Every severity-4 checklist item must be reflected here.
-- \`ux_recommendations\` (**3~5 items**): the only place for UX-heuristic observations — visibility of status, error prevention, consistency, Fitts / Hick / Fogg / Jakob, accessibility, and quality judgements about empty/loading/error states beyond what the template literally asks. Fields: recommendation (≤ 120 chars, plain meaning first, principle name in parentheses at the end), principle (e.g. "NN#1 시스템 상태 가시성"), perspective (CRO | Friction Reduction | Convention | Accessibility), related_screen (optional), effort (low|medium|high), expected_impact (≤ 60 chars). Advice only — never affects the score.
+- \`ux_recommendations\` (**3~5 items**): the only place for UX-heuristic observations: visibility of status, error prevention, consistency, Fitts / Hick / Fogg / Jakob, accessibility, and quality judgements about empty/loading/error states beyond what the template literally asks. Fields: recommendation (≤ 120 chars, plain meaning first, principle name in parentheses at the end), principle (e.g. "NN#1 시스템 상태 가시성"), perspective (CRO | Friction Reduction | Convention | Accessibility), related_screen (optional), effort (low|medium|high), expected_impact (≤ 60 chars). Advice only: never affects the score.
 
 Severity: 1 cosmetic · 2 minor · 3 major (fix before build) · 4 catastrophic (cannot start).
 
@@ -184,8 +198,8 @@ ${OUTPUT_DIET_COMMON}
 
 1. Every checklist item has a \`section_ref\` naming a real template sub-item; none cites a UX principle.
 2. Every undefined actor has a [비즈니스] question.
-3. issue / user_impact(risk) / suggestion are each one sentence, and no sentence exceeds 60 Korean characters.
-4. List sizes are within the limits.`
+3. issue / user_impact(risk) / suggestion are each one noun-form line ≤ 60 Korean characters; questions end with "~할까요?".
+4. List sizes are within the limits. No em-dash. Glossary spellings.`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,7 +211,7 @@ const STATUS_ENUM = ['present', 'partial', 'missing', 'not_applicable']
 export const STRUCTURE_TOOL_V3: Anthropic.Messages.Tool = {
   name: 'submit_structure',
   description:
-    'Preflight v3.0 (Partner Growth) 구조 판정 — 섹션 커버리지·Actor·시나리오·교차 검증·요약·목업 지시. 점수는 서버가 계산한다.',
+    'Preflight v3.0 (Partner Growth) 구조 판정: 섹션 커버리지·Actor·시나리오·교차 검증·요약·목업 지시. 점수는 서버가 계산한다.',
   input_schema: {
     type: 'object',
     properties: {
@@ -298,7 +312,7 @@ export const STRUCTURE_TOOL_V3: Anthropic.Messages.Tool = {
 export const CHECKLIST_TOOL_V3: Anthropic.Messages.Tool = {
   name: 'submit_checklist',
   description:
-    'Preflight v3.0 (Partner Growth) 실행 목록 — 디자이너·개발자 체크리스트, PO 질문, UX 제안. 점수와 무관.',
+    'Preflight v3.0 (Partner Growth) 실행 목록: 디자이너·개발자 체크리스트, PO 질문, UX 제안. 점수와 무관.',
   input_schema: {
     type: 'object',
     properties: {

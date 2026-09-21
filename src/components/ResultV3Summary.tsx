@@ -29,12 +29,12 @@ const SEVERITY_META: Record<number, { label: string; variant: BadgeVariant }> = 
 }
 
 const CHECK_LABELS: Record<string, string> = {
-  actor_without_scenario: 'Actor에 시나리오 없음',
+  actor_without_scenario: 'Actor 시나리오 미보유',
   scenario_actor_undefined: '시나리오 Actor 미정의',
-  scenario_screen_ref: '시나리오 → 화면 참조 불일치',
-  screen_scenario_ref: '화면 → 시나리오 참조 불일치',
-  ia_screen_missing: 'IA 신설 메뉴에 화면 없음',
-  workflow_scenario_ref: 'Workflow → 시나리오 미연결',
+  scenario_screen_ref: '시나리오·화면 참조 불일치',
+  screen_scenario_ref: '화면·시나리오 참조 불일치',
+  ia_screen_missing: 'IA 신설 메뉴 화면 누락',
+  workflow_scenario_ref: 'Workflow·시나리오 미연결',
   glossary_gap: '용어 정의 누락',
 }
 
@@ -64,7 +64,7 @@ function SectionRow({ section }: { section: SectionCoverage }) {
           </div>
           <span className={`font-bold shrink-0 ${section.deduction > 0 ? 'text-red-500' : 'text-green-600'}`}>
             {section.status === 'not_applicable'
-              ? '—'
+              ? '-'
               : section.deduction > 0
                 ? `−${section.deduction} / ${section.max_deduction}`
                 : `0 / ${section.max_deduction}`}
@@ -100,9 +100,9 @@ function SectionRow({ section }: { section: SectionCoverage }) {
               ))}
             </ul>
           ) : section.status === 'not_applicable' ? (
-            <p>이 PRD에는 해당 사항이 없어 감점하지 않았습니다.</p>
+            <p>해당 사항 없음(감점 없음)</p>
           ) : (
-            <p>모든 하위 항목이 충족되었습니다.</p>
+            <p>하위 항목 전부 충족</p>
           )}
         </div>
       )}
@@ -128,7 +128,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
             <Banner
               key={g.id}
               status={g.cap <= 59 ? 'error' : 'warning'}
-              title={`${g.label} — 점수 상한 ${g.cap}점`}
+              title={`${g.label}: 점수 상한 ${g.cap}점`}
               description={g.reason || g.description}
             />
           ))}
@@ -149,7 +149,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
 
       {/* 섹션 커버리지 */}
       <div>
-        <p className="text-sm text-muted-foreground mb-3">템플릿 섹션 커버리지 (목차 순)</p>
+        <p className="text-sm text-muted-foreground mb-3">템플릿 섹션 커버리지(목차 순)</p>
         <div className="space-y-2.5">
           {sections.map(s => (
             <SectionRow key={s.section_id} section={s} />
@@ -163,7 +163,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
         <AstryxCard padding={0}>
           <div className="py-4 px-4 space-y-3 text-sm">
             {actors.defined.length === 0 ? (
-              <p className="text-muted-foreground text-xs">§3.1 Actor 정의 표를 찾지 못했습니다.</p>
+              <p className="text-muted-foreground text-xs">Actor 정의 표(3.1) 없음</p>
             ) : (
               <ul className="space-y-2">
                 {actors.defined.map((a, i) => (
@@ -182,7 +182,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
                           a.permission_scope && `권한: ${a.permission_scope}`,
                         ]
                           .filter(Boolean)
-                          .join(' · ') || '정의·진입 경로·권한 범위가 모두 비어 있습니다'}
+                          .join(' · ') || '정의·진입 경로·권한 범위 미기재'}
                       </p>
                     </div>
                   </li>
@@ -192,7 +192,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
             {actors.detected_undefined.length > 0 && (
               <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
                 <p className="text-xs font-medium text-red-600 mb-1.5">
-                  본문에 등장하지만 정의되지 않은 Actor ({actors.detected_undefined.length})
+                  미정의 Actor({actors.detected_undefined.length}): 본문에만 등장
                 </p>
                 <ul className="space-y-1">
                   {actors.detected_undefined.map((a, i) => (
@@ -221,7 +221,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
                   <p className="text-[11px] text-muted-foreground">시나리오 맵</p>
                 </div>
                 <div>
-                  <p className="text-lg font-bold">{scenarios.milestone_defined ? '✓' : '—'}</p>
+                  <p className="text-lg font-bold">{scenarios.milestone_defined ? '✓' : '-'}</p>
                   <p className="text-[11px] text-muted-foreground">Milestone 표</p>
                 </div>
                 <div>
@@ -233,13 +233,13 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
                 <div className="text-xs text-muted-foreground space-y-1 border-t border-border pt-3">
                   {scenarios.actors_without_scenario.length > 0 && (
                     <p>
-                      <span className="font-medium text-foreground/80">시나리오 없는 Actor:</span>{' '}
+                      <span className="font-medium text-foreground/80">시나리오 미보유 Actor:</span>{' '}
                       {scenarios.actors_without_scenario.join(', ')}
                     </p>
                   )}
                   {scenarios.scenarios_without_screen_ref.length > 0 && (
                     <p>
-                      <span className="font-medium text-foreground/80">화면 참조 없는 시나리오:</span>{' '}
+                      <span className="font-medium text-foreground/80">화면 참조 누락 시나리오:</span>{' '}
                       {scenarios.scenarios_without_screen_ref.join(', ')}
                     </p>
                   )}
@@ -253,7 +253,7 @@ export default function ResultV3Summary({ result }: { result: AnalysisResult }) 
       {/* 교차 검증 */}
       {xrefs.length > 0 && (
         <div>
-          <p className="text-sm text-muted-foreground mb-3">섹션 간 교차 검증 ({xrefs.length})</p>
+          <p className="text-sm text-muted-foreground mb-3">교차 검증({xrefs.length})</p>
           <div className="space-y-2">
             {xrefs.map((x, i) => {
               const sev = SEVERITY_META[x.severity] ?? SEVERITY_META[2]
