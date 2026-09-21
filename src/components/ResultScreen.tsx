@@ -81,6 +81,9 @@ function isQuestionV2(q: unknown): q is QuestionV2 {
 // ============================================================================
 // CRITERIA_LABELS: v1·v2 키를 모두 지원
 // ============================================================================
+// Hi-Fi 는 품질이 기준에 못 미쳐 잠시 숨긴다(2026-09-22). 코드는 유지, 플래그로만 노출.
+const SHOW_HIFI = process.env.NEXT_PUBLIC_ENABLE_HIFI === '1'
+
 const CRITERIA_LABELS: Record<string, string> = {
   // v1
   화면_인벤토리: '화면 인벤토리',
@@ -299,7 +302,7 @@ export default function ResultScreen({
 
           <div className="flex-1 min-w-[280px] flex flex-col gap-2">
             {renderMockupRow('lowfi', 'Lo-Fi', '와이어프레임', 'border-border bg-muted text-muted-foreground', hasMockupLowFi, mockupLowFiAt)}
-            {renderMockupRow(
+            {SHOW_HIFI && renderMockupRow(
               'hifi',
               'Hi-Fi',
               '인터랙티브',
