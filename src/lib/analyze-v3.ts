@@ -28,10 +28,12 @@ function renderSectionIndex(s: TemplateSection): string {
 const CONCERNS = CONCERN_CHECKLIST.map(c => `- ${c.key}: ${c.question}`).join('\n')
 const ACTOR_AXES = PGT_TEMPLATE.actorAxes.map(a => `- ${a}`).join('\n')
 
-const GLOSSARY = `Actor(액터·역할 ✗) · 파트너 PO(파트너 ✗) · 대행사 · 담당 MD(MD ✗) · 운영 심사자(운영자·심사자·내부 담당자 ✗) · HO · 시스템(배치·자동 처리 ✗) · PO(기획자·PM ✗) · 디자이너(PD ✗) · 개발자(엔지니어 ✗)
-파트너센터 · 운영 어드민(어드민·백오피스 ✗) · 화면(페이지·스크린 ✗) · 목록(리스트 ✗) · 상세 · 작성 화면(폼 ✗) · 메뉴(내비게이션 ✗) · 진입 경로 · 버튼(CTA ✗) · 확인 대화상자(팝업·모달 ✗) · 안내 문구(메시지·카피 ✗) · 오류 문구(에러 메시지 ✗) · 접근 차단 화면(403 화면 ✗)
-0건 상태(빈 상태·엠티 ✗) · 불러오는 중(로딩 ✗) · 오류(에러 ✗) · 재시도 · 되돌리기(롤백 ✗) · 배치 · 상태 전이 · 상태 전이표 · 권한 매트릭스 · 세션 만료 · 필수값 · 극단값 · 말줄임 · 동시 처리 충돌 · 기한 만료
-PRD · 템플릿(양식 ✗) · 섹션(장·파트 ✗) · 하위 항목 · 유저 시나리오(유저 스토리 ✗) · 시나리오 상세 · 마일스톤 · 도달선 · 감점 · 점수 상한(게이트 ✗) · 교차 검증 · 체크리스트 · PO 질문 · UX 제안 · 목업 · 착수(킥오프 ✗)`
+const GLOSSARY = `[A. MCDS 컴포넌트: 영문 원어 그대로] Date Picker · Select · Dropdown · Tooltip · Snackbar · Toast · Dialog(확인 대화상자·팝업·모달 ✗) · Popup · Tag · Badge · Tab · Table · Pagination · Checkbox · Radio · Switch · Chip · Skeleton · Drawer · Stepper · Breadcrumb · TextField · TextArea
+[B. 굳어진 외래어: 음차 유지] 필터 · 스크롤 · 드래그 앤 드롭 · 호버 · 클릭 · 업로드 · 다운로드 · 페이징 · 로딩(불러오는 중 ✗)
+[C. 한글 정착어] 버튼(CTA ✗) · 목록(리스트 ✗) · 상세 · 검색 · 정렬 · 저장 · 삭제 · 화면(페이지·스크린 ✗) · 항목 · 값 · 오류(에러 ✗) · 작성 화면(폼 ✗) · 메뉴(내비게이션 ✗) · 진입 경로 · 안내 문구(메시지·카피 ✗) · 오류 문구 · 접근 차단 화면(403 화면 ✗)
+[주체] Actor(액터·역할 ✗) · 파트너 PO(파트너 ✗) · 대행사 · 담당 MD(MD ✗) · 운영 심사자(운영자·심사자·내부 담당자 ✗) · HO · 시스템(배치·자동 처리 ✗) · PO(기획자·PM ✗) · 디자이너(PD ✗) · 개발자(엔지니어 ✗)
+[시스템·상태] 파트너센터 · 운영 어드민(어드민·백오피스 ✗) · 0건 상태(빈 상태·엠티 ✗) · 재시도 · 되돌리기(롤백 ✗) · 배치 · 상태 전이 · 상태 전이표 · 권한 매트릭스 · 세션 만료 · 필수값 · 극단값 · 말줄임 · 동시 처리 충돌 · 기한 만료
+[문서] PRD · 템플릿(양식 ✗) · 섹션(장·파트 ✗) · 하위 항목 · 유저 시나리오(유저 스토리 ✗) · 시나리오 상세 · 마일스톤 · 도달선 · 감점 · 점수 상한(게이트 ✗) · 교차 검증 · 체크리스트 · PO 질문 · UX 제안 · 목업 · 착수(킥오프 ✗)`
 
 const WRITING_STYLE = `## Writing Style: 한국어 사내 문서 규칙 (source: docs/analysis-writing-rules.md)
 
@@ -44,8 +46,10 @@ The reader may be a first-time product maker. Write so they understand without h
 3. **Describe the user's situation, not the checklist label.** "심사자 진입 시 배정 건 0건인 경우 표시 내용 미정의", not "빈 상태 미정의".
 4. **Titles and labels (screen, module) are concept nouns.** Never "~것", "~는가", "누가 무엇을". Numbers go in parentheses after the noun: "미정의 Actor(3)", "화면 요구사항(8번 섹션)".
 5. **Spell out IDs and section names on first use**: "SC-12 신청 상세", "시나리오 S-003(운영 심사자 승인·반려)", "화면 요구사항(8번 섹션)". Never a bare "§8.3" or "SC-13".
-6. **Forbidden forms**: "수 + 개의 + 명사" (세 개의 화면 ✗ → 화면 3종 / 3개 화면 ✗ → 화면 3개는 허용하되 "3계층, 2종" 형태 우선) · English metaphors translated literally (~가 만나는 면, 한 다리로 서 있다, ~위에서 조정된다) · "하나는 ~, 하나는 ~" · pronoun "그것" · em-dash (—): use ":" or parentheses · English UX terms alone: plain Korean first, principle name in parentheses only inside ux_recommendations.
-7. **Glossary (표기 → 지양 ✗)**:
+6. **Forbidden forms**: "수 + 개의 + 명사" (세 개의 화면 ✗ → 화면 3종; "3계층, 2종" 형태 우선) · English metaphors translated literally (~가 만나는 면, 한 다리로 서 있다, ~위에서 조정된다) · "하나는 ~, 하나는 ~" · pronoun "그것" · em-dash (—): use ":" or parentheses.
+   UX **principle** names (NN#1, Fitts, Hick…) never stand alone: plain Korean meaning first, the name in parentheses, and only inside ux_recommendations.
+   **Never coin a Korean translation for an established UI term.** Design-system component names stay in English (Date Picker, not 날짜 선택기; Dropdown, not 펼침 목록; Tooltip, not 말풍선 도움말; Snackbar, not 알림 띠; Dialog, not 확인 대화상자; Checkbox, not 체크 상자). Test: would a designer say this word out loud? If not, it is translation-ese.
+7. **Glossary (표기 → 지양 ✗)**. A = component names in English, B = established loanwords as-is, C = settled Korean:
 ${GLOSSARY}
 8. **Self-check silently** for violations of 1~7 before submitting. Do not output a list of corrections.`
 
