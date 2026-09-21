@@ -208,8 +208,8 @@ export default function ResultScreen({
     [string, { score: number | null; notes?: unknown; evidence?: string; missing?: string[]; applied_principle?: string }]
   >
 
-  // 목업 컨트롤 한 줄(컴팩트). Lo-Fi/Hi-Fi 가 동일 구조라 헬퍼로 추출 — 히어로를 가볍게 유지한다.
-  const renderMockupRow = (
+  // 목업 카드(세로형, 점수 카드와 같은 크기). 진행 중이면 서버 메시지("화면 생성 중 (2/5) · 46초 경과")를 보여준다.
+  const renderMockupCard = (
     type: MockupType,
     label: string,
     badge: string,
@@ -217,41 +217,43 @@ export default function ResultScreen({
     hasMockup: boolean,
     mockupAt: number | null,
     extra?: React.ReactNode,
-  ) => (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-semibold">{label}</span>
-          <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border ${badgeClass}`}>
-            {badge}
-          </span>
-          {extra}
+  ) => {
+    const generating = mockupGenerating === type
+    const status = generating && mockupMessage ? mockupMessage : hasMockup && mockupAt ? `${formatHistoryDate(mockupAt)} 생성` : '미생성'
+    return (
+      <AstryxCard padding={0} className="shrink-0 w-[184px] min-h-[184px]">
+        <div className="h-full flex flex-col justify-between p-4 gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-sm font-semibold">{label}</span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border ${badgeClass}`}>
+                {badge}
+              </span>
+            </div>
+            {extra && <div className="mt-1.5">{extra}</div>}
+            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-3" title={status}>
+              {status}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {generating ? (
+              <>
+                <AstryxButton variant="primary" size="sm" isDisabled icon={<Spinner size="sm" shade="inherit" />} label={generatingLabel} style={{ width: '100%' }} />
+                <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} style={{ width: '100%' }} />
+              </>
+            ) : hasMockup ? (
+              <>
+                <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup(type, false)} isDisabled={mockupGenerating !== null} style={{ width: '100%' }} />
+                <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup(type, true)} isDisabled={mockupGenerating !== null} style={{ width: '100%' }} />
+              </>
+            ) : (
+              <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup(type, false)} isDisabled={mockupGenerating !== null} style={{ width: '100%' }} />
+            )}
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-          {mockupGenerating === type && mockupMessage
-            ? mockupMessage
-            : hasMockup && mockupAt
-              ? `${formatHistoryDate(mockupAt)} 생성`
-              : '미생성'}
-        </p>
-      </div>
-      <div className="flex gap-1.5 shrink-0">
-        {mockupGenerating === type ? (
-          <>
-            <AstryxButton variant="primary" size="sm" isDisabled icon={<Spinner size="sm" shade="inherit" />} label={generatingLabel} />
-            <AstryxButton variant="secondary" size="sm" label="취소" onClick={onCancelMockup} />
-          </>
-        ) : hasMockup ? (
-          <>
-            <AstryxButton variant="primary" size="sm" label="보기" onClick={() => onGenerateMockup(type, false)} isDisabled={mockupGenerating !== null} />
-            <AstryxButton variant="secondary" size="sm" label="재생성" onClick={() => onGenerateMockup(type, true)} isDisabled={mockupGenerating !== null} />
-          </>
-        ) : (
-          <AstryxButton variant="primary" size="sm" label="생성하기" onClick={() => onGenerateMockup(type, false)} isDisabled={mockupGenerating !== null} />
-        )}
-      </div>
-    </div>
-  )
+      </AstryxCard>
+    )
+  }
 
   return (
     <div data-astryx-theme="neutral" className="min-h-screen [&_button]:rounded-md">
@@ -292,75 +294,72 @@ export default function ResultScreen({
             )}
           </div>
 
-        {/* 점수(주인공) + 목업 컨트롤(보조, 컴팩트) */}
-        <div className="flex items-center gap-5 mb-8 flex-wrap">
-          <AstryxCard padding={0} className="flex items-center justify-center shrink-0">
+        {/* 히어로 3단: [점수] [Lo-Fi] [착수 가능 여부(넓게)]. 앞 두 카드는 같은 크기 */}
+        <div className="flex items-stretch gap-4 mb-8 flex-wrap">
+          <AstryxCard padding={0} className="shrink-0 w-[184px] min-h-[184px] flex items-center justify-center">
             <div className="flex items-center justify-center p-4">
               <ScoreGauge score={result.sufficiency_score} />
             </div>
           </AstryxCard>
 
-          <div className="flex-1 min-w-[280px] flex flex-col gap-2">
-            {renderMockupRow('lowfi', 'Lo-Fi', '와이어프레임', 'border-border bg-muted text-muted-foreground', hasMockupLowFi, mockupLowFiAt)}
-            {SHOW_HIFI && renderMockupRow(
-              'hifi',
-              'Hi-Fi',
-              '인터랙티브',
-              'border-primary/30 bg-primary/10 text-primary',
-              hasMockupHiFi,
-              mockupHiFiAt,
-              onToggleMockupDetail && (
-                <div role="radiogroup" aria-label="Hi-Fi 모드" className="ml-1 inline-flex rounded border border-border overflow-hidden text-[10px]">
-                  {([['structure', '구조'], ['detail', '상세']] as const).map(([mode, text]) => {
-                    const on = (mode === 'detail') === mockupDetail
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="radio"
-                        aria-checked={on}
-                        disabled={mockupGenerating !== null}
-                        onClick={() => onToggleMockupDetail(mode === 'detail')}
-                        className={`px-1.5 py-0.5 ${on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                        title={mode === 'detail' ? '실제 데이터 느낌·풍부한 인터랙션 (생성 시간 김)' : '구조·요소 확인용 자리표시자 데이터 (빠름)'}
-                      >
-                        {text}
-                      </button>
-                    )
-                  })}
-                </div>
-              ),
-            )}
-          </div>
-        </div>
+          {renderMockupCard('lowfi', 'Lo-Fi', '와이어프레임', 'border-border bg-muted text-muted-foreground', hasMockupLowFi, mockupLowFiAt)}
+          {SHOW_HIFI && renderMockupCard(
+            'hifi',
+            'Hi-Fi',
+            '인터랙티브',
+            'border-primary/30 bg-primary/10 text-primary',
+            hasMockupHiFi,
+            mockupHiFiAt,
+            onToggleMockupDetail && (
+              <div role="radiogroup" aria-label="Hi-Fi 모드" className="inline-flex rounded border border-border overflow-hidden text-[10px]">
+                {([['structure', '구조'], ['detail', '상세']] as const).map(([mode, text]) => {
+                  const on = (mode === 'detail') === mockupDetail
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      disabled={mockupGenerating !== null}
+                      onClick={() => onToggleMockupDetail(mode === 'detail')}
+                      className={`px-1.5 py-0.5 ${on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      {text}
+                    </button>
+                  )
+                })}
+              </div>
+            ),
+          )}
 
-        {/* v3: 3줄 요약. 착수 가능 여부 + 우선 보완 항목(3). 라벨은 docs/analysis-writing-rules.md 를 따른다 */}
-        {v3 && result.summary && (
-          <AstryxCard padding={0} className="mb-8">
-            <div className="py-4 px-5 space-y-3">
-              <p className="text-sm">
-                <span className="font-semibold">착수 가능 여부: </span>
-                <span className={result.summary.can_start ? 'text-green-600 font-semibold' : 'text-amber-500 font-semibold'}>
-                  {result.summary.can_start ? '가능' : '불가'}
-                </span>
-                <span className="text-muted-foreground"> ({result.summary.verdict})</span>
-              </p>
-              {result.summary.top_fixes.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">우선 보완 항목({result.summary.top_fixes.length})</p>
-                  <ol className="space-y-1.5">
-                    {result.summary.top_fixes.map((fix, i) => (
-                      <li key={i} className="flex gap-2 text-sm">
-                        <span className="font-bold text-primary shrink-0">{i + 1}.</span>
-                        <span>{fix}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-            </div>
-          </AstryxCard>
-        )}
+          {/* v3: 착수 가능 여부 + 우선 보완 항목(3). 라벨은 docs/analysis-writing-rules.md 를 따른다 */}
+          {v3 && result.summary && (
+            <AstryxCard padding={0} className="flex-1 min-w-[320px]">
+              <div className="h-full py-4 px-5 space-y-3">
+                <p className="text-sm">
+                  <span className="font-semibold">착수 가능 여부: </span>
+                  <span className={result.summary.can_start ? 'text-green-600 font-semibold' : 'text-amber-500 font-semibold'}>
+                    {result.summary.can_start ? '가능' : '불가'}
+                  </span>
+                  <span className="text-muted-foreground"> ({result.summary.verdict})</span>
+                </p>
+                {result.summary.top_fixes.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">우선 보완 항목({result.summary.top_fixes.length})</p>
+                    <ol className="space-y-1.5">
+                      {result.summary.top_fixes.map((fix, i) => (
+                        <li key={i} className="flex gap-2 text-sm">
+                          <span className="font-bold text-primary shrink-0">{i + 1}.</span>
+                          <span>{fix}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            </AstryxCard>
+          )}
+        </div>
 
         {/* 탭 */}
         <TabList value={tab} onChange={setTab} layout="fill" className="mb-6">
