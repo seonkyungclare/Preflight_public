@@ -3,8 +3,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 // astryx 실제 디자인시스템 컴포넌트 (StyleX 런타임 + astryx.css)
 import { Button as AstryxButton } from '@astryxdesign/core/Button'
-import { Card as AstryxCard } from '@astryxdesign/core/Card'
-import { TabList, Tab } from '@astryxdesign/core/TabList'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { releaseNotes } from '@/config/release-notes'
@@ -37,12 +35,11 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
   const [showBuildInfo, setShowBuildInfo] = useState(false)
   const [confluenceUrl, setConfluenceUrl] = useState('')
   const [atlassianConnected, setAtlassianConnected] = useState<boolean | null>(null)
-  const [atlassianCloudUrl, setAtlassianCloudUrl] = useState<string | undefined>(undefined)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
-  // astryx TabList 는 탭 스트립만 담당(controlled) — 활성 패널은 직접 상태로 관리
-  const [tab, setTab] = useState<'confluence' | 'file'>('confluence')
+  // PRD 가져올 방법: 인풋 좌측 셀렉트로 택1
+  const [mode, setMode] = useState<'url' | 'file'>('url')
   const [template, setTemplate] = useState<PrdTemplateId | null>(null)
 
   useEffect(() => {
@@ -98,11 +95,8 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
     let cancelled = false
     fetch('/api/auth/atlassian/status')
       .then(r => r.json())
-      .then((d: { connected: boolean; cloudUrl?: string }) => {
-        if (!cancelled) {
-          setAtlassianConnected(d.connected)
-          setAtlassianCloudUrl(d.cloudUrl)
-        }
+      .then((d: { connected: boolean }) => {
+        if (!cancelled) setAtlassianConnected(d.connected)
       })
       .catch(() => { if (!cancelled) setAtlassianConnected(false) })
 
@@ -322,162 +316,142 @@ export default function UploadScreen({ onAnalyze, error, onRestoreHistory }: Upl
           className={template ? '' : 'opacity-50 pointer-events-none select-none'}
           aria-disabled={!template}
         >
-        <TabList value={tab} onChange={(v) => setTab(v as 'confluence' | 'file')} layout="fill" className="mb-4">
-          <Tab value="confluence" label="Confluence URL" />
-          <Tab value="file" label="파일 업로드" />
-        </TabList>
+        {/* 가져올 방법: 좌측 셀렉트(URL / File) + 우측 입력 박스 한 줄 */}
+        <div className="flex gap-2">
+          <div className="relative shrink-0">
+            <select
+              value={mode}
+              onChange={(e) => { setMode(e.target.value as 'url' | 'file'); setLocalError('') }}
+              aria-label="PRD 가져올 방법"
+              className="h-11 pl-3 pr-8 text-sm font-medium rounded-md border border-border bg-background appearance-none outline-none focus:border-primary cursor-pointer"
+            >
+              <option value="url">URL</option>
+              <option value="file">File</option>
+            </select>
+            <svg
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </div>
 
-        {/* 파일 업로드 탭 */}
-        {tab === 'file' && (
-          <div className="space-y-4">
-            <AstryxCard
-              variant={dragging ? 'blue' : 'default'}
-              padding={0}
-              // 드롭존 시인성: astryx 기본 보더가 옅어 inline 점선 보더로 대체(inline 이 레이어보다 우선)
-              style={{ borderStyle: 'dashed', borderWidth: 2, borderColor: 'var(--color-border-emphasized)' }}
-              className={[
-                'w-full outline-none transition-all',
-                canAddMore ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
-              ].join(' ')}
+          {mode === 'url' ? (
+            <input
+              type="url"
+              value={confluenceUrl}
+              onChange={(e) => { setConfluenceUrl(e.target.value); setLocalError('') }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && atlassianConnected && confluenceUrl.trim() && !parsing) handleUrlSubmit() }}
+              disabled={!atlassianConnected}
+              placeholder={
+                atlassianConnected
+                  ? 'https://wiki.team.musinsa.com/wiki/spaces/.../pages/123456789/...'
+                  : 'Atlassian 계정을 먼저 연결해주세요'
+              }
+              className="flex-1 min-w-0 h-11 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+            />
+          ) : (
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="파일 선택"
+              onClick={() => canAddMore && inputRef.current?.click()}
+              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && canAddMore) { e.preventDefault(); inputRef.current?.click() } }}
               onDragOver={(e) => { e.preventDefault(); if (canAddMore) setDragging(true) }}
               onDragLeave={() => setDragging(false)}
               onDrop={(e) => { if (canAddMore) onDrop(e); else e.preventDefault() }}
-              onClick={() => canAddMore && inputRef.current?.click()}
+              className={[
+                'flex-1 min-w-0 h-11 flex items-center gap-2 px-3 text-sm rounded-md border border-dashed transition-colors outline-none focus-visible:border-primary',
+                dragging ? 'border-primary bg-primary/5' : 'border-border bg-background',
+                canAddMore ? 'cursor-pointer hover:border-primary/60' : 'cursor-not-allowed opacity-60',
+              ].join(' ')}
             >
-              <div className="flex flex-col items-center gap-4 py-12">
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept=".pdf,.md,.txt"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => { addFiles(e.target.files); if (inputRef.current) inputRef.current.value = '' }}
-                />
-
-                <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center text-primary">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
-                    <path d="M12 12v9" />
-                    <path d="m16 16-4-4-4 4" />
-                  </svg>
-                </div>
-                <div className="text-center">
-                  <p className="font-medium">
-                    {canAddMore ? '파일을 드래그하거나 클릭해서 업로드' : `최대 ${MAX_FILES}개까지 업로드 가능`}
-                  </p>
-                  <p className="text-muted-foreground text-sm mt-1">
-                    PDF, MD, TXT 지원 · 최대 {MAX_FILES}개 파일 · 각 파일 10MB 이하
-                  </p>
-                </div>
-              </div>
-            </AstryxCard>
-
-            {/* 선택된 파일 목록 */}
-            {files.length > 0 && (
-              <ul className="space-y-2">
-                {files.map((f, i) => (
-                  <li
-                    key={`${f.name}-${i}`}
-                    className="flex items-center gap-3 px-4 py-2.5 border border-border rounded-lg bg-card"
-                  >
-                    <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center text-primary shrink-0">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                        <path d="M14 2v6h6" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{f.name}</p>
-                      <p className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</p>
-                    </div>
-                    <button
-                      onClick={() => removeFile(i)}
-                      className="text-muted-foreground hover:text-foreground text-sm shrink-0 px-2"
-                      aria-label="파일 제거"
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {files.length > 0 && (
-              <AstryxButton
-                variant="primary"
-                size="lg"
-                label={parsing ? '파일 파싱 중…' : `PRD 분석 시작 → (${files.length}개)`}
-                isLoading={parsing}
-                onClick={handleFileSubmit}
-                style={{ width: '100%' }}
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".pdf,.md,.txt"
+                multiple
+                className="hidden"
+                onChange={(e) => { addFiles(e.target.files); if (inputRef.current) inputRef.current.value = '' }}
               />
-            )}
-          </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0" aria-hidden>
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+                <path d="M12 12v9" />
+                <path d="m16 16-4-4-4 4" />
+              </svg>
+              <span className={`truncate ${files.length > 0 ? '' : 'text-muted-foreground'}`}>
+                {files.length > 0
+                  ? files.map(f => f.name).join(', ')
+                  : canAddMore
+                    ? `파일을 선택하거나 드래그 (PDF · MD · TXT, 최대 ${MAX_FILES}개)`
+                    : `최대 ${MAX_FILES}개까지 업로드 가능`}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* URL 모드 — Atlassian 미연결 시 연결 버튼 */}
+        {mode === 'url' && atlassianConnected === false && (
+          <AstryxButton
+            variant="secondary"
+            size="lg"
+            label="Atlassian 계정 연결"
+            onClick={() => { window.location.href = '/api/auth/atlassian/login' }}
+            style={{ width: '100%', marginTop: 12 }}
+          />
         )}
 
-        {/* Confluence URL 탭 */}
-        {tab === 'confluence' && (
-          <div className="space-y-4">
-            <AstryxCard padding={0}>
-              <div className="flex flex-col gap-4 py-8 px-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-primary shrink-0">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">Confluence 페이지 URL</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {atlassianConnected
-                        ? (atlassianCloudUrl ?? 'Atlassian 연결됨')
-                        : '먼저 Atlassian 계정 연결이 필요합니다'}
-                    </p>
-                  </div>
-                  {atlassianConnected && (
-                    <button
-                      onClick={handleLogout}
-                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                    >
-                      로그아웃
-                    </button>
-                  )}
+        {/* File 모드 — 선택된 파일 목록 */}
+        {mode === 'file' && files.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {files.map((f, i) => (
+              <li
+                key={`${f.name}-${i}`}
+                className="flex items-center gap-3 px-4 py-2.5 border border-border rounded-lg bg-card"
+              >
+                <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center text-primary shrink-0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
                 </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{f.name}</p>
+                  <p className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</p>
+                </div>
+                <button
+                  onClick={() => removeFile(i)}
+                  className="text-muted-foreground hover:text-foreground text-sm shrink-0 px-2"
+                  aria-label="파일 제거"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-                {atlassianConnected === false && (
-                  <AstryxButton
-                    variant="secondary"
-                    size="lg"
-                    label="Atlassian 계정 연결"
-                    onClick={() => { window.location.href = '/api/auth/atlassian/login' }}
-                    style={{ width: '100%' }}
-                  />
-                )}
-
-                {atlassianConnected && (
-                  <input
-                    type="url"
-                    value={confluenceUrl}
-                    onChange={(e) => { setConfluenceUrl(e.target.value); setLocalError('') }}
-                    placeholder="https://wiki.team.musinsa.com/wiki/spaces/.../pages/123456789/..."
-                    className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary placeholder:text-muted-foreground"
-                  />
-                )}
-              </div>
-            </AstryxCard>
-
-            {atlassianConnected && confluenceUrl.trim() && (
-              <AstryxButton
-                variant="primary"
-                size="lg"
-                label={parsing ? '페이지 가져오는 중…' : 'PRD 분석 시작 →'}
-                isLoading={parsing}
-                onClick={handleUrlSubmit}
-                style={{ width: '100%' }}
-              />
-            )}
-          </div>
+        {/* 분석 시작 */}
+        {mode === 'url' && atlassianConnected && confluenceUrl.trim() && (
+          <AstryxButton
+            variant="primary"
+            size="lg"
+            label={parsing ? '페이지 가져오는 중…' : 'PRD 분석 시작 →'}
+            isLoading={parsing}
+            onClick={handleUrlSubmit}
+            style={{ width: '100%', marginTop: 12 }}
+          />
+        )}
+        {mode === 'file' && files.length > 0 && (
+          <AstryxButton
+            variant="primary"
+            size="lg"
+            label={parsing ? '파일 파싱 중…' : `PRD 분석 시작 → (${files.length}개)`}
+            isLoading={parsing}
+            onClick={handleFileSubmit}
+            style={{ width: '100%', marginTop: 12 }}
+          />
         )}
         </div>
 
