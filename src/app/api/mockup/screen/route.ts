@@ -7,6 +7,7 @@ import {
   HIFI_DETAIL_SYSTEM,
   SCREEN_MAX_TOKENS,
   SCREEN_MAX_TOKENS_DETAIL,
+  SCREEN_MAX_TOKENS_LOFI,
   type ScreenSpec,
   type DropReason,
 } from '@/lib/mockup/core'
@@ -34,7 +35,7 @@ export async function POST(req: Request): Promise<Response> {
   const deadline = new Deadline(t0, SCREEN_BUDGET_MS)
   const dropReasons = new Map<string, DropReason>()
   const systemPrompt = type === 'hifi' ? (mode === 'detail' ? HIFI_DETAIL_SYSTEM : HIFI_SYSTEM) : LOFI_SYSTEM
-  const maxTokens = type === 'hifi' ? (mode === 'detail' ? SCREEN_MAX_TOKENS_DETAIL : SCREEN_MAX_TOKENS) : 4000
+  const maxTokens = type === 'hifi' ? (mode === 'detail' ? SCREEN_MAX_TOKENS_DETAIL : SCREEN_MAX_TOKENS) : SCREEN_MAX_TOKENS_LOFI
 
   try {
     const anthropic = getAnthropicClient()

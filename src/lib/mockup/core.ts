@@ -150,24 +150,39 @@ These are universal UI conventions — populate navigates_to and flows based on 
 
 export const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
 
+PURPOSE (read first):
+The wireframe exists to show (1) the overall structure of each screen and (2) EVERY element and attribute the screen needs: all columns, all fields, all actions, filters, states, navigation. Completeness beats polish.
+Never drop an element from the spec. If the spec lists 14 columns, the table has 14 <th>. If it lists 9 fields, the form has 9 labeled boxes.
+
 Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
 - No imports. No export. No other functions or code outside the one function.
-- Inline styles ONLY.
+- Inline styles ONLY. Pre-imported (DO NOT re-import): React, useState.
 
-Design tokens:
+Design tokens (grayscale only):
 - bg: #f5f5f5, surface: #fff, border: #e0e0e0, placeholder: #bdbdbd, label: #757575, text: #212121
-- No color accents, no shadows, no icons, no animations
+- No color accents, no shadows, no icons, no animations. Boxes are 1px solid #e0e0e0 with 4px radius.
 
-Rules:
-- Use exact PRD field/column names as labels
-- List type: render a basic table structure with 3 placeholder rows (use realistic Korean text for cells)
-- Form type: each field as a labeled rectangle input box
-- Detail type: key-value pairs in a simple grid
-- All actions from spec: rendered as outlined rectangles with text labels
-- Navigation actions (when target is in navigates_to): call navigate('targetId') onClick
-- Actions without clear navigation target: render as visual-only (no onClick)
-- Do NOT add elements not in the screen spec`
+SCREEN SHAPE: page content only (the app shell provides the LNB + padding).
+1. <h2> with the screen name (skip when ROLE says this is a SECTION).
+2. Actions row: every ACTION from the spec as an outlined rectangle button (text label). Primary action first. Navigation actions call navigate('id') only for ids in NAVIGATION TARGETS; others are visual-only.
+3. Filters (list/dashboard, when FIELDS are given): one labeled box per FIELD in a row (label above, placeholder text inside: "선택" for enum-like fields, "YYYY-MM-DD" for dates, otherwise the field name).
+4. Body by TYPE:
+   - list: table with ALL COLUMNS as headers and 3 placeholder rows. Cell text = column name or a typed placeholder ("2026-01-01", "0", "상태값"). Row click → navigate(detail id) if a detail target exists. Below: a pagination strip "‹ 1 2 3 ›" and, in small gray text, the empty state line "0건일 때: 표시 없음(미정의)" unless the spec defines one.
+   - form: one row per FIELD: label (mark required-looking fields with *) and an input box sized to the field (long text → taller box; enum → box with "선택 ▾"; date → "YYYY-MM-DD"). Footer: 취소 / 저장 boxes.
+   - detail: two-column key/value grid with ALL FIELDS (value = placeholder). Actions from ACTIONS.
+   - dashboard: one stat box per FIELD (label + "0"), then tables for COLUMNS if given.
+   - other: sections listing all FIELDS/COLUMNS as label/value pairs.
+5. SECTIONS (if listed): one titled block each with its own mini table or stat boxes, ALL items shown.
+
+Annotations (this is what designers read):
+- Under each control that the PRD leaves undefined (per the spec's missing/ambiguous notes or obvious gaps), add a tiny gray note in brackets, e.g. "[정렬 기준 미정의]", "[권한 없음 화면 미정의]". Keep notes ≤ 20 characters. Max 5 notes per screen.
+- Show status values from the PRD as plain text chips (bordered pill), one per distinct value if listed.
+
+Code style:
+- Data arrays: exactly 3 placeholder rows; always .map(); never repeat similar JSX blocks. One small helper for repeated boxes is fine.
+- ≤ 170 lines. No comments, no blank lines between JSX elements.
+- All text Korean. Use exact PRD field/column/action names. Do NOT add elements not in the screen spec.`
 
 export const HIFI_SYSTEM = `You generate STRUCTURAL high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes.
 
@@ -292,15 +307,24 @@ DATA:
 // CODE UTILITIES
 // ============================================================================
 
+// 앞뒤에 남은 펜스(```jsx / ```)를 떼어낸다. 모델이 여는 펜스 없이 닫는 펜스만 붙이는 경우가 있어
+// (Lo-Fi 에서 15화면 중 7개가 "Unterminated template" 로 실패한 사례) 추출 결과에 항상 적용한다.
+function stripFences(code: string): string {
+  return code
+    .replace(/^\s*```[a-zA-Z]*\s*\n?/, '')
+    .replace(/\n?\s*```\s*$/, '')
+    .trim()
+}
+
 function extractCode(output: string): string | null {
   const fenceMatches = Array.from(output.matchAll(/```(?:jsx?|tsx?)?\n([\s\S]*?)```/g))
   if (fenceMatches.length > 0) {
     const longest = fenceMatches.reduce((a, b) => (a[1].length >= b[1].length ? a : b))
-    return longest[1].trim()
+    return stripFences(longest[1])
   }
   const lines = output.split('\n')
   const startIdx = lines.findIndex(l => /^function\s+Screen_/.test(l.trim()))
-  if (startIdx !== -1) return lines.slice(startIdx).join('\n').trim()
+  if (startIdx !== -1) return stripFences(lines.slice(startIdx).join('\n'))
   return null
 }
 
@@ -468,7 +492,18 @@ Actor 가 여럿이면 Actor 별로 접근 가능한 메뉴가 다를 수 있으
   if (start === -1 || end === -1) {
     throw new Error(`No JSON object found in spec extraction response. Got: ${text.slice(0, 300)}`)
   }
-  return JSON.parse(text.slice(start, end + 1)) as MockupSpec
+  const parsed = JSON.parse(text.slice(start, end + 1)) as Partial<MockupSpec>
+  const screens = (Array.isArray(parsed.screens) ? parsed.screens : [])
+    .filter((x): x is ScreenSpec => !!x && typeof x === 'object' && typeof (x as ScreenSpec).id === 'string')
+    .map(normalizeScreen)
+  return {
+    screens,
+    menu_screen_ids: Array.isArray(parsed.menu_screen_ids) ? parsed.menu_screen_ids.filter(x => typeof x === 'string') : [],
+    flows: Array.isArray(parsed.flows) ? parsed.flows.filter(f => f && typeof f.from === 'string' && typeof f.to === 'string').map(f => ({ ...f, trigger: typeof f.trigger === 'string' ? f.trigger : '이동' })) : [],
+    critical_screen_ids: Array.isArray(parsed.critical_screen_ids) ? parsed.critical_screen_ids.filter(x => typeof x === 'string') : [],
+    attention_areas: Array.isArray(parsed.attention_areas) ? parsed.attention_areas : [],
+    note_items: Array.isArray(parsed.note_items) ? parsed.note_items : [],
+  }
 }
 
 // ============================================================================
@@ -478,7 +513,25 @@ Actor 가 여럿이면 Actor 별로 접근 가능한 메뉴가 다를 수 있으
 // 생성된 코드의 navigate() 파싱(codeFlows)만으로 구성한다 → LLM 호출 1회 절약.
 // ============================================================================
 
-function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], type: 'lowfi' | 'hifi'): string {
+/** 모델이 빠뜨린 배열 필드를 채운다. (sc_13 에 navigates_to 가 없어 .map 에서 터진 사례) */
+export function normalizeScreen(s: Partial<ScreenSpec> & { id: string }): ScreenSpec {
+  return {
+    id: s.id,
+    name: typeof s.name === 'string' && s.name ? s.name : s.id,
+    type: (['list', 'form', 'detail', 'dashboard', 'other'] as const).includes(s.type as ScreenSpec['type']) ? (s.type as ScreenSpec['type']) : 'other',
+    columns: Array.isArray(s.columns) ? s.columns.filter(x => typeof x === 'string') : [],
+    fields: Array.isArray(s.fields) ? s.fields.filter(x => typeof x === 'string') : [],
+    actions: Array.isArray(s.actions) ? s.actions.filter(x => typeof x === 'string') : [],
+    navigates_to: Array.isArray(s.navigates_to) ? s.navigates_to.filter(x => typeof x === 'string') : [],
+    ...(s.parent_id ? { parent_id: s.parent_id } : {}),
+    ...(s.sections ? { sections: s.sections } : {}),
+    ...(s.embed_in_parent ? { embed_in_parent: true } : {}),
+  }
+}
+
+function buildScreenUserPrompt(rawScreen: ScreenSpec, rawAll: ScreenSpec[], type: 'lowfi' | 'hifi'): string {
+  const screen = normalizeScreen(rawScreen)
+  const allScreens = rawAll.map(normalizeScreen)
   const navTargets = screen.navigates_to
     .map(id => {
       const t = allScreens.find(s => s.id === id)
@@ -498,13 +551,15 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
   if (parent) {
     lines.push(
       `ROLE: SECTION of the page "${parent.name}". It is rendered directly below the parent on the same page.`,
-      `- Return ONE <section className="section"> block with <div className="section__title">${screen.name}</div> as its heading. No <h1 className="page-title">, no page-level filters.`,
+      type === 'hifi'
+        ? `- Return ONE <section className="section"> block with <div className="section__title">${screen.name}</div> as its heading. No <h1 className="page-title">, no page-level filters.`
+        : `- Return ONE block (a <div> with a bold section title "${screen.name}" on top). No page <h2>, no page-level filters.`,
       `- Show ALL of this section's columns/fields in full (a real table or stat cards). Do not summarize.`,
     )
   }
   if (embeddedChildren.length > 0) {
     lines.push(
-      `EMBEDDED SECTIONS rendered below this screen by the app (do NOT draw them yourself, do NOT repeat their content): ${embeddedChildren.map(c => c.name).join(', ')}`,
+      `EMBEDDED SECTIONS: the app appends these sections directly below your component: ${embeddedChildren.map(c => c.name).join(', ')}. Render NOTHING for them — no placeholder boxes, no titles, no notes. Your component ends after the page-level header/filters/actions (and the body only if it is not one of those sections).`,
     )
   }
   // 너무 긴 스펙은 코드 폭발 → max_tokens·구문 오류로 이어진다. 표시 항목을 상한으로 자르고 요약을 지시한다.
@@ -535,6 +590,7 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
 // 화면 1개당 출력 상한. antd 화면은 코드가 길어 넉넉히 잡는다(8192 초과이므로 output-128k 베타 필요).
 export const SCREEN_MAX_TOKENS = 7000 // 구조 충실 목업: 화면당 ≤170줄, 요소 전부 표시
 export const SCREEN_MAX_TOKENS_DETAIL = 9000 // 상세 모드
+export const SCREEN_MAX_TOKENS_LOFI = 6500 // Lo-Fi: 요소 전부 표시(≤170줄)
 
 export async function generateScreen(
   anthropic: Anthropic,
@@ -553,7 +609,7 @@ export async function generateScreen(
   }
   const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
   // Hi-Fi 도 구조 충실 목업(≤110줄)이라 상한을 낮춘다. 출력 토큰이 곧 생성 시간이다.
-  const maxTokens = maxTokensOverride ?? (type === 'hifi' ? SCREEN_MAX_TOKENS : 4000)
+  const maxTokens = maxTokensOverride ?? (type === 'hifi' ? SCREEN_MAX_TOKENS : SCREEN_MAX_TOKENS_LOFI)
   const temperature = type === 'hifi' ? 0.2 : 0.15
 
   // 첫 시도가 실패(max_tokens 잘림·괄호 불완전·repair 실패)하면 1회 재시도해 화면 drop을 최소화한다.
@@ -601,7 +657,7 @@ export async function generateScreen(
     }
 
     const output = extractText(result.content)
-    const code = extractCode(output) ?? output.trim()
+    const code = extractCode(output) ?? stripFences(output)
 
     if (!isCodeComplete(code)) {
       console.warn(`[mockup] Screen ${screen.id}: incomplete brackets (attempt ${attempt + 1})`)
@@ -613,6 +669,10 @@ export async function generateScreen(
     const err = validateJsx(wrapped)
     if (err) {
       console.warn(`[mockup] Screen ${screen.id} syntax error: ${err.message} (line ${err.line})`)
+      if (process.env.MOCKUP_DEBUG_CODE === '1') {
+        const ticks = (code.match(/`/g) ?? []).length
+        console.warn(`[mockup:debug] ${screen.id} backticks=${ticks} head=${JSON.stringify(code.slice(0, 160))} tail=${JSON.stringify(code.slice(-240))}`)
+      }
       if (deadline.remaining() >= MIN_RETRY_BUDGET_MS) {
         const repaired = await repairScreen(anthropic, code, err.message, screen.id, deadline.requestTimeout())
         if (repaired) return repaired
