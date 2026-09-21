@@ -28,6 +28,7 @@ interface ResultScreenProps {
   onCancelMockup: () => void
   mockupGenerating: MockupType | null
   mockupProgress: number | null
+  mockupMessage?: string | null
   onReupload: () => void
 }
 
@@ -178,6 +179,7 @@ export default function ResultScreen({
   onCancelMockup,
   mockupGenerating,
   mockupProgress,
+  mockupMessage = null,
   onReupload,
 }: ResultScreenProps) {
   // 진행률이 있으면 "생성 중 45%", 없으면 "생성 중"
@@ -217,7 +219,11 @@ export default function ResultScreen({
           </span>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 truncate">
-          {hasMockup && mockupAt ? `${formatHistoryDate(mockupAt)} 생성` : '미생성'}
+          {mockupGenerating === type && mockupMessage
+            ? mockupMessage
+            : hasMockup && mockupAt
+              ? `${formatHistoryDate(mockupAt)} 생성`
+              : '미생성'}
         </p>
       </div>
       <div className="flex gap-1.5 shrink-0">
