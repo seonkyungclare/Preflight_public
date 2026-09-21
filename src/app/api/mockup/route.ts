@@ -328,6 +328,20 @@ async function extractSpec(
     if (analysis?.mockup_directives) {
       directivesHint = `\n\nAnalysis mockup_directives:\n${JSON.stringify(analysis.mockup_directives, null, 2)}`
     }
+    // v3(Partner Growth): Actor·시나리오 판정을 화면 추출에 넘긴다.
+    // §8 화면 ID / §5.4 SC 참조가 화면 집합의 1차 근거이고, Actor 는 LNB 노출·권한 노트의 근거다.
+    if (analysis?.protocol_version === '3.0') {
+      const actors = analysis.actors ?? {}
+      const scenarios = analysis.scenarios ?? {}
+      directivesHint += `\n\nPartner Growth PRD 판정 (v3):
+- 정의된 Actor: ${(actors.defined ?? []).map((a: { name: string }) => a.name).join(', ') || '없음'}
+- 미정의 Actor(본문에만 등장): ${(actors.detected_undefined ?? []).map((a: { name: string }) => a.name).join(', ') || '없음'}
+- 시나리오 맵 ${scenarios.map_count ?? 0}건 · 상세 ${scenarios.detail_count ?? 0}건
+- 화면 참조 없는 시나리오: ${(scenarios.scenarios_without_screen_ref ?? []).join(', ') || '없음'}
+규칙: 화면 집합은 "8. 화면 요구사항"의 화면 ID/화면명과 "5.4 시나리오 상세"의 SC-nn 참조를 1차 근거로 삼는다.
+Actor 가 여럿이면 Actor 별로 접근 가능한 메뉴가 다를 수 있으니 IA(4)의 "Actor별 노출" 열을 menu 구성에 반영하고,
+미정의 Actor 와 화면 참조 없는 시나리오는 note_items(ambiguous) 로 남긴다.`
+    }
   } catch { /* ignore — non-JSON analysisText */ }
 
   const result = await callClaudeCached(anthropic, {

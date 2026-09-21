@@ -5,6 +5,16 @@ import UploadScreen from '@/components/UploadScreen'
 import AnalyzingScreen from '@/components/AnalyzingScreen'
 import ResultScreen from '@/components/ResultScreen'
 import { saveEntry, generateId, type HistoryEntry } from '@/lib/analysis-history'
+import type { PrdTemplateId } from '@/config/prd-template'
+import type {
+  SectionCoverage,
+  HardGateResult,
+  ActorsSummary,
+  ScenariosSummary,
+  CrossReferenceIssue,
+} from '@/lib/scoring'
+
+export type { PrdTemplateId }
 
 // ─── 공유 타입 정의 (v1/v2 호환) ──────────────────────────────────────────────
 //
@@ -120,7 +130,19 @@ export interface AnalysisResult {
   applied_weights?: Record<string, number>
   severity_summary?: SeveritySummary
   mockup_directives?: MockupDirectives
+  // ── 템플릿 식별 (2026-09 이후 결과에만 존재) ──
+  template?: PrdTemplateId
+  protocol_version?: '2.0' | '3.0' | string
+  // ── v3 (Partner Growth) 전용 — 서버(lib/scoring.ts)가 확정해서 내려준다 ──
+  template_ref?: string
+  raw_score?: number
+  hard_gates?: HardGateResult[]
+  section_coverage?: SectionCoverage[]
+  actors?: ActorsSummary
+  scenarios?: ScenariosSummary
+  cross_reference_issues?: CrossReferenceIssue[]
 }
+// v2/v3 판별은 lib/scoring.ts 의 isV3Result 를 쓴다 (App Router 페이지 파일은 임의 export 불가)
 
 export type MockupType = 'lowfi' | 'hifi'
 
@@ -132,6 +154,7 @@ interface AppState {
   screen: AppScreen
   fileName: string
   prdText: string
+  template: PrdTemplateId | null  // 분석 전 사용자가 고른 팀 템플릿
   analysis: AnalysisResult | null
   mockupFilesLowFi: Record<string, string> | null
   mockupFilesHiFi: Record<string, string> | null
@@ -154,6 +177,7 @@ export default function Home() {
     screen: 'upload',
     fileName: '',
     prdText: '',
+    template: null,
     mockupFilesLowFi: null,
     mockupFilesHiFi: null,
     mockupLowFiAt: null,
@@ -168,12 +192,13 @@ export default function Home() {
   })
 
   // PRD 파일 업로드 후 Claude 분석 스트리밍 시작
-  async function handleAnalyze(prdText: string, fileName: string) {
+  async function handleAnalyze(prdText: string, fileName: string, template: PrdTemplateId) {
     setState(prev => ({
       ...prev,
       screen: 'analyzing',
       fileName,
       prdText,
+      template,
       error: null,
       mockupFilesLowFi: null,
       mockupFilesHiFi: null,
@@ -186,7 +211,7 @@ export default function Home() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prdText }),
+        body: JSON.stringify({ prdText, template }),
       })
 
       if (!res.ok) {
@@ -215,6 +240,7 @@ export default function Home() {
         createdAt: historyCreatedAt,
         fileName,
         prdText,
+        template,
         analysis,
         mockupFilesLowFi: null,
         mockupFilesHiFi: null,
@@ -319,6 +345,7 @@ export default function Home() {
           createdAt: state.historyCreatedAt ?? now,
           fileName: state.fileName,
           prdText: state.prdText,
+          template: state.template ?? undefined,
           analysis: state.analysis,
           mockupFilesLowFi: nextLowFi,
           mockupFilesHiFi: nextHiFi,
@@ -345,11 +372,14 @@ export default function Home() {
 
   // history 엔트리로부터 결과 화면 복원
   function handleRestoreHistory(entry: HistoryEntry) {
+    const restored = entry.analysis as AnalysisResult
     setState({
       screen: 'result',
       fileName: entry.fileName,
       prdText: entry.prdText,
-      analysis: entry.analysis as AnalysisResult,
+      // v3 도입 전 항목은 template 이 없다 → 결과 안의 값, 없으면 commerce-core(v2)
+      template: entry.template ?? restored.template ?? 'commerce-core',
+      analysis: restored,
       mockupFilesLowFi: entry.mockupFilesLowFi,
       mockupFilesHiFi: entry.mockupFilesHiFi,
       mockupLowFiAt: entry.mockupLowFiAt,
@@ -392,6 +422,7 @@ export default function Home() {
       {state.screen === 'result' && state.analysis && (
         <ResultScreen
           fileName={state.fileName}
+          template={state.template ?? state.analysis.template ?? 'commerce-core'}
           result={state.analysis}
           hasMockupLowFi={!!state.mockupFilesLowFi}
           hasMockupHiFi={!!state.mockupFilesHiFi}

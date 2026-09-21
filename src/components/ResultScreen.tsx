@@ -2,7 +2,10 @@
 
 import { useState } from 'react'
 import ScoreGauge from '@/components/ScoreGauge'
-import type { AnalysisResult, MissingItem, DevItem, MockupType } from '@/app/page'
+import ResultV3Summary from '@/components/ResultV3Summary'
+import type { AnalysisResult, MissingItem, DevItem, MockupType, PrdTemplateId } from '@/app/page'
+import { TEMPLATE_OPTIONS } from '@/config/prd-template'
+import { isV3Result } from '@/lib/scoring'
 // astryx 실제 컴포넌트 (StyleX 런타임 + astryx.css)
 import { Button as AstryxButton } from '@astryxdesign/core/Button'
 import { Spinner } from '@astryxdesign/core/Spinner'
@@ -14,6 +17,8 @@ import { formatHistoryDate } from '@/lib/analysis-history'
 
 interface ResultScreenProps {
   fileName: string
+  // 어떤 팀 템플릿 기준으로 채점됐는지. 히스토리 복원 시 없으면 commerce-core 로 간주
+  template?: PrdTemplateId
   result: AnalysisResult
   hasMockupLowFi: boolean
   hasMockupHiFi: boolean
@@ -163,6 +168,7 @@ function normalizeRec(rec: unknown): NormalizedRec {
 
 export default function ResultScreen({
   fileName,
+  template = 'commerce-core',
   result,
   hasMockupLowFi,
   hasMockupHiFi,
@@ -184,9 +190,12 @@ export default function ResultScreen({
   const [tab, setTab] = useState('summary')
 
   const devItems: DevItem[] = result.missing_for_developers ?? []
+  const v3 = isV3Result(result)
+  const templateOption = TEMPLATE_OPTIONS.find(t => t.id === (result.template ?? template))
 
   // v2의 notes는 객체일 수 있음 — unknown으로 받고 렌더링 시 분기
-  const criteriaEntries = Object.entries(result.criteria) as Array<
+  // v3 결과에는 criteria 가 없다 (히스토리 복원·dev 페이지는 parseAnalysis 보정을 거치지 않음)
+  const criteriaEntries = Object.entries(result.criteria ?? {}) as Array<
     [string, { score: number | null; notes?: unknown; evidence?: string; missing?: string[]; applied_principle?: string }]
   >
 
@@ -257,6 +266,15 @@ export default function ResultScreen({
             <span className="text-sm text-muted-foreground">{fileName}</span>
             <span className="text-muted-foreground">·</span>
             <span className="text-sm text-muted-foreground">방금 분석됨</span>
+            {templateOption && (
+              <>
+                <span className="text-muted-foreground">·</span>
+                <AstryxBadge
+                  variant={templateOption.id === 'partner-growth' ? 'teal' : 'blue'}
+                  label={`${templateOption.label} 템플릿 · v${templateOption.protocol}`}
+                />
+              </>
+            )}
           </div>
 
         {/* 점수(주인공) + 목업 컨트롤(보조, 컴팩트) */}
@@ -285,6 +303,9 @@ export default function ResultScreen({
           {/* 요약 탭 */}
           {tab === 'summary' && (
           <div className="space-y-6">
+            {/* v3(Partner Growth): 섹션 커버리지·게이트·Actor·시나리오·교차 검증 */}
+            {v3 && <ResultV3Summary result={result} />}
+
             <div>
               <p className="text-sm text-muted-foreground mb-4">PRD에서 명확하게 정의된 항목들</p>
               <div className="space-y-3">
@@ -303,6 +324,8 @@ export default function ResultScreen({
               </div>
             </div>
 
+            {/* v2(Commerce Core): 6차원 기준별 상세. v3 는 criteria 가 없으므로 자연히 숨겨진다 */}
+            {!v3 && criteriaEntries.length > 0 && (
             <div>
               <p className="text-sm text-muted-foreground mb-4">검증 기준별 상세</p>
               <div className="space-y-3">
@@ -347,6 +370,7 @@ export default function ResultScreen({
                 })}
               </div>
             </div>
+            )}
           </div>
           )}
 

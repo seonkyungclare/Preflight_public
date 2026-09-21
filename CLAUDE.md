@@ -1,4 +1,62 @@
-# Preflight PRD Verification Protocol (v1.2)
+# Preflight PRD Verification Protocol
+
+Preflight는 분석 전에 사용자가 고른 **팀 템플릿**에 따라 두 프로토콜 중 하나를 적용한다.
+
+| 템플릿 선택 | 프로토콜 | 코드 | 기준 |
+| :--- | :--- | :--- | :--- |
+| **Partner Growth** | **v3.0** (아래 §A) | `src/config/prd-template.ts` · `src/lib/analyze-v3.ts` · `src/lib/scoring.ts` | [PGT PRD 템플릿](https://wiki.team.musinsa.com/wiki/spaces/PGT/pages/652153933) |
+| **Commerce Core** | v2.0 (아래 §B, v1.2 계승) | `src/app/api/analyze/route.ts` 의 `SYSTEM_PROMPT` | Commerce Core PRD 템플릿 + UX 휴리스틱 |
+
+계획·결정 이력: [docs/preflight-v3-plan.md](docs/preflight-v3-plan.md)
+
+---
+
+# §A. Partner Growth 프로토콜 (v3.0, 2026-09-21)
+
+## A-0. 원칙
+* **템플릿이 기준**: PGT PRD 템플릿 11개 섹션 중 있어야 할 것이 없으면 깎는다. 있으면 그 품질을 본다.
+* **모델은 판정, 서버는 계산**: 모델은 섹션·하위 항목의 present / partial / missing / not_applicable 판정과 PRD 원문 인용만 낸다. 점수·게이트·is_sufficient 는 `lib/scoring.ts` 가 결정적으로 계산한다.
+* **채우지 않는다**: 없는 정보는 없다고 기록한다. 그럴듯한 기본값을 지어내지 않는다.
+
+## A-1. 감점 예산 (필수 섹션 합 100)
+
+| # | 섹션 | 상한 | 핵심 하위 항목 |
+| :-- | :--- | :--: | :--- |
+| 0 | Intro | 3 | 담당자 R&R · 링크 · 마일스톤 |
+| 1 | Business Impact & Scope | 7 | In Scope · **Out of Scope + 제외 이유**. KTLO 명시 시에만 해당 없음 |
+| 2 | 용어 정의 | 5 | 표 존재 · 본문 용어 커버리지 |
+| 3 | **Actor & 권한 체계** | **20** | 목록 완전성(미정의 Actor당 −3) · 정의 깊이(필드당 −1) · 권한 매트릭스 · 데이터 접근 범위 · 권한 없는 진입 |
+| 4 | IA (As-Is / To-Be) | 8 | 전체 트리 · 변경 유형 · Actor별 노출 |
+| 5 | **유저 시나리오** | **20** | 시나리오 맵 · Milestone · 도달선+미지원 표 · 시나리오 상세([진입]/[본 흐름]/[예외], SC 참조) |
+| 6 | Workflow | 7 | As-Is · To-Be · 시나리오 참조 |
+| 7 | 시스템 요구사항 | 15 | 넘버링 정책 · 상태 전이표 · **8대 고민 항목** |
+| 8 | 화면 요구사항 | 15 | 화면 표(ID·Actor·진입·시나리오·상세) · 시나리오/IA 교차 일치 · 8대 고민 항목 |
+| 9 | 데이터·연동·마이그레이션 | 조건부 −5 | 연동 언급이 있는데 섹션이 없을 때. 예산 밖 추가 감점 |
+| 10 | 오픈 이슈 | 조건부 −2 | 미결 표현이 있는데 섹션이 없을 때. 예산 밖 추가 감점 |
+
+## A-2. 하드 게이트 (점수 상한)
+* **G1** 유저 시나리오 부재 → 59 · **G2** Actor 정의 표 부재 → 59 · **G3** 미정의 Actor 존재 → 79 · **G4** 화면 요구사항 부재 → 69
+* 상한은 원점수와 비교해 낮은 쪽을 택한다. 결과 화면 최상단에 배너로 사유를 표시한다.
+
+## A-3. Actor 규칙 (매우 상세해야 한다)
+* 권한이 다르면 다른 Actor다. 담당 MD ≠ 운영 심사자 ≠ HO ≠ 영업. 파트너 PO ≠ 대행사.
+* 상태를 바꾸는 "시스템"(배치·자동 전이·자동 발송)은 Actor다.
+* 본문 어디에 등장하든(시나리오 주어·Workflow 주체·화면 관련 Actor·정책표 주체·알림 수신자) §3.1 표에 없으면 `actors.detected_undefined` 로 올리고, **[비즈니스] PO 질문을 반드시 생성**한다.
+
+## A-4. 교차 검증 (섹션 간 연결)
+Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-nnn) · IA 신설 메뉴↔화면 · Workflow↔시나리오 · 본문 용어↔용어 표. 실패는 `cross_reference_issues[]` 로 출력하고 관련 하위 항목(5.1, 8.2, 6.3, 2.2)을 함께 깎는다.
+
+## A-5. UX 휴리스틱의 위치
+v2 의 6차원은 점수 본체가 아니라 (1) §7.3·§8.3 의 "8대 고민 항목" 반영도 판정 근거, (2) `ux_recommendations` 의 이론 근거로만 쓴다. Fogg · Fitts · Hick · Jakob 은 점수에 영향을 주지 않는다.
+
+## A-6. 출력
+`section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.
+
+---
+
+# §B. Commerce Core 프로토콜 (v2.0 — v1.2 계승)
+
+> 아래 v1.2 문서는 Commerce Core 템플릿 분석의 원칙이다. 실제 v2.0 프롬프트(6차원·프로젝트 타입 가중치)는 `src/app/api/analyze/route.ts` 를 따른다.
 
 ## 0. Core Philosophy
 * [cite_start]**Ambiguity as Risk**: PRD 점수는 단순히 항목의 존재 여부가 아니라, 디자인 및 개발 착수 시 발생할 수 있는 모호성(Ambiguity)의 총량을 의미한다[cite: 7].
