@@ -63,6 +63,13 @@ export interface ScenariosSummary {
   scenarios_without_screen_ref: string[]
 }
 
+export interface AnalysisSummary {
+  /** 서버가 확정: 게이트 미발동 && 점수 ≥ 80 */
+  can_start: boolean
+  verdict: string
+  top_fixes: string[]
+}
+
 export interface CrossReferenceIssue {
   check: string
   detail: string
@@ -71,6 +78,7 @@ export interface CrossReferenceIssue {
 
 /** 모델이 tool 로 제출하는 v3 원본 (점수 미포함) */
 export interface RawV3Analysis {
+  summary?: Partial<AnalysisSummary>
   section_coverage: Array<{
     section_id: string
     status: CoverageStatus
@@ -99,6 +107,7 @@ export interface ScoredV3Analysis {
   sufficiency_score: number
   is_sufficient: boolean
   raw_score: number
+  summary: AnalysisSummary
   hard_gates: HardGateResult[]
   section_coverage: SectionCoverage[]
   actors: ActorsSummary
@@ -308,13 +317,30 @@ export function finalizeV3Analysis(raw: RawV3Analysis): ScoredV3Analysis {
         .map(i => ({ check: i.check ?? '', detail: i.detail, severity: (clamp(toInt(i.severity, 2), 1, 4) as 1 | 2 | 3 | 4) }))
     : []
 
+  const is_sufficient = sufficiency_score >= 80
+  const topFixes = Array.isArray(raw.summary?.top_fixes)
+    ? raw.summary!.top_fixes.filter(t => typeof t === 'string' && t.trim()).slice(0, 3)
+    : []
+  const summary: AnalysisSummary = {
+    // 모델의 판단보다 서버 점수·게이트가 우선한다
+    can_start: is_sufficient,
+    verdict:
+      typeof raw.summary?.verdict === 'string' && raw.summary.verdict.trim()
+        ? raw.summary.verdict.trim()
+        : is_sufficient
+          ? '지금 디자인·개발을 시작해도 됩니다.'
+          : '아직 시작하기 어렵습니다. 아래 항목부터 채워주세요.',
+    top_fixes: topFixes,
+  }
+
   return {
     template: 'partner-growth',
     protocol_version: '3.0',
     template_ref: PGT_TEMPLATE.ref,
     sufficiency_score,
-    is_sufficient: sufficiency_score >= 80,
+    is_sufficient,
     raw_score,
+    summary,
     hard_gates,
     section_coverage,
     actors,

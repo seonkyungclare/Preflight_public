@@ -7,6 +7,7 @@ import ResultScreen from '@/components/ResultScreen'
 import { saveEntry, generateId, type HistoryEntry } from '@/lib/analysis-history'
 import type { PrdTemplateId } from '@/config/prd-template'
 import type {
+  AnalysisSummary,
   SectionCoverage,
   HardGateResult,
   ActorsSummary,
@@ -60,6 +61,8 @@ export interface MissingItem {
   issue: string
   suggestion: string
   principle?: string
+  // v3: 어느 템플릿 항목 때문에 올라온 누락인지 ("§8.3 데이터")
+  section_ref?: string
   severity?: 1 | 2 | 3 | 4
   user_impact?: string
 }
@@ -71,6 +74,7 @@ export interface DevItem {
   issue: string
   suggestion: string
   risk?: string
+  section_ref?: string
   severity?: 1 | 2 | 3 | 4
 }
 
@@ -91,6 +95,7 @@ export interface UxRecommendationV2 {
   perspective?: 'CRO' | 'Friction Reduction' | 'Convention' | 'Accessibility' | string
   effort?: 'low' | 'medium' | 'high' | string
   expected_impact?: string
+  related_screen?: string
 }
 
 // v2 전용 신규 필드들
@@ -136,6 +141,7 @@ export interface AnalysisResult {
   // ── v3 (Partner Growth) 전용 — 서버(lib/scoring.ts)가 확정해서 내려준다 ──
   template_ref?: string
   raw_score?: number
+  summary?: AnalysisSummary
   hard_gates?: HardGateResult[]
   section_coverage?: SectionCoverage[]
   actors?: ActorsSummary

@@ -291,6 +291,34 @@ export default function ResultScreen({
           </div>
         </div>
 
+        {/* v3: 초심자용 3줄 요약 — "시작할 수 있나?" + 먼저 채울 것 3가지 */}
+        {v3 && result.summary && (
+          <AstryxCard padding={0} className="mb-8">
+            <div className="py-4 px-5 space-y-3">
+              <p className="text-sm">
+                <span className="font-semibold">이 PRD로 지금 디자인·개발을 시작할 수 있나요? </span>
+                <span className={result.summary.can_start ? 'text-green-600 font-semibold' : 'text-amber-500 font-semibold'}>
+                  {result.summary.can_start ? '네' : '아직이요'}
+                </span>
+                <span className="text-muted-foreground"> — {result.summary.verdict}</span>
+              </p>
+              {result.summary.top_fixes.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">가장 먼저 채울 것</p>
+                  <ol className="space-y-1.5">
+                    {result.summary.top_fixes.map((fix, i) => (
+                      <li key={i} className="flex gap-2 text-sm">
+                        <span className="font-bold text-primary shrink-0">{i + 1}.</span>
+                        <span>{fix}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          </AstryxCard>
+        )}
+
         {/* 탭 */}
         <TabList value={tab} onChange={setTab} layout="fill" className="mb-6">
           <Tab value="summary" label="요약" />
@@ -394,9 +422,12 @@ export default function ResultScreen({
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
                       <AstryxBadge variant="orange" label={item.screen} />
                       {sev && <AstryxBadge variant={sev.variant} label={sev.label} />}
-                      {v2Item.principle && (
+                      {/* v3: 템플릿 근거 항목 / v2: UX 원칙 */}
+                      {item.section_ref ? (
+                        <span className="text-[10px] text-muted-foreground">템플릿 {item.section_ref}</span>
+                      ) : v2Item.principle ? (
                         <span className="text-[10px] text-muted-foreground">{v2Item.principle}</span>
-                      )}
+                      ) : null}
                     </div>
                     <p className="text-sm mb-3">
                       <span className="text-amber-400 font-medium">문제: </span>
@@ -440,6 +471,9 @@ export default function ResultScreen({
                     <div className="mb-3 flex items-center gap-2 flex-wrap">
                       <AstryxBadge variant="blue" label={item.module} />
                       {sev && <AstryxBadge variant={sev.variant} label={sev.label} />}
+                      {item.section_ref && (
+                        <span className="text-[10px] text-muted-foreground">템플릿 {item.section_ref}</span>
+                      )}
                     </div>
                     <p className="text-sm mb-3">
                       <span className="text-blue-400 font-medium">문제: </span>
@@ -536,7 +570,9 @@ export default function ResultScreen({
           {tab === 'recommendations' && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground mb-4">
-              사용성 및 비즈니스 성과를 높이기 위한 UX 제안
+              {v3
+                ? '점수와 무관한 UX 관점 제안입니다. 템플릿이 요구하지 않는 사용성·접근성 개선 아이디어를 원칙 근거와 함께 모았습니다'
+                : '사용성 및 비즈니스 성과를 높이기 위한 UX 제안'}
             </p>
             {result.ux_recommendations.map((rec, i) => {
               const n = normalizeRec(rec)
