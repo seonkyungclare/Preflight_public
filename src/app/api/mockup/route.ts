@@ -164,63 +164,65 @@ Rules:
 - Actions without clear navigation target: render as visual-only (no onClick)
 - Do NOT add elements not in the screen spec`
 
-const HIFI_SYSTEM = `You generate high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes for interactive prototypes.
+const HIFI_SYSTEM = `You generate STRUCTURAL high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes.
+
+PURPOSE (read first):
+The mockup exists to show (1) the overall structure of each screen and (2) which elements and attributes the screen needs: fields, columns, actions, states, navigation.
+It is NOT a demo. Data does not need to look real. Every element must be present; nothing needs to be pretty or detailed.
+Short code is a hard requirement: the whole function must be ≤ 110 lines. If the spec is large, compress (fewer rows, one helper, no extras); never drop required elements.
 
 Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
 - No imports. No export. No other functions or code outside the one function.
 - Use MCDS CSS CLASSES via className. NO component library (no antd) — only plain HTML elements + MCDS classes. The MCDS stylesheet is already loaded globally.
-- Inline style ONLY for one-off spacing/layout a class doesn't cover (e.g. a flex header row). Never hardcode colors — MCDS classes/tokens carry all color.
+- Inline style ONLY for one-off layout (e.g. a flex header row). Never hardcode colors.
 
 Pre-imported (DO NOT re-import): React, useState (from 'react').
 
-Code style (COMPACT — token budget is limited):
+Code style (COMPACT):
 - No comments, no JSDoc, no blank lines between JSX elements
-- Mock data arrays: maximum 3 items; always use .map(), never repeat similar JSX blocks
-- Short readable var names (open, sel, toast)
+- Data arrays: exactly 2 placeholder rows; always .map(); never repeat similar JSX blocks
+- Short var names (open, sel, tab). At most 3 useState hooks.
+- Cell/field values are PLACEHOLDERS, not realistic data: text → the column/field name itself or "값", date → "2026-01-01", number → "0", amount → "0원", status → an actual PRD status value in a chip.
 
-SCREEN SHAPE: return page content only (the app shell already provides the LNB + page padding).
-Start with <h1 className="page-title">화면명</h1>, then one or more <section className="section"> blocks.
-Section header with an action button on the right:
-  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div className="section__title">목록</div><button className="btn btn--primary btn--36" onClick={()=>setOpen(true)}>+ 생성</button></div>
+SCREEN SHAPE: return page content only (the app shell provides LNB + padding).
+<h1 className="page-title">화면명</h1> then <section className="section"> blocks in this order, including only what the spec has:
+1. Actions row: section title left, spec ACTIONS as buttons right (primary = first action, others secondary). No buttons that are not in ACTIONS.
+2. Filters (list/dashboard only, if FIELDS given): each FIELD as the matching control (TextField / Select / DatePicker) with its label. This shows which attributes filter the screen.
+3. Body by TYPE:
+   - list: table with ALL COLUMNS as <th>, 2 placeholder rows, status column as chip, first column as mcds-table__link. Row click → navigate(detail id) if a detail target exists, else opens the Dialog.
+   - form: <div className="form"> with one row per FIELD: label (+ <span className="req">*</span> for required) and the matching control. Footer: 취소 / 저장 buttons.
+   - detail: <div className="mcds-desc"> with one label/value pair per FIELD (placeholder values). Actions from ACTIONS.
+   - dashboard: one <div className="mcds-stat"> per FIELD (label + "0"), then a 3-column mini table if COLUMNS given.
+   - other: sections listing FIELDS/COLUMNS as label/value pairs.
+4. SECTIONS (if given): one <section> each: title + 3 mcds-stat cards or a mini table (≤3 columns, 2 rows). Never a full table per section.
 
-MCDS COMPONENT CLASSES:
-- Button: <button className="btn btn--primary">저장</button> — types primary(solid)/secondary(line)/tertiary(accent line)/warning(red line); sizes btn--32/--36/--40(default)/--48; icon-only add btn--icon; disabled → add disabled attr.
-- Table (list type):
-  <div className="mcds-table-wrap"><table className="mcds-table"><thead><tr><th>컬럼명</th>…</tr></thead><tbody>{rows.map(r=><tr key={r.id} onClick={()=>{setSel(r);setOpen(true)}}><td><span className="mcds-table__link">{r.name}</span></td><td className="mcds-table__num">₩2,400,000</td><td><span className="chip chip--accent">진행중</span></td></tr>)}</tbody></table></div>
-  · right-align numbers: td className="mcds-table__num" · selected row: <tr className="is-selected"> · status cell: use chip.
-  · Pagination: <div className="pagination"><button className="pagination__item">‹</button><button className="pagination__item pagination__item--current">1</button><button className="pagination__item">2</button><button className="pagination__item">›</button></div>
-- Status/Tag: <span className="chip chip--accent">진행중</span> (accent=강조, low=보조, 기본=중립); small: add chip--24.
-- TextField: <div className="textfield"><div className="textfield__box"><input className="textfield__input" placeholder="입력"/></div></div>
-- Select: <select className="mcds-select"><option>전체</option><option>진행중</option></select>
-- DatePicker: <div className="datepicker"><input className="datepicker__input" placeholder="YYYY-MM-DD"/></div> · range: <div className="date-range">…<span className="date-range__tilde">~</span>…</div>
-- Radio group: <div className="radio-group">{opts.map(o=><button key={o} className="radio" onClick={()=>setSel(o)}><span className="radio__dot" data-on={sel===o||undefined}/><span className="radio__label">{o}</span></button>)}</div>
-- Checkbox: <button className="checkbox" aria-checked={on} onClick={()=>setOn(v=>!v)}><span className="checkbox__box"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#fff" strokeWidth="2" fill="none"/></svg></span><span className="checkbox__label">동의</span></button>
-- Descriptions (detail key-value): <div className="mcds-desc"><div className="mcds-desc__label">이름</div><div className="mcds-desc__value">…</div>…</div>
-- Card / metric: <div className="mcds-card"><div className="mcds-card__title">제목</div>…</div> · stat: <div className="mcds-stat"><span className="mcds-stat__label">노출수</span><span className="mcds-stat__value">12,400</span></div>
+MCDS COMPONENT CLASSES (use exactly these):
+- Button: <button className="btn btn--primary">저장</button> — primary/secondary/tertiary/warning; sizes btn--32/--36/--40; disabled attr for disabled.
+- Table: <div className="mcds-table-wrap"><table className="mcds-table"><thead><tr><th>컬럼</th>…</tr></thead><tbody>{rows.map(r=><tr key={r.id} onClick={…}><td><span className="mcds-table__link">{r.a}</span></td><td className="mcds-table__num">0</td><td><span className="chip chip--accent">상태값</span></td></tr>)}</tbody></table></div>
+  Pagination (list only): <div className="pagination"><button className="pagination__item pagination__item--current">1</button><button className="pagination__item">2</button></div>
+- Chip: <span className="chip chip--accent">진행중</span> (accent=강조, low=보조).
+- TextField: <div className="textfield"><div className="textfield__box"><input className="textfield__input" placeholder="필드명"/></div></div>
+- Select: <select className="mcds-select"><option>전체</option><option>PRD 값</option></select>
+- DatePicker: <div className="datepicker"><input className="datepicker__input" placeholder="YYYY-MM-DD"/></div>
+- Checkbox: <button className="checkbox" aria-checked={on}><span className="checkbox__box"/><span className="checkbox__label">라벨</span></button>
+- Desc: <div className="mcds-desc"><div className="mcds-desc__label">라벨</div><div className="mcds-desc__value">값</div>…</div>
+- Stat: <div className="mcds-stat"><span className="mcds-stat__label">지표명</span><span className="mcds-stat__value">0</span></div>
 - Tabs: <div className="mcds-tabs">{tabs.map(t=><button key={t} className={"mcds-tab"+(tab===t?" mcds-tab--active":"")} onClick={()=>setTab(t)}>{t}</button>)}</div>
-- Alert: <div className="mcds-alert mcds-alert--info">안내 문구</div> (info/error/success)
-- Empty: <div className="mcds-empty"><div className="mcds-empty__title">데이터가 없습니다</div></div>
-- Form rows: <div className="form"><div className="row"><div className="row__label"><span>라벨<span className="req">*</span></span></div><div className="row__field">…field…</div></div>…</div>
+- Alert: <div className="mcds-alert mcds-alert--info">안내 문구</div>
+- Empty: <div className="mcds-empty"><div className="mcds-empty__title">0건</div></div>
+- Form row: <div className="form"><div className="row"><div className="row__label"><span>라벨<span className="req">*</span></span></div><div className="row__field">…</div></div></div>
 
-INTERACTION PATTERNS (NO dead ends — every control does something; use useState for list data, open state, selected item, active tab, toast):
-- Modal (detail ≤5 fields, or create/edit form) — official MCDS .overlay/.modal (default width 540; wider form: add modal--660 or modal--780 on the .modal div):
-  {open && <div className="overlay" onClick={()=>setOpen(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal__header"><div className="modal__title">제목</div><button className="modal__close" onClick={()=>setOpen(false)}>✕</button></div><div className="modal__body"><div className="form">…rows…</div></div><div className="modal__footer"><button className="btn btn--secondary" onClick={()=>setOpen(false)}>취소</button><button className="btn btn--primary" onClick={()=>{setOpen(false);setToast('저장되었습니다')}}>저장</button></div></div></div>}
-  (detail view: put <div className="mcds-desc">…</div> in modal__body instead of a form.)
-- Drawer (detail >5 fields): className "overlay overlay--right", inner "mcds-drawer" with mcds-drawer__header/__title/__close/__body/__footer.
-- Toast (success feedback): call setToast('저장되었습니다') ONLY inside event handlers (never during render). Render at the end of the return:
-  {toast && <div className="mcds-toast-wrap"><div className="mcds-toast mcds-toast--success">{toast}</div></div>}
-- Delete confirm — official MCDS .alert dialog (compact, no header/close):
-  {del && <div className="overlay" onClick={()=>setDel(false)}><div className="alert" onClick={e=>e.stopPropagation()}><div className="alert__text"><div className="alert__title">삭제하시겠습니까?</div><div className="alert__desc">이 작업은 되돌릴 수 없습니다.</div></div><div className="alert__actions"><button className="btn btn--secondary" onClick={()=>setDel(false)}>취소</button><button className="btn btn--warning" onClick={()=>{setDel(false);setToast('삭제되었습니다')}}>삭제</button></div></div></div>}
-- Create/edit: form Modal submit → setOpen(false) + update list useState + toast. Edit opens the same Modal pre-filled from the selected row.
-- Navigation: navigate('targetId') — ONLY to ids in NAVIGATION TARGETS; never invent an id, never navigate when the list is empty.
+INTERACTIONS (minimal — enough to show where each action leads):
+- navigate('id') ONLY to ids in NAVIGATION TARGETS. Never invent ids.
+- Exactly ONE Dialog per screen at most, and only when an ACTION needs one (생성/수정/삭제 confirm). Use the official MCDS overlay/modal:
+  {open && <div className="overlay" onClick={()=>setOpen(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal__header"><div className="modal__title">제목</div><button className="modal__close" onClick={()=>setOpen(false)}>✕</button></div><div className="modal__body">…form rows or desc…</div><div className="modal__footer"><button className="btn btn--secondary" onClick={()=>setOpen(false)}>취소</button><button className="btn btn--primary" onClick={()=>setOpen(false)}>저장</button></div></div></div>}
+- No toast, no drawer, no list mutation logic, no edit-prefill, no loading/empty/error variants unless the spec lists them as ACTIONS/FIELDS.
 
-DATA:
-- All text Korean. Realistic mock: brand/product names, dates "2026-04-15", amounts "₩2,400,000", PRD-defined status values mixed.
-- List: 3 rows, ALL columns filled (no empty cells); status column uses chip.
-- Exact PRD field/column names — do not rename or add columns/fields not in spec.
-- Do NOT add utility buttons not in spec (새로고침/내보내기/인쇄 etc.).
-- Normal flow only — no empty/loading/error state screens unless specified.`
+RULES:
+- All text Korean. Use exact PRD field/column/action names. Do not add columns, fields or buttons that are not in the spec.
+- Required-looking fields (ID, 이름, 일자 등) get the * mark; others not.
+- If COLUMNS > 8, show the first 8 and one "…" column header.`
 
 // ============================================================================
 // CODE UTILITIES
@@ -288,7 +290,7 @@ function getScreenModel(): string {
 
 // 화면 수 상한(화면은 병렬 생성되므로 벽시계 시간은 화면 수에 크게 비례하지 않음).
 // 실행시간·토큰·동시호출 한도 안전장치. env MOCKUP_MAX_SCREENS로 조정 가능.
-const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 12
+const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 10
 
 // 전체 시간 예산. Vercel 함수 제한(300초) 안에 반드시 응답하도록, 조립·검증 여유(약 60초)를 뺀 값.
 // 예산을 넘긴 화면은 제외하고 나머지로 조립한다(타임아웃으로 전부 잃는 것보다 낫다).
@@ -437,8 +439,7 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
   if (screen.sections && screen.sections.length > 0) {
     lines.push(
       `SECTIONS (parts of THIS screen, not separate screens): ${screen.sections.join(' | ')}`,
-      `- Render each section as ONE compact block: a heading + either 3 KPI cards (label + value) or a mini table with ≤3 columns and 2 rows. Never a full table per section.`,
-      `- Total component ≤ 180 lines. Reuse one small row-render helper instead of repeating JSX.`,
+      `- Render each section as ONE compact block: a heading + either 3 stat cards (label + "0") or a mini table with ≤3 columns and 2 rows. Never a full table per section.`,
     )
   }
   // navigate()는 여기 나열된 id로만 허용한다. 목록에 없으면 화면 간 이동을 만들지 않는다(엉뚱한 연결 방지).
@@ -454,7 +455,7 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
 }
 
 // 화면 1개당 출력 상한. antd 화면은 코드가 길어 넉넉히 잡는다(8192 초과이므로 output-128k 베타 필요).
-const SCREEN_MAX_TOKENS = 9000
+const SCREEN_MAX_TOKENS = 4500 // 구조 충실 목업: 화면당 ≤110줄
 
 async function generateScreen(
   anthropic: Anthropic,
@@ -471,9 +472,9 @@ async function generateScreen(
     return null
   }
   const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
-  // Hi-Fi는 antd라 코드가 길어 넉넉히, Lo-Fi는 단순해 기존 상한 유지.
+  // Hi-Fi 도 구조 충실 목업(≤110줄)이라 상한을 낮춘다. 출력 토큰이 곧 생성 시간이다.
   const maxTokens = type === 'hifi' ? SCREEN_MAX_TOKENS : 4000
-  const temperature = type === 'hifi' ? 0.3 : 0.15
+  const temperature = type === 'hifi' ? 0.2 : 0.15
 
   // 첫 시도가 실패(max_tokens 잘림·괄호 불완전·repair 실패)하면 1회 재시도해 화면 drop을 최소화한다.
   // 모든 화면이 같은 systemPrompt를 쓰므로 prompt-caching으로 반복 입력 토큰 절약.
