@@ -66,7 +66,9 @@ Actor↔시나리오 · 시나리오↔화면(SC-nn) · 화면↔시나리오(S-
 * 요소는 빠짐없이: 스펙의 컬럼·필드·액션은 전부 MCDS 컴포넌트로 표시. 필드 유형은 컴포넌트 선택(TextField·Select·Date Picker)으로 드러낸다.
 * 인터랙션은 최소: 이동(navigate)과 화면당 Dialog 1개까지. 토스트·드로어·목록 갱신 로직·상태 변형 화면 없음.
 * 크기 상한: 화면당 110줄, 출력 4,500토큰, 화면 수 10개. 접힌 섹션은 요약 블록(stat 3개 또는 3열 2행 표).
+* **상세 모드(선택)**: Hi-Fi 행의 "구조/상세" 토글. 실제 데이터 느낌·풍부한 인터랙션(이전 프롬프트, 9,000토큰). 생성 시간이 길다.
 * Lo-Fi 는 기존 그레이스케일 와이어프레임 유지.
+* **호출 구조(2026-09-22)**: 브라우저가 3단계를 지휘한다. `/api/mockup/spec`(화면 구조, 함수 1개) → `/api/mockup/screen`(화면마다 함수 1개, 동시, 각 270초 예산) → `/api/mockup/assemble`(조립·검증). 한 함수에 몰면 Vercel 300초를 넘겨 결과를 통째로 잃으므로 화면 단위로 나눈다. 코어 로직은 `src/lib/mockup/core.ts`.
 
 ## A-9. 출력
 `section_coverage[]` · `hard_gates[]` · `actors{defined, detected_undefined}` · `scenarios{}` · `cross_reference_issues[]` 를 추가로 담는다. `validated` · `missing_for_designers` · `missing_for_developers` · `critical_questions` · `ux_recommendations` · `mockup_directives` 는 v2 와 형식이 같다. `criteria` · `project_type` · `applied_weights` 는 출력하지 않는다.

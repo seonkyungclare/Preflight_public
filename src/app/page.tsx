@@ -169,7 +169,8 @@ interface AppState {
   error: string | null
   mockupGenerating: MockupType | null  // 생성 중인 타입, null이면 미생성 중
   mockupProgress: number | null  // 생성 진행률 0-100, null이면 아직 진행률 미수신
-  mockupMessage: string | null   // 서버 진행 메시지("화면 생성 중 (2/5) · 46초 경과")
+  mockupMessage: string | null   // 진행 메시지("화면 생성 중 (2/5) · 46초 경과")
+  mockupDetail: boolean          // Hi-Fi 상세 모드(실제 데이터 느낌·풍부한 인터랙션). 기본은 구조 모드
   mockupSpec: unknown  // 앞선 생성에서 확정된 화면 구조(spec). Lo-Fi/Hi-Fi가 공유해 동일 화면 집합 보장
   historyId: string | null  // 현재 분석 세션의 history 엔트리 ID
   historyCreatedAt: number | null
@@ -193,6 +194,7 @@ export default function Home() {
     mockupGenerating: null,
     mockupProgress: null,
     mockupMessage: null,
+    mockupDetail: false,
     mockupSpec: null,
     analysis: null,
     historyId: null,
@@ -263,6 +265,8 @@ export default function Home() {
   }
 
   // 타입별 목업 생성 또는 캐시 오픈 (regenerate=true면 캐시 무시)
+  // 브라우저가 3단계를 지휘한다: spec(함수 1개) → 화면별 screen(화면마다 함수 1개, 동시) → assemble.
+  // 한 함수에 몰면 Vercel 300초를 넘겨 결과를 통째로 잃으므로 화면 단위로 나눈다.
   async function handleGenerateMockup(type: MockupType, regenerate = false) {
     if (!state.analysis) return
 
@@ -275,63 +279,94 @@ export default function Home() {
     setState(prev => ({ ...prev, mockupGenerating: type, mockupProgress: 0, mockupMessage: '요청 준비 중' }))
     const controller = new AbortController()
     abortRef.current = controller
+    const setProgress = (progress: number, message: string) =>
+      setState(prev => ({ ...prev, mockupProgress: progress, mockupMessage: message }))
 
-    try {
-      const res = await fetch('/api/mockup', {
+    const post = async <T,>(url: string, body: unknown): Promise<T> => {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prdText: state.prdText,
-          // analysisText에 전체 analysis JSON을 전달 (mockup_directives 포함)
-          analysisText: JSON.stringify(state.analysis),
-          type,
-          // 앞서 확정된 spec이 있으면 재사용 → Lo-Fi/Hi-Fi가 동일 화면 집합 공유(요건 ④)
-          existingSpec: state.mockupSpec ?? undefined,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       })
+      const text = await res.text()
+      let parsed: unknown = null
+      try { parsed = text ? JSON.parse(text) : null } catch { /* 비 JSON 응답 */ }
+      if (!res.ok) {
+        const msg = (parsed as { error?: string } | null)?.error ?? text ?? '요청 실패'
+        throw new Error(msg || '요청 실패')
+      }
+      return parsed as T
+    }
 
-      if (!res.ok || !res.body) throw new Error('목업 생성 실패')
+    let heartbeat: ReturnType<typeof setInterval> | null = null
+    try {
+      // 1) 화면 구조: 앞서 확정된 spec 이 있으면 재사용(Lo-Fi/Hi-Fi 동일 화면 집합)
+      let spec = state.mockupSpec as { screens: Array<{ id: string; name: string }> } | null
+      if (!spec || !Array.isArray(spec.screens) || spec.screens.length === 0) {
+        setProgress(10, 'PRD 화면 구조 분석 중')
+        const r = await post<{ spec: { screens: Array<{ id: string; name: string }> } }>('/api/mockup/spec', {
+          prdText: state.prdText,
+          analysisText: JSON.stringify(state.analysis),
+        })
+        spec = r.spec
+      }
+      const screens = spec.screens
+      const total = screens.length
+      setProgress(20, `화면 구조 분석 완료 (${total}개 화면)`)
 
-      // NDJSON 스트림 파싱: {type:'progress'|'done'|'error'} 이벤트를 줄 단위로 수신
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let files: Record<string, string> | null = null
-      let receivedSpec: unknown = null
-      let streamError: string | null = null
+      // 2) 화면별 생성: 동시에 요청. 각 요청은 자기 몫의 함수(300초)를 쓴다
+      const t0 = Date.now()
+      let completed = 0
+      const codes: Record<string, string> = {}
+      const dropped: Array<{ id: string; name: string; reason: string }> = []
+      const elapsed = () => Math.round((Date.now() - t0) / 1000)
+      const tick = () => setProgress(20 + Math.round((completed / total) * 65), `화면 생성 중 (${completed}/${total}) · ${elapsed()}초 경과`)
+      heartbeat = setInterval(tick, 5000)
+      tick()
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? '' // 마지막 조각은 미완성일 수 있어 버퍼에 보관
-        for (const line of lines) {
-          if (!line.trim()) continue
-          const evt = JSON.parse(line) as
-            | { type: 'progress'; progress: number; message?: string }
-            | { type: 'done'; files: Record<string, string>; spec?: unknown }
-            | { type: 'error'; error: string }
-          if (evt.type === 'progress') {
-            setState(prev => ({ ...prev, mockupProgress: evt.progress, mockupMessage: evt.message ?? prev.mockupMessage }))
-          } else if (evt.type === 'done') {
-            files = evt.files
-            receivedSpec = evt.spec ?? null
-          } else if (evt.type === 'error') {
-            streamError = evt.error
+      await Promise.all(
+        screens.map(async screen => {
+          try {
+            const r = await post<{ id: string; code: string | null; reason: string | null }>('/api/mockup/screen', {
+              screen,
+              allScreens: screens,
+              type,
+              mode: type === 'hifi' && state.mockupDetail ? 'detail' : 'structure',
+            })
+            if (r.code) codes[screen.id] = r.code
+            else dropped.push({ id: screen.id, name: screen.name, reason: r.reason ?? 'failed' })
+          } catch (e) {
+            if (controller.signal.aborted) throw e
+            dropped.push({ id: screen.id, name: screen.name, reason: 'failed' })
+          } finally {
+            completed++
+            tick()
           }
-        }
+        }),
+      )
+      clearInterval(heartbeat)
+      heartbeat = null
+
+      if (Object.keys(codes).length === 0) {
+        throw new Error('화면 생성에 모두 실패했습니다. 다시 시도해주세요.')
       }
 
-      if (streamError) throw new Error(streamError)
-      if (!files) throw new Error('목업 생성 실패')
+      // 3) 조립
+      setProgress(90, dropped.length > 0 ? `화면 조립 중 (${dropped.length}개 제외)` : '화면 조립 중')
+      const assembled = await post<{ files: Record<string, string>; spec: unknown }>('/api/mockup/assemble', {
+        spec,
+        codes,
+        type,
+        dropped,
+      })
+      setProgress(100, '완료')
 
-      const data = { files }
-      console.log('[mockup] 생성 완료, 새 탭 오픈 시도', { type, fileKeys: Object.keys(data.files) })
+      const files = assembled.files
+      const receivedSpec = assembled.spec ?? spec
       const now = Date.now()
-      const nextLowFi = type === 'lowfi' ? data.files : state.mockupFilesLowFi
-      const nextHiFi = type === 'hifi' ? data.files : state.mockupFilesHiFi
+      const nextLowFi = type === 'lowfi' ? files : state.mockupFilesLowFi
+      const nextHiFi = type === 'hifi' ? files : state.mockupFilesHiFi
       const nextLowFiAt = type === 'lowfi' ? now : state.mockupLowFiAt
       const nextHiFiAt = type === 'hifi' ? now : state.mockupHiFiAt
       setState(prev => ({
@@ -339,14 +374,13 @@ export default function Home() {
         mockupGenerating: null,
         mockupProgress: null,
         mockupMessage: null,
-        // 확정된 spec 보관(없으면 기존 유지) → 다음 fidelity 생성 시 동일 화면 집합 재사용
         mockupSpec: receivedSpec ?? prev.mockupSpec,
         mockupFilesLowFi: nextLowFi,
         mockupFilesHiFi: nextHiFi,
         mockupLowFiAt: nextLowFiAt,
         mockupHiFiAt: nextHiFiAt,
       }))
-      openMockupTab(data.files, state.analysis, type)
+      openMockupTab(files, state.analysis, type)
 
       if (state.historyId) {
         saveEntry({
@@ -363,6 +397,7 @@ export default function Home() {
         }).catch(err => console.error('[history] 목업 저장 실패:', err))
       }
     } catch (e) {
+      if (heartbeat) clearInterval(heartbeat)
       // 취소한 경우 에러 표시 없이 조용히 종료
       if ((e as Error).name === 'AbortError') {
         setState(prev => ({ ...prev, mockupGenerating: null, mockupProgress: null, mockupMessage: null }))
@@ -397,6 +432,7 @@ export default function Home() {
       mockupGenerating: null,
       mockupProgress: null,
       mockupMessage: null,
+      mockupDetail: false,
       mockupSpec: null,
       historyId: entry.id,
       historyCreatedAt: entry.createdAt,
@@ -443,6 +479,8 @@ export default function Home() {
           mockupGenerating={state.mockupGenerating}
           mockupProgress={state.mockupProgress}
           mockupMessage={state.mockupMessage}
+          mockupDetail={state.mockupDetail}
+          onToggleMockupDetail={(v) => setState(prev => ({ ...prev, mockupDetail: v }))}
           onReupload={() => setState(prev => ({ ...prev, screen: 'upload', error: null, mockupSpec: null }))}
         />
       )}

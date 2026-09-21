@@ -1,14 +1,23 @@
+// ============================================================================
+// 목업 생성 코어 (공용 모듈)
+// ----------------------------------------------------------------------------
+// 브라우저가 지휘하는 3단계 API 가 이 모듈을 공유한다.
+//   POST /api/mockup/spec     — PRD → 화면 구조(spec). 함수 1개
+//   POST /api/mockup/screen   — 화면 1개 코드 생성. 화면마다 함수 1개(각각 300초 예산)
+//   POST /api/mockup/assemble — 코드 조립 + 검증. 수 초
+// 한 함수에 전부 담으면 Vercel 300초를 넘겨 결과를 통째로 잃는다(2026-09-21). 화면 단위로 나누면
+// 화면당 300초를 온전히 쓰므로 상세 모드도 안전하다.
+// ============================================================================
+
 import Anthropic from '@anthropic-ai/sdk'
 import { parse as babelParse } from '@babel/parser'
-import { MCDS_CSS } from '@/lib/mcds-css'
 
-export const maxDuration = 300 // Vercel 최대 실행 시간 300초 (Pro plan)
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface ScreenSpec {
+export interface ScreenSpec {
   id: string
   name: string
   type: 'list' | 'form' | 'detail' | 'dashboard' | 'other'
@@ -21,13 +30,13 @@ interface ScreenSpec {
   sections?: string[]
 }
 
-interface NoteItem {
+export interface NoteItem {
   category: 'missing' | 'ambiguous' | 'omitted' | 'attention'
   item: string
   reason: string
 }
 
-interface MockupSpec {
+export interface MockupSpec {
   screens: ScreenSpec[]
   menu_screen_ids: string[]
   flows: Array<{ from: string; to: string; trigger: string }>
@@ -36,13 +45,6 @@ interface MockupSpec {
   note_items: NoteItem[]
 }
 
-interface RequestBody {
-  prdText: string
-  analysisText: string
-  type: 'lowfi' | 'hifi'
-  // 앞서 생성한 spec을 재사용하면 Lo-Fi/Hi-Fi가 동일 화면 집합을 공유한다.
-  existingSpec?: MockupSpec
-}
 
 // ============================================================================
 // PROMPTS
@@ -143,7 +145,7 @@ These are universal UI conventions — populate navigates_to and flows based on 
 - trigger: 아래 표준 어휘만 사용 — 정방향은 "행 클릭" | "생성 버튼" | "저장", 뒤로가기는 "목록으로" | "취소"
   (뒤로가기 trigger는 다이어그램에서 역방향 엣지로 필터되므로 반드시 "목록으로"/"취소"로 표기)`
 
-const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
+export const LOFI_SYSTEM = `You generate grayscale wireframe React component functions for low-fidelity prototypes.
 
 Output format (STRICT):
 - Generate ONLY: function Screen_XXX({ navigate }) { ... }
@@ -164,7 +166,7 @@ Rules:
 - Actions without clear navigation target: render as visual-only (no onClick)
 - Do NOT add elements not in the screen spec`
 
-const HIFI_SYSTEM = `You generate STRUCTURAL high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes.
+export const HIFI_SYSTEM = `You generate STRUCTURAL high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes.
 
 PURPOSE (read first):
 The mockup exists to show (1) the overall structure of each screen and (2) which elements and attributes the screen needs: fields, columns, actions, states, navigation.
@@ -224,6 +226,65 @@ RULES:
 - Required-looking fields (ID, 이름, 일자 등) get the * mark; others not.
 - If COLUMNS > 8, show the first 8 and one "…" column header.`
 
+// 상세 모드(선택): 실제 데이터 느낌·풍부한 인터랙션. 화면 단위 함수(300초)에서만 쓴다.
+export const HIFI_DETAIL_SYSTEM = `You generate high-fidelity React component functions styled with MCDS (MUSINSA Design System) CSS classes for interactive prototypes.
+
+Output format (STRICT):
+- Generate ONLY: function Screen_XXX({ navigate }) { ... }
+- No imports. No export. No other functions or code outside the one function.
+- Use MCDS CSS CLASSES via className. NO component library (no antd) — only plain HTML elements + MCDS classes. The MCDS stylesheet is already loaded globally.
+- Inline style ONLY for one-off spacing/layout a class doesn't cover (e.g. a flex header row). Never hardcode colors — MCDS classes/tokens carry all color.
+
+Pre-imported (DO NOT re-import): React, useState (from 'react').
+
+Code style (COMPACT — token budget is limited):
+- No comments, no JSDoc, no blank lines between JSX elements
+- Mock data arrays: maximum 3 items; always use .map(), never repeat similar JSX blocks
+- Short readable var names (open, sel, toast)
+
+SCREEN SHAPE: return page content only (the app shell already provides the LNB + page padding).
+Start with <h1 className="page-title">화면명</h1>, then one or more <section className="section"> blocks.
+Section header with an action button on the right:
+  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div className="section__title">목록</div><button className="btn btn--primary btn--36" onClick={()=>setOpen(true)}>+ 생성</button></div>
+
+MCDS COMPONENT CLASSES:
+- Button: <button className="btn btn--primary">저장</button> — types primary(solid)/secondary(line)/tertiary(accent line)/warning(red line); sizes btn--32/--36/--40(default)/--48; icon-only add btn--icon; disabled → add disabled attr.
+- Table (list type):
+  <div className="mcds-table-wrap"><table className="mcds-table"><thead><tr><th>컬럼명</th>…</tr></thead><tbody>{rows.map(r=><tr key={r.id} onClick={()=>{setSel(r);setOpen(true)}}><td><span className="mcds-table__link">{r.name}</span></td><td className="mcds-table__num">₩2,400,000</td><td><span className="chip chip--accent">진행중</span></td></tr>)}</tbody></table></div>
+  · right-align numbers: td className="mcds-table__num" · selected row: <tr className="is-selected"> · status cell: use chip.
+  · Pagination: <div className="pagination"><button className="pagination__item">‹</button><button className="pagination__item pagination__item--current">1</button><button className="pagination__item">2</button><button className="pagination__item">›</button></div>
+- Status/Tag: <span className="chip chip--accent">진행중</span> (accent=강조, low=보조, 기본=중립); small: add chip--24.
+- TextField: <div className="textfield"><div className="textfield__box"><input className="textfield__input" placeholder="입력"/></div></div>
+- Select: <select className="mcds-select"><option>전체</option><option>진행중</option></select>
+- DatePicker: <div className="datepicker"><input className="datepicker__input" placeholder="YYYY-MM-DD"/></div> · range: <div className="date-range">…<span className="date-range__tilde">~</span>…</div>
+- Radio group: <div className="radio-group">{opts.map(o=><button key={o} className="radio" onClick={()=>setSel(o)}><span className="radio__dot" data-on={sel===o||undefined}/><span className="radio__label">{o}</span></button>)}</div>
+- Checkbox: <button className="checkbox" aria-checked={on} onClick={()=>setOn(v=>!v)}><span className="checkbox__box"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#fff" strokeWidth="2" fill="none"/></svg></span><span className="checkbox__label">동의</span></button>
+- Descriptions (detail key-value): <div className="mcds-desc"><div className="mcds-desc__label">이름</div><div className="mcds-desc__value">…</div>…</div>
+- Card / metric: <div className="mcds-card"><div className="mcds-card__title">제목</div>…</div> · stat: <div className="mcds-stat"><span className="mcds-stat__label">노출수</span><span className="mcds-stat__value">12,400</span></div>
+- Tabs: <div className="mcds-tabs">{tabs.map(t=><button key={t} className={"mcds-tab"+(tab===t?" mcds-tab--active":"")} onClick={()=>setTab(t)}>{t}</button>)}</div>
+- Alert: <div className="mcds-alert mcds-alert--info">안내 문구</div> (info/error/success)
+- Empty: <div className="mcds-empty"><div className="mcds-empty__title">데이터가 없습니다</div></div>
+- Form rows: <div className="form"><div className="row"><div className="row__label"><span>라벨<span className="req">*</span></span></div><div className="row__field">…field…</div></div>…</div>
+
+INTERACTION PATTERNS (NO dead ends — every control does something; use useState for list data, open state, selected item, active tab, toast):
+- Modal (detail ≤5 fields, or create/edit form) — official MCDS .overlay/.modal (default width 540; wider form: add modal--660 or modal--780 on the .modal div):
+  {open && <div className="overlay" onClick={()=>setOpen(false)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal__header"><div className="modal__title">제목</div><button className="modal__close" onClick={()=>setOpen(false)}>✕</button></div><div className="modal__body"><div className="form">…rows…</div></div><div className="modal__footer"><button className="btn btn--secondary" onClick={()=>setOpen(false)}>취소</button><button className="btn btn--primary" onClick={()=>{setOpen(false);setToast('저장되었습니다')}}>저장</button></div></div></div>}
+  (detail view: put <div className="mcds-desc">…</div> in modal__body instead of a form.)
+- Drawer (detail >5 fields): className "overlay overlay--right", inner "mcds-drawer" with mcds-drawer__header/__title/__close/__body/__footer.
+- Toast (success feedback): call setToast('저장되었습니다') ONLY inside event handlers (never during render). Render at the end of the return:
+  {toast && <div className="mcds-toast-wrap"><div className="mcds-toast mcds-toast--success">{toast}</div></div>}
+- Delete confirm — official MCDS .alert dialog (compact, no header/close):
+  {del && <div className="overlay" onClick={()=>setDel(false)}><div className="alert" onClick={e=>e.stopPropagation()}><div className="alert__text"><div className="alert__title">삭제하시겠습니까?</div><div className="alert__desc">이 작업은 되돌릴 수 없습니다.</div></div><div className="alert__actions"><button className="btn btn--secondary" onClick={()=>setDel(false)}>취소</button><button className="btn btn--warning" onClick={()=>{setDel(false);setToast('삭제되었습니다')}}>삭제</button></div></div></div>}
+- Create/edit: form Modal submit → setOpen(false) + update list useState + toast. Edit opens the same Modal pre-filled from the selected row.
+- Navigation: navigate('targetId') — ONLY to ids in NAVIGATION TARGETS; never invent an id, never navigate when the list is empty.
+
+DATA:
+- All text Korean. Realistic mock: brand/product names, dates "2026-04-15", amounts "₩2,400,000", PRD-defined status values mixed.
+- List: 3 rows, ALL columns filled (no empty cells); status column uses chip.
+- Exact PRD field/column names — do not rename or add columns/fields not in spec.
+- Do NOT add utility buttons not in spec (새로고침/내보내기/인쇄 etc.).
+- Normal flow only — no empty/loading/error state screens unless specified.`
+
 // ============================================================================
 // CODE UTILITIES
 // ============================================================================
@@ -258,7 +319,7 @@ function isCodeComplete(code: string): boolean {
   return depth === 0
 }
 
-function validateJsx(code: string): { message: string; line?: number } | null {
+export function validateJsx(code: string): { message: string; line?: number } | null {
   try {
     babelParse(code, { sourceType: 'module', plugins: ['jsx'], errorRecovery: false })
     return null
@@ -272,7 +333,7 @@ function validateJsx(code: string): { message: string; line?: number } | null {
 // API HELPERS
 // ============================================================================
 
-function getAnthropicClient(): Anthropic {
+export function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.anthropic_api_key
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY 환경변수가 없습니다')
   // SDK 자동 재시도를 끈다. 타임아웃된 요청을 SDK 가 한 번 더 돌리면 시간 예산이 두 배로 새어
@@ -290,23 +351,23 @@ function getScreenModel(): string {
 
 // 화면 수 상한(화면은 병렬 생성되므로 벽시계 시간은 화면 수에 크게 비례하지 않음).
 // 실행시간·토큰·동시호출 한도 안전장치. env MOCKUP_MAX_SCREENS로 조정 가능.
-const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 10
+export const MAX_SCREENS = Number(process.env.MOCKUP_MAX_SCREENS) || 10
 
 // 전체 시간 예산. Vercel 함수 제한(300초) 안에 반드시 응답하도록, 조립·검증 여유(약 60초)를 뺀 값.
 // 예산을 넘긴 화면은 제외하고 나머지로 조립한다(타임아웃으로 전부 잃는 것보다 낫다).
-const TIME_BUDGET_MS = Number(process.env.MOCKUP_TIME_BUDGET_MS) || 230_000
+export const TIME_BUDGET_MS = Number(process.env.MOCKUP_TIME_BUDGET_MS) || 230_000
 const MIN_SCREEN_BUDGET_MS = 25_000 // 이보다 적게 남으면 화면 생성을 시작하지 않는다
 const MIN_RETRY_BUDGET_MS = 70_000 // 이보다 적게 남으면 재시도·수리 호출을 하지 않는다
 
-class Deadline {
-  constructor(private readonly startedAt: number, private readonly budgetMs: number) {}
+export class Deadline {
+  constructor(readonly startedAt: number, readonly budgetMs: number) {}
   elapsed(): number { return Date.now() - this.startedAt }
   remaining(): number { return Math.max(0, this.budgetMs - this.elapsed()) }
   /** SDK per-request timeout: 남은 예산에서 여유를 뺀 값 */
   requestTimeout(reserveMs = 5_000): number { return Math.max(1_000, this.remaining() - reserveMs) }
 }
 
-type DropReason = 'timeout' | 'failed' | 'skipped_budget'
+export type DropReason = 'timeout' | 'failed' | 'skipped_budget'
 
 function extractText(content: Anthropic.Messages.Message['content']): string {
   return content.map(b => (b.type === 'text' ? b.text : '')).join('').trim()
@@ -346,11 +407,11 @@ async function callClaudeCached(
 // STEP 1: SPEC EXTRACTION
 // ============================================================================
 
-async function extractSpec(
+export async function extractSpec(
   anthropic: Anthropic,
   prdText: string,
   analysisText: string,
-  deadline?: Deadline,
+  timeoutMs?: number,
 ): Promise<MockupSpec> {
   let directivesHint = ''
   try {
@@ -387,8 +448,7 @@ Actor 가 여럿이면 Actor 별로 접근 가능한 메뉴가 다를 수 있으
         content: `PRD:\n${prdText}${directivesHint}\n\nExtract the structured spec JSON.`,
       }],
     },
-    // 스펙 추출은 전체 예산의 절반까지만. 남은 절반은 화면 생성 몫
-    deadline ? Math.min(deadline.requestTimeout(), Math.floor(TIME_BUDGET_MS / 2)) : undefined,
+    timeoutMs,
   )
 
   const text = extractText(result.content)
@@ -455,9 +515,10 @@ function buildScreenUserPrompt(screen: ScreenSpec, allScreens: ScreenSpec[], typ
 }
 
 // 화면 1개당 출력 상한. antd 화면은 코드가 길어 넉넉히 잡는다(8192 초과이므로 output-128k 베타 필요).
-const SCREEN_MAX_TOKENS = 4500 // 구조 충실 목업: 화면당 ≤110줄
+export const SCREEN_MAX_TOKENS = 4500 // 구조 충실 목업: 화면당 ≤110줄
+export const SCREEN_MAX_TOKENS_DETAIL = 9000 // 상세 모드
 
-async function generateScreen(
+export async function generateScreen(
   anthropic: Anthropic,
   screen: ScreenSpec,
   allScreens: ScreenSpec[],
@@ -465,6 +526,7 @@ async function generateScreen(
   systemPrompt: string,
   deadline: Deadline,
   dropReasons: Map<string, DropReason>,
+  maxTokensOverride?: number,
 ): Promise<string | null> {
   if (deadline.remaining() < MIN_SCREEN_BUDGET_MS) {
     console.warn(`[mockup] Screen ${screen.id}: 시간 예산 부족(${Math.round(deadline.remaining() / 1000)}s) — 생성 생략`)
@@ -473,7 +535,7 @@ async function generateScreen(
   }
   const userPrompt = buildScreenUserPrompt(screen, allScreens, type)
   // Hi-Fi 도 구조 충실 목업(≤110줄)이라 상한을 낮춘다. 출력 토큰이 곧 생성 시간이다.
-  const maxTokens = type === 'hifi' ? SCREEN_MAX_TOKENS : 4000
+  const maxTokens = maxTokensOverride ?? (type === 'hifi' ? SCREEN_MAX_TOKENS : 4000)
   const temperature = type === 'hifi' ? 0.2 : 0.15
 
   // 첫 시도가 실패(max_tokens 잘림·괄호 불완전·repair 실패)하면 1회 재시도해 화면 drop을 최소화한다.
@@ -861,7 +923,7 @@ function pickFirstScreen(spec: MockupSpec, codedIds: Set<string>): string {
 //   - type 이 list 인데 부모가 dashboard / other / detail 인 것 (리포트 안의 표 섹션)
 // 유지: detail·form(상세·생성/수정 폼), 그리고 목록 부모 아래의 하위 기능 목록(예: 캠페인 관리 > 소재 관리).
 // 흡수 시 columns/fields/actions 를 부모에 합치고, 참조(navigates_to·flows·critical)는 부모로 치환한다.
-function foldSectionScreens(spec: MockupSpec): MockupSpec {
+export function foldSectionScreens(spec: MockupSpec): MockupSpec {
   const byId = new Map(spec.screens.map(s => [s.id, s]))
   const folded = new Map<string, string>() // child id → parent id
   for (const s of spec.screens) {
@@ -909,7 +971,7 @@ function foldSectionScreens(spec: MockupSpec): MockupSpec {
   }
 }
 
-function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+export function assembleLofiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
   const codedIds = new Set(screenCodes.keys())
   const has = (id: string) => screenCodes.has(id)
   const menuScreens = spec.screens.filter(s => spec.menu_screen_ids.includes(s.id))
@@ -1017,7 +1079,7 @@ ${screenRenders}
 }`
 }
 
-function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
+export function assembleHifiApp(screenCodes: Map<string, string>, spec: MockupSpec): string {
   const codedIds = new Set(screenCodes.keys())
 
   // Critical screens first in menu. 코드가 생성된 화면만 메뉴에 노출(죽은 링크 방지).
@@ -1163,228 +1225,3 @@ ${screenRenders}
 // POST HANDLER
 // ============================================================================
 
-export async function POST(req: Request): Promise<Response> {
-  const body: unknown = await req.json()
-
-  if (
-    typeof body !== 'object' ||
-    body === null ||
-    typeof (body as Record<string, unknown>).prdText !== 'string' ||
-    typeof (body as Record<string, unknown>).analysisText !== 'string'
-  ) {
-    return Response.json({ error: 'prdText와 analysisText가 필요합니다' }, { status: 400 })
-  }
-
-  const { prdText, analysisText, type = 'lowfi', existingSpec } = body as RequestBody
-
-  // 앞선 생성에서 확정된 spec이 있으면 재사용한다(Lo-Fi/Hi-Fi가 동일 화면 집합 공유).
-  // 화면 배열이 비어있지 않은 경우에만 유효한 spec으로 인정.
-  const providedSpec =
-    existingSpec && Array.isArray(existingSpec.screens) && existingSpec.screens.length > 0
-      ? existingSpec
-      : undefined
-
-  // NDJSON 스트림으로 진행률을 실시간 전송한다.
-  // 이벤트: {type:'progress', progress, message} / {type:'done', files} / {type:'error', error}
-  // 진행률 배분: spec 추출 ~20% → 화면 생성 20~85%(화면당 균등) → 조립 90% → 완료 100%
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let closed = false
-      const emit = (obj: Record<string, unknown>) => {
-        if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`))
-      }
-      const finish = () => {
-        if (!closed) {
-          closed = true
-          controller.close()
-        }
-      }
-
-      const deadline = new Deadline(Date.now(), TIME_BUDGET_MS)
-      const sec = () => Math.round(deadline.elapsed() / 1000)
-      try {
-        const anthropic = getAnthropicClient()
-        emit({ type: 'progress', progress: 5, message: '요청을 준비하고 있습니다' })
-
-        // Step 1: Spec 확보 — 재사용 가능한 spec이 있으면 추출을 건너뛴다(요건 ④)
-        let spec: MockupSpec
-        if (providedSpec) {
-          spec = providedSpec
-          console.log(`[mockup v3] Step 1: reusing provided spec (${spec.screens.length} screens)`)
-          emit({ type: 'progress', progress: 20, message: `저장된 화면 구조 재사용 (${spec.screens.length}개 화면)` })
-        } else {
-          console.log('[mockup v3] Step 1: extracting spec')
-          emit({ type: 'progress', progress: 10, message: 'PRD 화면 구조 분석 중' })
-          try {
-            try {
-              spec = await extractSpec(anthropic, prdText, analysisText, deadline)
-            } catch (firstErr) {
-              const status = (firstErr as { status?: number }).status
-              const transient = status === 429 || status === 529 || (typeof status === 'number' && status >= 500)
-              if (!transient || deadline.remaining() < 90_000) throw firstErr
-              console.warn(`[mockup v3] Spec extraction transient error(${status}) — 1회 재시도 (남은 예산 ${Math.round(deadline.remaining() / 1000)}s)`)
-              spec = await extractSpec(anthropic, prdText, analysisText, deadline)
-            }
-            console.log(`[mockup v3] Step 1 done in ${sec()}s`)
-          } catch (err) {
-            console.error(`[mockup v3] Spec extraction failed after ${sec()}s:`, err)
-            emit({ type: 'error', error: 'PRD 구조 추출에 실패했습니다. 다시 시도해주세요.' })
-            return finish()
-          }
-          // 화면 수 상한: 메뉴 화면 우선, 초과분은 잘라낸다. 단 조용히 버리지 않고
-          // NotePanel '미구현' 항목으로 노출해 디자이너가 누락 화면을 인지하도록 한다.
-          let droppedScreens: ScreenSpec[] = []
-          if (spec.screens.length > MAX_SCREENS) {
-            const menuIds = new Set(spec.menu_screen_ids)
-            const ordered = [
-              ...spec.screens.filter(s => menuIds.has(s.id)),
-              ...spec.screens.filter(s => !menuIds.has(s.id)),
-            ]
-            droppedScreens = ordered.slice(MAX_SCREENS)
-            spec.screens = ordered.slice(0, MAX_SCREENS)
-            spec.note_items = [
-              ...(spec.note_items ?? []),
-              ...droppedScreens.map(s => ({
-                category: 'omitted' as const,
-                item: s.name,
-                reason: `화면 수 상한(${MAX_SCREENS}개)으로 이번 목업에서 제외됨 — 디자이너 별도 구현 필요`,
-              })),
-            ]
-            console.warn(
-              `[mockup v3] Capped ${ordered.length} → ${MAX_SCREENS} screens. Dropped: ${droppedScreens.map(s => s.name).join(', ')}`,
-            )
-          }
-
-          if (spec.screens.length === 0) {
-            emit({ type: 'error', error: 'PRD에서 화면을 추출하지 못했습니다.' })
-            return finish()
-          }
-
-          emit({
-            type: 'progress',
-            progress: 20,
-            message:
-              droppedScreens.length > 0
-                ? `화면 구조 분석 완료 (${spec.screens.length}개 생성, ${droppedScreens.length}개 제외)`
-                : `화면 구조 분석 완료 (${spec.screens.length}개 화면)`,
-          })
-        }
-
-        // 섹션성 2뎁스 화면 흡수: 리포트/대시보드의 섹션이 화면으로 쪼개져 LNB 에 중복 노출되는 것을 막는다
-        spec = foldSectionScreens(spec)
-
-        console.log(`[mockup v3] Spec: ${spec.screens.length} screens, ${spec.menu_screen_ids.length} in menu`)
-
-        // Step 2: 화면을 병렬 생성. 화면이 완료될 때마다 진행률 emit.
-        // (flow는 별도 LLM 호출 없이 spec.flows + navigates_to + codeFlows로 조립 단계에서 구성)
-        console.log(`[mockup v3] Step 2: generating ${spec.screens.length} screens in parallel`)
-        const systemPrompt = type === 'hifi' ? HIFI_SYSTEM : LOFI_SYSTEM
-        const total = spec.screens.length
-        let completed = 0
-
-        const dropReasons = new Map<string, DropReason>()
-        // 첫 화면이 끝나기 전에도 진행 중임을 보여준다 (화면 생성은 병렬이라 초반 수십 초는 진행률이 움직이지 않는다)
-        const heartbeat = setInterval(() => {
-          if (completed < total) {
-            emit({ type: 'progress', progress: 20 + Math.round((completed / total) * 65), message: `화면 생성 중 (${completed}/${total}) · ${sec()}초 경과` })
-          }
-        }, 8_000)
-
-        let results: Array<string | null>
-        try {
-          results = await Promise.all(
-            spec.screens.map(async screen => {
-              try {
-                return await generateScreen(anthropic, screen, spec.screens, type, systemPrompt, deadline, dropReasons)
-              } catch (e) {
-                console.warn(`[mockup v3] Screen "${screen.name}" threw:`, e)
-                dropReasons.set(screen.id, 'failed')
-                return null
-              } finally {
-                completed++
-                const pct = 20 + Math.round((completed / total) * 65)
-                emit({ type: 'progress', progress: pct, message: `화면 생성 중 (${completed}/${total}) · ${sec()}초 경과` })
-              }
-            }),
-          )
-        } finally {
-          clearInterval(heartbeat)
-        }
-        console.log(`[mockup v3] Step 2 done in ${sec()}s. Flows: ${spec.flows.length} (from spec) + navigates_to + codeFlows`)
-
-        const screenCodes = new Map<string, string>()
-        const droppedByTime: ScreenSpec[] = []
-        spec.screens.forEach((screen, i) => {
-          const code = results[i]
-          if (code) {
-            screenCodes.set(screen.id, code)
-          } else {
-            const reason = dropReasons.get(screen.id) ?? 'failed'
-            console.warn(`[mockup v3] Screen "${screen.name}" (${screen.id}) dropped: ${reason}`)
-            if (reason === 'timeout' || reason === 'skipped_budget') droppedByTime.push(screen)
-          }
-        })
-        if (droppedByTime.length > 0) {
-          spec.note_items = [
-            ...(spec.note_items ?? []),
-            ...droppedByTime.map(s => ({
-              category: 'omitted' as const,
-              item: s.name,
-              reason: `생성 시간 제한(${Math.round(TIME_BUDGET_MS / 1000)}초)으로 이번 목업에서 제외됨. 재생성 시 다시 시도`,
-            })),
-          ]
-          emit({ type: 'progress', progress: 88, message: `시간 제한으로 화면 ${droppedByTime.length}개 제외, 나머지로 조립` })
-        }
-
-        if (screenCodes.size === 0) {
-          emit({ type: 'error', error: '화면 생성에 모두 실패했습니다. 다시 시도해주세요.' })
-          return finish()
-        }
-
-        // Step 3: Assemble
-        emit({ type: 'progress', progress: 90, message: '화면 조립 중' })
-        console.log(`[mockup v3] Step 3: assembling (${screenCodes.size}/${spec.screens.length} screens)`)
-        const appCode = type === 'hifi'
-          ? assembleHifiApp(screenCodes, spec)
-          : assembleLofiApp(screenCodes, spec)
-
-        // Final validation
-        const finalError = validateJsx(appCode)
-        if (finalError) {
-          console.error('[mockup v3] Assembly validation error:', finalError.message, `line ${finalError.line}`)
-          emit({
-            type: 'error',
-            error: '목업 조립 후 구문 오류가 발생했습니다. 다시 시도해주세요.',
-            detail: finalError.message,
-          })
-          return finish()
-        }
-
-        console.log(`[mockup v3] Done ✓ screens=${screenCodes.size}/${spec.screens.length} in ${sec()}s`)
-        emit({ type: 'progress', progress: 100, message: '완료' })
-        // Hi-Fi는 MCDS 스타일시트를 Sandpack 정적 파일로 함께 주입한다(App.js가 import './mcds.css').
-        const files: Record<string, string> =
-          type === 'hifi' ? { '/App.js': appCode, '/mcds.css': MCDS_CSS } : { '/App.js': appCode }
-        // spec을 함께 반환 → 클라이언트가 보관했다가 재생성 시 재사용(동일 화면 집합 유지)
-        emit({ type: 'done', files, spec })
-        finish()
-      } catch (error) {
-        console.error('[mockup v3] 오류:', error)
-        const msg =
-          error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')
-            ? 'API 키가 필요합니다.'
-            : '목업 생성 중 오류가 발생했습니다'
-        emit({ type: 'error', error: msg })
-        finish()
-      }
-    },
-  })
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'application/x-ndjson; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-    },
-  })
-}

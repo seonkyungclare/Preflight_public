@@ -29,6 +29,8 @@ interface ResultScreenProps {
   mockupGenerating: MockupType | null
   mockupProgress: number | null
   mockupMessage?: string | null
+  mockupDetail?: boolean
+  onToggleMockupDetail?: (detail: boolean) => void
   onReupload: () => void
 }
 
@@ -180,6 +182,8 @@ export default function ResultScreen({
   mockupGenerating,
   mockupProgress,
   mockupMessage = null,
+  mockupDetail = false,
+  onToggleMockupDetail,
   onReupload,
 }: ResultScreenProps) {
   // 진행률이 있으면 "생성 중 45%", 없으면 "생성 중"
@@ -209,6 +213,7 @@ export default function ResultScreen({
     badgeClass: string,
     hasMockup: boolean,
     mockupAt: number | null,
+    extra?: React.ReactNode,
   ) => (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
       <div className="min-w-0">
@@ -217,6 +222,7 @@ export default function ResultScreen({
           <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border ${badgeClass}`}>
             {badge}
           </span>
+          {extra}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 truncate">
           {mockupGenerating === type && mockupMessage
@@ -293,7 +299,35 @@ export default function ResultScreen({
 
           <div className="flex-1 min-w-[280px] flex flex-col gap-2">
             {renderMockupRow('lowfi', 'Lo-Fi', '와이어프레임', 'border-border bg-muted text-muted-foreground', hasMockupLowFi, mockupLowFiAt)}
-            {renderMockupRow('hifi', 'Hi-Fi', '인터랙티브', 'border-primary/30 bg-primary/10 text-primary', hasMockupHiFi, mockupHiFiAt)}
+            {renderMockupRow(
+              'hifi',
+              'Hi-Fi',
+              '인터랙티브',
+              'border-primary/30 bg-primary/10 text-primary',
+              hasMockupHiFi,
+              mockupHiFiAt,
+              onToggleMockupDetail && (
+                <div role="radiogroup" aria-label="Hi-Fi 모드" className="ml-1 inline-flex rounded border border-border overflow-hidden text-[10px]">
+                  {([['structure', '구조'], ['detail', '상세']] as const).map(([mode, text]) => {
+                    const on = (mode === 'detail') === mockupDetail
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        disabled={mockupGenerating !== null}
+                        onClick={() => onToggleMockupDetail(mode === 'detail')}
+                        className={`px-1.5 py-0.5 ${on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                        title={mode === 'detail' ? '실제 데이터 느낌·풍부한 인터랙션 (생성 시간 김)' : '구조·요소 확인용 자리표시자 데이터 (빠름)'}
+                      >
+                        {text}
+                      </button>
+                    )
+                  })}
+                </div>
+              ),
+            )}
           </div>
         </div>
 
